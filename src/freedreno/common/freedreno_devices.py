@@ -1560,6 +1560,46 @@ a8xx_825 = GPUProps(
         has_fs_tex_prefetch = False,
 )
 
+a8xx_810 = GPUProps(
+        sysmem_vpc_attr_buf_size = 131072,
+        sysmem_vpc_pos_buf_size = 65536,
+        sysmem_vpc_bv_pos_buf_size = 32768,
+        # These values are maximum size of depth/color cache for current A8XX Gen2 sysmem configuration
+        # Bigger values cause an integer underflow in freedreno gmem calculations
+        sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
+        sysmem_per_ccu_color_cache_size = 32 * 1024,
+        sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
+        sysmem_per_ccu_depth_cache_size = 32 * 1024,
+        gmem_vpc_attr_buf_size = 49152,
+        gmem_vpc_pos_buf_size = 24576,
+        gmem_vpc_bv_pos_buf_size = 32768,
+        gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
+        gmem_per_ccu_color_cache_size = 16 * 1024,
+        gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
+        gmem_per_ccu_depth_cache_size = 32 * 1024,
+)
+
+
+
+add_gpus([
+        GPUId(chip_id=0x44010000, name="FD810"),
+    ], A6xxGPUInfo(
+        CHIP.A8XX,
+        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_810)
+        num_ccu = 2,
+        num_slices = 1,
+        tile_align_w = 64,
+        tile_align_h = 32,
+        tile_max_w = 16384,
+        tile_max_h = 16384,
+        num_vsc_pipes = 32,
+        cs_shared_mem_size = 32 * 1024,
+        wave_granularity = 2,
+        fibers_per_sp = 128 * 2 * 16,
+        magic_regs = dict(
+        ),
+        raw_magic_regs = a8xx_gen2_raw_magic_regs,
+    ))
 
 # gen8_6_0
 add_gpus([
@@ -1567,6 +1607,29 @@ add_gpus([
     ], A6xxGPUInfo(
         CHIP.A8XX,
         [a7xx_base, a7xx_gen3, a8xx_base, a8xx_825],
+        num_ccu = 4,
+        num_slices = 2,
+        tile_align_w = 64,
+        tile_align_h = 32,
+        tile_max_w = 16384,
+        tile_max_h = 16384,
+        num_vsc_pipes = 32,
+        cs_shared_mem_size = 32 * 1024,
+        wave_granularity = 2,
+        fibers_per_sp = 128 * 2 * 16,
+        magic_regs = dict(
+        ),
+        raw_magic_regs = a8xx_gen2_raw_magic_regs,
+    ))
+
+
+# TODO: Properly fill all values for this GPU
+add_gpus([
+    GPUId(chip_id=0x44030A00, name="FD829"), # kgsl id???
+    GPUId(chip_id=0xffff44030A00, name="FD829"),
+    ], A6xxGPUInfo(
+        CHIP.A8XX,
+        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_825]
         num_ccu = 4,
         num_slices = 2,
         tile_align_w = 64,
