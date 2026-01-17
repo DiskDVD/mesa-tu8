@@ -1513,7 +1513,10 @@ a8xx_gen2 = GPUProps(
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
         gmem_per_ccu_depth_cache_size = 256 * 1024,
         has_fs_tex_prefetch = False,
-)
+    )
+
+
+>>>>>>> cfa7550bee5 (WIP: freedreno: apply SALU workaround to all gen8)
 
 # For a8xx, the chicken bit and most other non-ctx reg
 # programming moves into the kernel, and what remains
