@@ -1516,8 +1516,6 @@ a8xx_gen2 = GPUProps(
     )
 
 
->>>>>>> cfa7550bee5 (WIP: freedreno: apply SALU workaround to all gen8)
-
 # For a8xx, the chicken bit and most other non-ctx reg
 # programming moves into the kernel, and what remains
 # should be easier to share between devices
@@ -1628,15 +1626,18 @@ a8xx_810 = GPUProps(
         gmem_per_ccu_color_cache_size = 16 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
         gmem_per_ccu_depth_cache_size = 32 * 1024,
+        # FD810 does not support ray tracing
+        has_ray_intersection = False,
+        has_sw_fuse = False, # ???? 
 )
 
 
-
+# gen8_3_0
 add_gpus([
         GPUId(chip_id=0x44010000, name="FD810"),
     ], A6xxGPUInfo(
         CHIP.A8XX,
-        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_810)
+        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_810]
         num_ccu = 2,
         num_slices = 1,
         tile_align_w = 64,
