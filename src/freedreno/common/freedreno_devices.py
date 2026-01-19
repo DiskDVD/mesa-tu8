@@ -1678,15 +1678,16 @@ add_gpus([
 # TODO: Properly fill all values for this GPU
 add_gpus([
     GPUId(chip_id=0x44030A00, name="FD829"), # kgsl id???
+    GPUId(chip_id=0x44030A20, name="FD829"), # found by testing
     GPUId(chip_id=0xffff44030A00, name="FD829"),
     ], A6xxGPUInfo(
         CHIP.A8XX,
         [a7xx_base, a7xx_gen3, a8xx_base, a8xx_825]
         num_ccu = 4,
         num_slices = 2,
-        tile_align_w = 64,
+        tile_align_w = 96,
         tile_align_h = 32,
-        tile_max_w = 16384,
+        tile_max_w = 16416,
         tile_max_h = 16384,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
