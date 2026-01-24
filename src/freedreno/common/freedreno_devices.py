@@ -1485,16 +1485,12 @@ add_gpus([
 a8xx_base = GPUProps(
         has_dp2acc = False,
         reg_size_vec4 = 96,
+        has_fs_tex_prefetch = True,
         has_rt_workaround = False,
         supports_double_threadsize = False,
         has_dual_wave_dispatch = True,
         has_salu_int_narrowing_quirk = True, # Test if breaks something
     )
-
-a8xx_gen1 = GPUProps(
-        reg_size_vec4 = 96,
-        disable_gmem = True,
-        )
 
 a8xx_gen2 = GPUProps(
         reg_size_vec4 = 128,
@@ -1512,7 +1508,6 @@ a8xx_gen2 = GPUProps(
         gmem_per_ccu_color_cache_size = 16 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
         gmem_per_ccu_depth_cache_size = 256 * 1024,
-        has_fs_tex_prefetch = False,
     )
 
 
@@ -1565,7 +1560,7 @@ a8xx_830 = GPUProps(
         gmem_per_ccu_color_cache_size = 16 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
         gmem_per_ccu_depth_cache_size = 256 * 1024,
-        has_fs_tex_prefetch = False,
+        disable_gmem = True,
 )
 
 
@@ -1606,7 +1601,6 @@ a8xx_825 = GPUProps(
         gmem_per_ccu_color_cache_size = 16 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
         gmem_per_ccu_depth_cache_size = 127 * 1024,
-        has_fs_tex_prefetch = False,
 )
 
 a8xx_810 = GPUProps(
@@ -1626,6 +1620,7 @@ a8xx_810 = GPUProps(
         gmem_per_ccu_color_cache_size = 16 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
         gmem_per_ccu_depth_cache_size = 32 * 1024,
+        disable_gmem = True,
         # FD810 does not support ray tracing
         has_ray_intersection = False,
         has_sw_fuse = False, # ???? 
@@ -1637,7 +1632,7 @@ add_gpus([
         GPUId(chip_id=0x44010000, name="FD810"),
     ], A6xxGPUInfo(
         CHIP.A8XX,
-        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_810]
+        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_810],
         num_ccu = 2,
         num_slices = 1,
         tile_align_w = 64,
@@ -1682,7 +1677,7 @@ add_gpus([
     GPUId(chip_id=0xffff44030A00, name="FD829"),
     ], A6xxGPUInfo(
         CHIP.A8XX,
-        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_825]
+        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_825],
         num_ccu = 4,
         num_slices = 2,
         tile_align_w = 96,
