@@ -1644,7 +1644,7 @@ a8xx_810 = GPUProps(
         has_ray_intersection = False,
         has_sw_fuse = False, # ????
         # Just like 830, gmem causes hangs on 810
-        disable_gmem = True,
+        disable_gmem = False,
 )
 
 
@@ -1654,6 +1654,7 @@ add_gpus([
     ], A6xxGPUInfo(
         CHIP.A8XX,
         [a7xx_base, a7xx_gen3, a8xx_base, a8xx_810],
+        gmem_size = 512 * 1024,
         num_ccu = 2,
         num_slices = 1,
         tile_align_w = 64,
