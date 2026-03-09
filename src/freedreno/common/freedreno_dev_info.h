@@ -471,6 +471,7 @@ struct fd_dev_info {
       bool has_image_processing;
       /* If GMEM needs to be disabled for this GPU */
       bool disable_gmem;
+      uint32_t gmem_size;
    } props;
 };
 
