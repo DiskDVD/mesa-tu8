@@ -1640,7 +1640,7 @@ a8xx_810 = GPUProps(
         gmem_per_ccu_color_cache_size = 16 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
         gmem_per_ccu_depth_cache_size = 64 * 1024,
-        gmem_size = 512 * 1024,
+        gmem_size = 1024 * 1024,
         # FD810 does not support ray tracing
         has_ray_intersection = False,
         has_sw_fuse = False, # ????
