@@ -1644,8 +1644,6 @@ a8xx_810 = GPUProps(
         # FD810 does not support ray tracing
         has_ray_intersection = False,
         has_sw_fuse = False, # ????
-        has_lpac = True,
-        has_preemption= True,
         # Just like 830, gmem causes hangs on 810
         disable_gmem = False,
 )
