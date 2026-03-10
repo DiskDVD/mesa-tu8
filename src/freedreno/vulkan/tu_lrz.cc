@@ -1328,7 +1328,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
   // if (temporary_disable_lrz)
     //   gras_lrz_cntl.enable = false;
 
-   cmd->state.lrz.enabled = (cmd->state.lrz.valid || a->enable) && gras_lrz_cntl.enable;
+   cmd->state.lrz.enabled = cmd->state.lrz.valid && gras_lrz_cntl.enable;
    if (!cmd->state.lrz.enabled)
       memset(&gras_lrz_cntl, 0, sizeof(gras_lrz_cntl));
 
