@@ -214,7 +214,9 @@ static void
 tu_lrz_init_state(struct tu_cmd_buffer *cmd,
                   const struct tu_render_pass_attachment *att,
                   const struct tu_image_view *view)
+
 {
+   return;
    if (!view->image->lrz_layout.lrz_total_size) {
       assert(!cmd->device->use_lrz || !vk_format_has_depth(att->format));
       return;
