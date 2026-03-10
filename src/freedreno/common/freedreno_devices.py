@@ -1630,20 +1630,22 @@ a8xx_810 = GPUProps(
         # These values are maximum size of depth/color cache for current A8XX Gen2 sysmem configuration
         # Bigger values cause an integer underflow in freedreno gmem calculations
         sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
-        sysmem_per_ccu_color_cache_size = 32 * 1024,
+        sysmem_per_ccu_color_cache_size = 128 * 1024,
         sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
-        sysmem_per_ccu_depth_cache_size = 32 * 1024,
+        sysmem_per_ccu_depth_cache_size = 128 * 1024,
         gmem_vpc_attr_buf_size = 49152,
         gmem_vpc_pos_buf_size = 24576,
         gmem_vpc_bv_pos_buf_size = 32768,
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
-        gmem_per_ccu_color_cache_size = 16 * 1024,
+        gmem_per_ccu_color_cache_size = 64 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
-        gmem_per_ccu_depth_cache_size = 64 * 1024,
-        gmem_size = 4096 * 1024,
+        gmem_per_ccu_depth_cache_size = 256 * 1024,
+        gmem_size = 3072 * 1024,
         # FD810 does not support ray tracing
         has_ray_intersection = False,
         has_sw_fuse = False, # ????
+        has_lpac = True,
+        has_preemption= True,
         # Just like 830, gmem causes hangs on 810
         disable_gmem = False,
 )
@@ -1657,14 +1659,14 @@ add_gpus([
         [a7xx_base, a7xx_gen3, a8xx_base, a8xx_810],
         num_ccu = 2,
         num_slices = 1,
-        tile_align_w = 64,
+        tile_align_w = 128,
         tile_align_h = 32,
         tile_max_w = 16384,
         tile_max_h = 16384,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
-        fibers_per_sp = 128 * 2 * 16,
+        fibers_per_sp = 128 * 16 * 32,
         magic_regs = dict(
         ),
         raw_magic_regs = a8xx_gen2_raw_magic_regs,
