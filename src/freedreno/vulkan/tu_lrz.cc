@@ -1315,20 +1315,20 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
     * test will also pass, but if it may be written when the depth or stencil
     * test fails then we need to disable the LRZ test for the draw as well.
     */
-   if (cmd->state.stencil_written_based_on_depth_test) {
-      tu_lrz_disable_write_for_rp(cmd, "stencil write based on depth test");
+ /* if (cmd->state.stencil_written_based_on_depth_test) {
+     // tu_lrz_disable_write_for_rp(cmd, "stencil write based on depth test");
    }
-
+ */
    if (disable_lrz)
       cmd->state.lrz.valid = false;
 
-   if (cmd->state.lrz.disable_write_for_rp)
-      gras_lrz_cntl.lrz_write = false;
+   //if (cmd->state.lrz.disable_write_for_rp)
+     // gras_lrz_cntl.lrz_write = false;
 
-   if (temporary_disable_lrz)
-      gras_lrz_cntl.enable = false;
+  // if (temporary_disable_lrz)
+    //   gras_lrz_cntl.enable = false;
 
-   cmd->state.lrz.enabled = cmd->state.lrz.valid && gras_lrz_cntl.enable;
+   cmd->state.lrz.enabled = (cmd->state.lrz.valid || lrz_state->enable) && gras_lrz_cntl.enable;
    if (!cmd->state.lrz.enabled)
       memset(&gras_lrz_cntl, 0, sizeof(gras_lrz_cntl));
 
@@ -1337,7 +1337,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
       cmd->state.lrz.gpu_dir_set = true;
    }
 
-   return gras_lrz_cntl;
+    gras_lrreturnz_cntl;
 }
 
 template <chip CHIP>
