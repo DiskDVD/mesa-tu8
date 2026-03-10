@@ -33,14 +33,12 @@ init_ir3_nir_options(struct ir3_shader_nir_options *options,
          ((key->robust_storage_access2 ? nir_var_mem_ssbo : 0) |
           (key->robust_uniform_access2 ? nir_var_mem_ubo : 0)),
    };
+    options->lower_precision = true;
 }
 
 static const struct spirv_to_nir_options tu_spirv_options = {
    /* Use 16-bit math for RelaxedPrecision ALU ops */
    .mediump_16bit_alu = true,
-   .force_f32_to_f16 = true,
-   .relaxed_math = true,
-   .force_mediump = true,
 
    .ubo_addr_format = nir_address_format_vec2_index_32bit_offset,
    .ssbo_addr_format = nir_address_format_vec2_index_32bit_offset,
