@@ -385,6 +385,11 @@ should_skip(struct ir3_sched_ctx *ctx, struct ir3_instruction *instr)
        * that we can choose from.
        */
       struct ir3_sched_node *n = instr->data;
+      if (ctx->compiler->gpu_id >= 700) {
+          if (n->kill_path && n->delay > 10) 
+             return true;
+          return false;
+      }
       if (!n->kill_path)
          return true;
    }
