@@ -1328,7 +1328,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
   // if (temporary_disable_lrz)
     //   gras_lrz_cntl.enable = false;
 
-   cmd->state.lrz.enabled = (cmd->state.lrz.valid || lrz_state->enable) && gras_lrz_cntl.enable;
+   cmd->state.lrz.enabled = (cmd->state.lrz.valid || lrz->enable) && gras_lrz_cntl.enable;
    if (!cmd->state.lrz.enabled)
       memset(&gras_lrz_cntl, 0, sizeof(gras_lrz_cntl));
 
@@ -1337,7 +1337,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
       cmd->state.lrz.gpu_dir_set = true;
    }
 
-    gras_lrreturnz_cntl;
+    return gras_lrz_cntl;
 }
 
 template <chip CHIP>
