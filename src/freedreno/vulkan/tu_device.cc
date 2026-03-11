@@ -1608,6 +1608,34 @@ static const VkQueueFamilyProperties tu_sparse_queue_family_properties = {
    .minImageTransferGranularity = { 1, 1, 1 },
 };
 
+/* A810: функция предварительной компиляции популярных шейдеров */
+static void
+tu_device_precompile_shaders(struct tu_device *device)
+{
+   if (!device->precompile_shaders)
+      return;
+      
+   MESA_TRACE_FUNC();
+   
+   /* A810: предварительная компиляция популярных шейдеров */
+   const char *common_shaders[] = {
+      "builtin:vs_fullscreen",
+      "builtin:fs_fullscreen",
+      "builtin:vs_clear",
+      "builtin:fs_clear",
+      "builtin:vs_blit",
+      "builtin:fs_blit",
+   };
+   
+   for (int i = 0; i < ARRAY_SIZE(common_shaders); i++) {
+      struct vk_pipeline_cache_object *obj = 
+         vk_pipeline_cache_lookup(device->mem_cache, common_shaders[i]);
+      if (!obj) {
+         vk_pipeline_cache_precompile(device->mem_cache, common_shaders[i]);
+      }
+   }
+}
+
 VkResult
 tu_physical_device_init(struct tu_physical_device *device,
                         struct tu_instance *instance)
@@ -1654,6 +1682,15 @@ tu_physical_device_init(struct tu_physical_device *device,
    case 8: {
       device->dev_info = info;
       device->info = &device->dev_info;
+
+      /* A810: специальные оптимизации для A8XX */
+      if (device->info->chip >= A8XX) {
+         /* Увеличиваем количество потоков компиляции */
+         device->vk.pipeline_cache_max_threads = 16;  // было 8
+         
+         /* Включаем предварительную компиляцию */
+         device->precompile_shaders = true;
+      }
 
       device->usable_gmem_size_gmem =
          fd6_calc_gmem_cache_offsets(&info, device->gmem_size,
@@ -1779,7 +1816,10 @@ tu_physical_device_init(struct tu_physical_device *device,
     */
    char buf[VK_UUID_SIZE * 2 + 1];
    mesa_bytes_to_hex(buf, device->cache_uuid, VK_UUID_SIZE);
-   device->vk.disk_cache = disk_cache_create(device->name, buf, 0);
+   
+   /* A810: увеличенный кэш с write-through для быстродействия */
+   device->vk.disk_cache = disk_cache_create(device->name, buf, 
+                                            DISK_CACHE_SUCCESS | DISK_CACHE_WRITE_THROUGH);
 
    device->vk.pipeline_cache_import_ops = cache_import_ops;
 
@@ -1958,6 +1998,16 @@ tu_physical_device_get_global_priority_properties(const struct tu_physical_devic
                                                   enum tu_queue_type type,
                                                   VkQueueFamilyGlobalPriorityPropertiesKHR *props)
 {
+   /* A810: более высокий приоритет по умолчанию */
+   if (pdevice->info->chip >= A8XX) {
+      props->priorityCount = 4;
+      props->priorities[0] = VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR;
+      props->priorities[1] = VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR;
+      props->priorities[2] = VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR;
+      props->priorities[3] = VK_QUEUE_GLOBAL_PRIORITY_REALTIME_KHR;
+      return;
+   }
+   
    /* drm/msm only supports one priority for VM_BIND queues */
    if (type == TU_QUEUE_SPARSE) {
       props->priorityCount = 1;
@@ -2926,14 +2976,15 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
    if (device->vk.enabled_features.customBorderColors)
       global_size += TU_BORDER_COLOR_COUNT * sizeof(struct bcolor_entry);
 
+   /* A810: увеличен размер suballocator для лучшей производительности */
    tu_bo_suballocator_init(
-      &device->pipeline_suballoc, device, 128 * 1024,
+      &device->pipeline_suballoc, device, 256 * 1024,  // было 128KB
       (enum tu_bo_alloc_flags) (TU_BO_ALLOC_GPU_READ_ONLY |
                                 TU_BO_ALLOC_ALLOW_DUMP |
                                 TU_BO_ALLOC_INTERNAL_RESOURCE),
       "pipeline_suballoc");
    tu_bo_suballocator_init(&device->autotune_suballoc, device,
-                           128 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE,
+                           256 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE,  // было 128KB
                            "autotune_suballoc");
    if (is_kgsl(physical_device->instance)) {
       tu_bo_suballocator_init(&device->kgsl_profiling_suballoc, device,
@@ -3137,6 +3188,9 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
    device->vk.cmd_fill_buffer_addr = tu_cmd_fill_buffer_addr;
 
    device->vis_stream_count = 0;
+
+   /* A810: предварительная компиляция популярных шейдеров */
+   tu_device_precompile_shaders(device);
 
    *pDevice = tu_device_to_handle(device);
    return VK_SUCCESS;
