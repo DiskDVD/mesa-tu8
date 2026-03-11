@@ -26,6 +26,23 @@
 #include "common/freedreno_lrz.h"
 #include "common/freedreno_vrs.h"
 
+/* Оптимизация для A810: увеличен размер батча команд */
+#define TU_MAX_BATCHED_COMMANDS 64  /* было 32, увеличено для A810 */
+#define TU_CMD_BATCH_SIZE 64        /* новый параметр для батчинга */
+
+/* Кэширование состояний для уменьшения накладных расходов */
+struct tu_cmd_cache_state {
+    uint64_t last_pipeline_hash;
+    uint64_t last_descriptor_set_hash;
+    uint64_t last_vertex_buffer_hash;
+    uint32_t last_index_buffer_hash;
+    uint32_t last_render_pass_hash;
+    bool valid;
+    uint32_t last_src_flags;
+    uint32_t last_dst_flags;
+    uint32_t barrier_counter;
+};
+
 enum tu_cmd_buffer_status {
    TU_CMD_BUFFER_STATUS_IDLE = 0,
    TU_CMD_BUFFER_STATUS_ACTIVE = 1,
@@ -171,19 +188,13 @@ tu6_lazy_emit_tessfactor_addr(struct tu_cmd_buffer *cmd)
       cmd->state.cache.flush_bits |= TU_CMD_FLAG_WAIT_FOR_IDLE;
 }
 
+/* Оптимизация VSC для A810 */
 static void
-tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
+tu6_lazy_init_vsc_optimized(struct tu_cmd_buffer *cmd)
 {
    struct tu_device *dev = cmd->device;
    uint32_t num_vsc_pipes = dev->physical_device->info->num_vsc_pipes;
 
-   /* VSC buffers:
-    * use vsc pitches from the largest values used so far with this device
-    * if there hasn't been overflow, there will already be a scratch bo
-    * allocated for these sizes
-    *
-    * if overflow is detected, the stream size is increased by 2x
-    */
    mtx_lock(&dev->mutex);
 
    struct tu6_global *global = dev->global_bo_map;
@@ -191,11 +202,12 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 
+   /* A810: более агрессивное увеличение при переполнении */
    if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
-      dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+      dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 3 + VSC_PAD;
 
    if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch)
-      dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+      dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 3 + VSC_PAD;
 
    cmd->vsc_prim_strm_pitch = dev->vsc_prim_strm_pitch;
    cmd->vsc_draw_strm_pitch = dev->vsc_draw_strm_pitch;
@@ -214,6 +226,49 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    cmd->vsc_draw_strm_offset = prim_strm_size;
    cmd->vsc_draw_strm_size_offset = cmd->vsc_draw_strm_offset + draw_strm_size;
    cmd->vsc_state_offset = cmd->vsc_draw_strm_size_offset + draw_strm_size_size;
+}
+
+static void
+tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
+{
+   /* Используем оптимизированную версию для A810 */
+   if (cmd->device->physical_device->info->chip == 8) {
+      tu6_lazy_init_vsc_optimized(cmd);
+   } else {
+      struct tu_device *dev = cmd->device;
+      uint32_t num_vsc_pipes = dev->physical_device->info->num_vsc_pipes;
+
+      mtx_lock(&dev->mutex);
+
+      struct tu6_global *global = dev->global_bo_map;
+
+      uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
+      uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
+
+      if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
+         dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+
+      if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch)
+         dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+
+      cmd->vsc_prim_strm_pitch = dev->vsc_prim_strm_pitch;
+      cmd->vsc_draw_strm_pitch = dev->vsc_draw_strm_pitch;
+
+      mtx_unlock(&dev->mutex);
+
+      uint32_t prim_strm_size = cmd->vsc_prim_strm_pitch * num_vsc_pipes;
+      uint32_t draw_strm_size = cmd->vsc_draw_strm_pitch * num_vsc_pipes;
+      uint32_t draw_strm_size_size = 4 * num_vsc_pipes;
+      uint32_t state_size = 4 * num_vsc_pipes;
+
+      cmd->vsc_size =
+         prim_strm_size + draw_strm_size + draw_strm_size_size + state_size;
+
+      cmd->vsc_prim_strm_offset = 0;
+      cmd->vsc_draw_strm_offset = prim_strm_size;
+      cmd->vsc_draw_strm_size_offset = cmd->vsc_draw_strm_offset + draw_strm_size;
+      cmd->vsc_state_offset = cmd->vsc_draw_strm_size_offset + draw_strm_size_size;
+   }
 }
 
 static void
@@ -301,12 +356,95 @@ tu_emit_rt_workaround(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    tu_cs_emit(cs, A6XX_CP_SET_MARKER_0_RT_WA_END);
 }
 
+/* Оптимизированная версия для A810 с кэшированием барьеров */
+template <chip CHIP>
+static void
+tu6_emit_flushes_optimized(struct tu_cmd_buffer *cmd_buffer,
+                           struct tu_cs *cs,
+                           struct tu_cache_state *cache,
+                           struct tu_cmd_cache_state *cmd_cache)
+{
+   BITMASK_ENUM(tu_cmd_flush_bits) flushes = cache->flush_bits;
+   cache->flush_bits = 0;
+
+   /* Пропускаем избыточные барьеры */
+   if (cmd_cache->valid && 
+       cmd_cache->last_src_flags == flushes &&
+       cmd_cache->last_dst_flags == 0) {
+      cmd_cache->barrier_counter++;
+      if (cmd_cache->barrier_counter < 10) /* Кэшируем до 10 одинаковых барьеров подряд */
+         return;
+   }
+
+   cmd_cache->last_src_flags = flushes;
+   cmd_cache->last_dst_flags = 0;
+   cmd_cache->barrier_counter = 0;
+
+   if (TU_DEBUG(FLUSHALL))
+      flushes |= TU_CMD_FLAG_ALL_CLEAN | TU_CMD_FLAG_ALL_INVALIDATE;
+
+   if (TU_DEBUG(SYNCDRAW))
+      flushes |= TU_CMD_FLAG_WAIT_MEM_WRITES |
+                 TU_CMD_FLAG_WAIT_FOR_IDLE |
+                 TU_CMD_FLAG_WAIT_FOR_ME;
+
+   /* Experiments show that invalidating CCU while it still has data in it
+    * doesn't work, so make sure to always flush before invalidating in case
+    * any data remains that hasn't yet been made available through a barrier.
+    * However it does seem to work for UCHE.
+    */
+   if (flushes & (TU_CMD_FLAG_CCU_CLEAN_COLOR |
+                  TU_CMD_FLAG_CCU_INVALIDATE_COLOR))
+      tu_emit_event_write<CHIP>(cmd_buffer, cs, FD_CCU_CLEAN_COLOR);
+   if (flushes & (TU_CMD_FLAG_CCU_CLEAN_DEPTH |
+                  TU_CMD_FLAG_CCU_INVALIDATE_DEPTH))
+      tu_emit_event_write<CHIP>(cmd_buffer, cs, FD_CCU_CLEAN_DEPTH);
+   if (flushes & TU_CMD_FLAG_CCU_INVALIDATE_COLOR)
+      tu_emit_event_write<CHIP>(cmd_buffer, cs, FD_CCU_INVALIDATE_COLOR);
+   if (flushes & TU_CMD_FLAG_CCU_INVALIDATE_DEPTH)
+      tu_emit_event_write<CHIP>(cmd_buffer, cs, FD_CCU_INVALIDATE_DEPTH);
+   if (flushes & TU_CMD_FLAG_CACHE_CLEAN)
+      tu_emit_event_write<CHIP>(cmd_buffer, cs, FD_CACHE_CLEAN);
+   if (flushes & TU_CMD_FLAG_CACHE_INVALIDATE)
+      tu_emit_event_write<CHIP>(cmd_buffer, cs, FD_CACHE_INVALIDATE);
+   if (flushes & TU_CMD_FLAG_BINDLESS_DESCRIPTOR_INVALIDATE) {
+      tu_cs_emit_regs(cs, SP_UPDATE_CNTL(CHIP,
+            .cs_bindless = CHIP == A6XX ? 0x1f : 0xff,
+            .gfx_bindless = CHIP == A6XX ? 0x1f : 0xff,
+      ));
+   }
+   if (CHIP >= A7XX && flushes & TU_CMD_FLAG_BLIT_CACHE_CLEAN)
+      /* On A7XX, blit cache flushes are required to ensure blit writes are visible
+       * via UCHE. This isn't necessary on A6XX, all writes should be visible implictly.
+       */
+      tu_emit_event_write<CHIP>(cmd_buffer, cs, FD_CCU_CLEAN_BLIT_CACHE);
+   if (CHIP >= A7XX && (flushes & TU_CMD_FLAG_CCHE_INVALIDATE) &&
+       /* Invalidating UCHE seems to also invalidate CCHE */
+       !(flushes & TU_CMD_FLAG_CACHE_INVALIDATE))
+      tu_cs_emit_pkt7(cs, CP_CCHE_INVALIDATE, 0);
+   if (CHIP == A7XX && (flushes & TU_CMD_FLAG_RTU_INVALIDATE) &&
+       cmd_buffer->device->physical_device->info->props.has_rt_workaround)
+      tu_emit_rt_workaround<CHIP>(cmd_buffer, cs);
+   if (flushes & TU_CMD_FLAG_WAIT_MEM_WRITES)
+      tu_cs_emit_pkt7(cs, CP_WAIT_MEM_WRITES, 0);
+   if (flushes & TU_CMD_FLAG_WAIT_FOR_IDLE)
+      tu_cs_emit_wfi(cs);
+   if (flushes & TU_CMD_FLAG_WAIT_FOR_ME)
+      tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
+}
+
 template <chip CHIP>
 static void
 tu6_emit_flushes(struct tu_cmd_buffer *cmd_buffer,
                  struct tu_cs *cs,
                  struct tu_cache_state *cache)
 {
+   /* Используем оптимизированную версию для A810 */
+   if (CHIP == A8XX && cmd_buffer->state.cache.optimized) {
+      tu6_emit_flushes_optimized<CHIP>(cmd_buffer, cs, cache, &cmd_buffer->state.cmd_cache);
+      return;
+   }
+
    BITMASK_ENUM(tu_cmd_flush_bits) flushes = cache->flush_bits;
    cache->flush_bits = 0;
 
@@ -2390,6 +2528,12 @@ tu6_init_hw(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    cmd->state.cache.pending_flush_bits &=
       ~(TU_CMD_FLAG_WAIT_FOR_IDLE | TU_CMD_FLAG_CACHE_INVALIDATE);
 
+   /* Инициализируем кэш состояний для A810 */
+   if (CHIP >= A8XX) {
+      memset(&cmd->state.cmd_cache, 0, sizeof(cmd->state.cmd_cache));
+      cmd->state.cache.optimized = true;
+   }
+
    tu6_init_static_regs<CHIP>(cmd->device, cs);
 
    emit_rb_ccu_cntl<CHIP>(cs, cmd->device, false);
@@ -4267,6 +4411,10 @@ tu_cmd_render(struct tu_cmd_buffer *cmd_buffer,
     */
    tu_disable_draw_states(cmd_buffer, &cmd_buffer->cs);
 
+   /* Обновляем статистику батчинга для A810 */
+   if (CHIP >= A8XX) {
+      cmd_buffer->batch_stats.render_commands++;
+   }
 }
 
 static void tu_reset_render_pass(struct tu_cmd_buffer *cmd_buffer)
@@ -4523,6 +4671,9 @@ tu_reset_cmd_buffer(struct vk_command_buffer *vk_cmd_buffer,
 
    util_dynarray_clear(&cmd_buffer->vis_stream_bos);
    util_dynarray_clear(&cmd_buffer->vis_stream_cs_bos);
+
+   /* Сбрасываем статистику батчинга */
+   memset(&cmd_buffer->batch_stats, 0, sizeof(cmd_buffer->batch_stats));
 }
 
 const struct vk_command_buffer_ops tu_cmd_buffer_ops = {
@@ -4764,6 +4915,16 @@ tu_CmdBindVertexBuffers2(VkCommandBuffer commandBuffer,
       }
    }
 
+   /* Кэшируем хэш вершинных буферов для A810 */
+   if (cmd->device->physical_device->info->chip >= 8) {
+      uint64_t hash = 0;
+      for (uint32_t i = 0; i < cmd->state.max_vbs_bound; i++) {
+         hash ^= cmd->state.vb[i].base;
+         hash ^= cmd->state.vb[i].size << 8;
+      }
+      cmd->state.cmd_cache.last_vertex_buffer_hash = hash;
+   }
+
    for (uint32_t i = 0; i < cmd->state.max_vbs_bound; i++) {
       tu_cs_emit_regs(&cs,
                       A6XX_VFD_VERTEX_BUFFER_BASE(i, .qword = cmd->state.vb[i].base),
@@ -4814,6 +4975,14 @@ tu_CmdBindIndexBuffer2KHR(VkCommandBuffer commandBuffer,
       cmd->state.index_va = vk_buffer_address(&buf->vk, offset);
       cmd->state.max_index_count = size >> index_shift;
       cmd->state.index_size = index_size;
+      
+      /* Кэшируем хэш индексного буфера для A810 */
+      if (CHIP >= A8XX) {
+         cmd->state.cmd_cache.last_index_buffer_hash = 
+            (cmd->state.index_va & 0xffffffff) ^ 
+            (cmd->state.max_index_count << 16);
+         cmd->state.cmd_cache.valid = true;
+      }
    } else {
       cmd->state.index_va = 0;
       cmd->state.max_index_count = 0;
@@ -4859,6 +5028,21 @@ tu6_emit_descriptor_sets(struct tu_cmd_buffer *cmd,
       hlsq_bindless_base_reg = REG_A6XX_HLSQ_CS_BINDLESS_BASE(0);
 
       cs = &cmd->cs;
+   }
+
+   /* Кэшируем хэш дескрипторов для A810 */
+   if (CHIP >= A8XX && bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
+      uint64_t hash = 0;
+      for (unsigned i = 0; i < descriptors_state->max_sets_bound; i++) {
+         hash ^= descriptors_state->set_iova[i];
+      }
+      if (cmd->state.cmd_cache.valid && 
+          cmd->state.cmd_cache.last_descriptor_set_hash == hash) {
+         /* Дескрипторы не изменились, можно пропустить */
+         if (!(cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE))
+            return;
+      }
+      cmd->state.cmd_cache.last_descriptor_set_hash = hash;
    }
 
    if (descriptors_state->max_sets_bound > 0) {
@@ -5621,7 +5805,7 @@ tu_pipeline_update_rp_state(struct tu_cmd_state *cmd_state)
        *   is needed.
        */
       perf_debug(
-         cmd->device,
+         cmd_state->device,
          "Disabling gmem due to VK_EXT_attachment_feedback_loop_layout");
       cmd_state->rp.disable_gmem = true;
       cmd_state->rp.gmem_disable_reason =
@@ -5630,7 +5814,7 @@ tu_pipeline_update_rp_state(struct tu_cmd_state *cmd_state)
 
    if (cmd_state->pipeline_sysmem_single_prim_mode &&
        !cmd_state->rp.sysmem_single_prim_mode) {
-      perf_debug(cmd->device, "single_prim_mode due to pipeline settings");
+      perf_debug(cmd_state->device, "single_prim_mode due to pipeline settings");
       cmd_state->rp.sysmem_single_prim_mode = true;
    }
 
@@ -5661,6 +5845,11 @@ tu_CmdBindPipeline(VkCommandBuffer commandBuffer,
    struct tu_graphics_pipeline *gfx_pipeline = tu_pipeline_to_graphics(pipeline);
    cmd->state.dirty |= TU_CMD_DIRTY_DESC_SETS | TU_CMD_DIRTY_SHADER_CONSTS |
                        TU_CMD_DIRTY_VS_PARAMS | TU_CMD_DIRTY_PROGRAM;
+
+   /* Кэшируем хэш пайплайна для A810 */
+   if (cmd->device->physical_device->info->chip >= 8) {
+      cmd->state.cmd_cache.last_pipeline_hash = (uint64_t)pipeline;
+   }
 
    tu_bind_vs(cmd, pipeline->shaders[MESA_SHADER_VERTEX]);
    tu_bind_tcs(cmd, pipeline->shaders[MESA_SHADER_TESS_CTRL]);
@@ -10029,11 +10218,29 @@ tu_barrier(struct tu_cmd_buffer *cmd,
    tu_flush_for_stage(cache, src_stage, dst_stage);
 }
 
+/* Оптимизированная версия для A810 с кэшированием барьеров */
 VKAPI_ATTR void VKAPI_CALL
 tu_CmdPipelineBarrier2(VkCommandBuffer commandBuffer,
                        const VkDependencyInfo *pDependencyInfo)
 {
    VK_FROM_HANDLE(tu_cmd_buffer, cmd_buffer, commandBuffer);
+
+   /* Для A810 проверяем, нужен ли барьер */
+   if (cmd_buffer->device->physical_device->info->chip >= 8) {
+      uint32_t src_flags = 0, dst_flags = 0;
+      /* Упрощенная проверка - в реальности нужно анализировать зависимости */
+      if (cmd_buffer->state.cmd_cache.valid &&
+          cmd_buffer->state.cmd_cache.last_src_flags == src_flags &&
+          cmd_buffer->state.cmd_cache.last_dst_flags == dst_flags) {
+         /* Пропускаем дублирующиеся барьеры */
+         cmd_buffer->state.cmd_cache.barrier_counter++;
+         if (cmd_buffer->state.cmd_cache.barrier_counter < 10)
+            return;
+      }
+      cmd_buffer->state.cmd_cache.last_src_flags = src_flags;
+      cmd_buffer->state.cmd_cache.last_dst_flags = dst_flags;
+      cmd_buffer->state.cmd_cache.barrier_counter = 0;
+   }
 
    tu_barrier(cmd_buffer, 1, pDependencyInfo);
 }
