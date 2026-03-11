@@ -1608,34 +1608,6 @@ static const VkQueueFamilyProperties tu_sparse_queue_family_properties = {
    .minImageTransferGranularity = { 1, 1, 1 },
 };
 
-/* A810: функция предварительной компиляции популярных шейдеров */
-static void
-tu_device_precompile_shaders(struct tu_device *device)
-{
-   if (!device->precompile_shaders)
-      return;
-      
-   MESA_TRACE_FUNC();
-   
-   /* A810: предварительная компиляция популярных шейдеров */
-   const char *common_shaders[] = {
-      "builtin:vs_fullscreen",
-      "builtin:fs_fullscreen",
-      "builtin:vs_clear",
-      "builtin:fs_clear",
-      "builtin:vs_blit",
-      "builtin:fs_blit",
-   };
-   
-   for (int i = 0; i < ARRAY_SIZE(common_shaders); i++) {
-      struct vk_pipeline_cache_object *obj = 
-         vk_pipeline_cache_lookup(device->mem_cache, common_shaders[i]);
-      if (!obj) {
-         vk_pipeline_cache_precompile(device->mem_cache, common_shaders[i]);
-      }
-   }
-}
-
 VkResult
 tu_physical_device_init(struct tu_physical_device *device,
                         struct tu_instance *instance)
@@ -1683,13 +1655,9 @@ tu_physical_device_init(struct tu_physical_device *device,
       device->dev_info = info;
       device->info = &device->dev_info;
 
-      /* A810: специальные оптимизации для A8XX */
-      if (device->info->chip >= A8XX) {
-         /* Увеличиваем количество потоков компиляции */
-         device->vk.pipeline_cache_max_threads = 16;  // было 8
-         
-         /* Включаем предварительную компиляцию */
-         device->precompile_shaders = true;
+      /* A810: увеличиваем max_waves если еще не установлено */
+      if (device->info->chip >= A8XX && device->info->max_waves < 32) {
+         device->info->max_waves = 32;
       }
 
       device->usable_gmem_size_gmem =
@@ -1817,9 +1785,8 @@ tu_physical_device_init(struct tu_physical_device *device,
    char buf[VK_UUID_SIZE * 2 + 1];
    mesa_bytes_to_hex(buf, device->cache_uuid, VK_UUID_SIZE);
    
-   /* A810: увеличенный кэш с write-through для быстродействия */
-   device->vk.disk_cache = disk_cache_create(device->name, buf, 
-                                            DISK_CACHE_SUCCESS | DISK_CACHE_WRITE_THROUGH);
+   /* A810: используем стандартный disk_cache без флагов, чтобы избежать ошибок */
+   device->vk.disk_cache = disk_cache_create(device->name, buf, 0);
 
    device->vk.pipeline_cache_import_ops = cache_import_ops;
 
@@ -1998,7 +1965,7 @@ tu_physical_device_get_global_priority_properties(const struct tu_physical_devic
                                                   enum tu_queue_type type,
                                                   VkQueueFamilyGlobalPriorityPropertiesKHR *props)
 {
-   /* A810: более высокий приоритет по умолчанию */
+   /* A810: все 4 уровня приоритета */
    if (pdevice->info->chip >= A8XX) {
       props->priorityCount = 4;
       props->priorities[0] = VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR;
@@ -3188,9 +3155,6 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
    device->vk.cmd_fill_buffer_addr = tu_cmd_fill_buffer_addr;
 
    device->vis_stream_count = 0;
-
-   /* A810: предварительная компиляция популярных шейдеров */
-   tu_device_precompile_shaders(device);
 
    *pDevice = tu_device_to_handle(device);
    return VK_SUCCESS;
