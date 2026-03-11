@@ -1655,11 +1655,8 @@ tu_physical_device_init(struct tu_physical_device *device,
       device->dev_info = info;
       device->info = &device->dev_info;
 
-      /* A810: увеличиваем max_waves если еще не установлено */
-      if (device->info->chip >= A8XX && device->info->max_waves < 32) {
-         device->info->max_waves = 32;
-      }
-
+      /* A810: больше не пытаемся изменить const поле */
+      
       device->usable_gmem_size_gmem =
          fd6_calc_gmem_cache_offsets(&info, device->gmem_size,
                                      &device->config_gmem,
@@ -1785,7 +1782,7 @@ tu_physical_device_init(struct tu_physical_device *device,
    char buf[VK_UUID_SIZE * 2 + 1];
    mesa_bytes_to_hex(buf, device->cache_uuid, VK_UUID_SIZE);
    
-   /* A810: используем стандартный disk_cache без флагов, чтобы избежать ошибок */
+   /* A810: используем стандартный disk_cache */
    device->vk.disk_cache = disk_cache_create(device->name, buf, 0);
 
    device->vk.pipeline_cache_import_ops = cache_import_ops;
