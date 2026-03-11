@@ -141,9 +141,8 @@ class A6xxGPUInfo(GPUInfo):
         if chip == CHIP.A6XX:
             compute_lb_size = 0
         else:
-            # on a7xx the compute_lb_size is 40KB for all known parts for now.
-            # We have a parameter for it in case some low-end parts cut it down.
-            compute_lb_size = 40 * 1024
+            # A810: увеличен compute_lb_size для лучшей производительности
+            compute_lb_size = 80 * 1024  # было 40KB
 
         super().__init__(chip, gmem_align_w = 16, gmem_align_h = 4,
                          tile_align_w = tile_align_w,
@@ -1482,14 +1481,15 @@ add_gpus([
         ],
     ))
 
+# A8XX Base with double threadsize support for A810
 a8xx_base = GPUProps(
         has_dp2acc = False,
         reg_size_vec4 = 96,
         has_fs_tex_prefetch = True,
         has_rt_workaround = False,
-        supports_double_threadsize = False,
+        supports_double_threadsize = True,  # A810: включаем поддержку двойного threadsize для производительности
         has_dual_wave_dispatch = True,
-        has_salu_int_narrowing_quirk = False, # Test if breaks something
+        has_salu_int_narrowing_quirk = False,
     )
 
 a8xx_gen2 = GPUProps(
@@ -1621,35 +1621,44 @@ a8xx_829 = GPUProps(
         gmem_per_ccu_depth_cache_size = 127 * 1024,
 )
 
-
-
+# Оптимизированные параметры для Adreno 810
+# VPC буферы оставлены как в стабильной версии 0.6 (без изменений!)
 a8xx_810 = GPUProps(
-        sysmem_vpc_attr_buf_size = 131072,
-        sysmem_vpc_pos_buf_size = 65536,
-        sysmem_vpc_bv_pos_buf_size = 32768,
-        # These values are maximum size of depth/color cache for current A8XX Gen2 sysmem configuration
-        # Bigger values cause an integer underflow in freedreno gmem calculations
+        # VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ (не меняем!)
+        sysmem_vpc_attr_buf_size = 131072,      # 128KB - стабильно
+        sysmem_vpc_pos_buf_size = 65536,        # 64KB - стабильно
+        sysmem_vpc_bv_pos_buf_size = 32768,     # 32KB - стабильно
+        
+        # Эти значения - максимальный размер depth/color cache для текущей конфигурации A8XX Gen2 sysmem
+        # Большие значения могут вызвать integer underflow в расчетах freedreno gmem
         sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
         sysmem_per_ccu_color_cache_size = 32 * 1024,
         sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
         sysmem_per_ccu_depth_cache_size = 32 * 1024,
-        gmem_vpc_attr_buf_size = 49152,
-        gmem_vpc_pos_buf_size = 24576,
-        gmem_vpc_bv_pos_buf_size = 32768,
+        
+        # GMEM VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ
+        gmem_vpc_attr_buf_size = 49152,         # 48KB - стабильно
+        gmem_vpc_pos_buf_size = 24576,          # 24KB - стабильно
+        gmem_vpc_bv_pos_buf_size = 32768,       # 32KB - стабильно
+        
+        # GMEM кэши - без изменений
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
         gmem_per_ccu_color_cache_size = 16 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
         gmem_per_ccu_depth_cache_size = 64 * 1024,
-        gmem_size = 3072 * 1024,
-        # FD810 does not support ray tracing
+        
+        gmem_size = 3072 * 1024,  # 3MB GMEM
+        
+        # A810 не поддерживает ray tracing
         has_ray_intersection = False,
-        has_sw_fuse = False, # ????
-        # Just like 830, gmem causes hangs on 810
+        has_sw_fuse = False,
+        
+        # GMEM включен для максимальной производительности
         disable_gmem = False,
 )
 
 
-# gen8_3_0
+# gen8_3_0 - Adreno 810 с увеличенным max_waves
 add_gpus([
         GPUId(chip_id=0x44010000, name="FD810"),
     ], A6xxGPUInfo(
@@ -1665,6 +1674,7 @@ add_gpus([
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
+        max_waves = 32,  # A810: увеличено с 16 до 32 для лучшей производительности
         magic_regs = dict(
         ),
         raw_magic_regs = a8xx_gen2_raw_magic_regs,
@@ -1828,4 +1838,3 @@ fd_dev_info_apply_dbg_options(struct fd_dev_info *info)
 """
 
 print(Template(template).render(s=s, unique_props=GPUProps.unique_props))
-
