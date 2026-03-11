@@ -377,19 +377,30 @@ struct ir3_sched_notes {
 static bool
 should_skip(struct ir3_sched_ctx *ctx, struct ir3_instruction *instr)
 {
-   if (ctx->remaining_kills && (is_tex(instr) || is_mem(instr))) {
-      /* avoid texture/memory access if we have unscheduled kills
-       * that could make the expensive operation unnecessary.  By
-       * definition, if there are remaining kills, and this instr
-       * is not a dependency of a kill, there are other instructions
-       * that we can choose from.
-       */
-      struct ir3_sched_node *n = instr->data;
-      if (!n->kill_path)
-         return true;
-   }
+    /* Оптимизированная логика для TEX/MEM при наличии несScheduled kill */
+    if (ctx->remaining_kills && (is_tex(instr) || is_mem(instr))) {
 
-   return false;
+        struct ir3_sched_node *n = instr->data;
+
+        /* 1. Если инструкция находится на kill-path — никогда не пропускаем */
+        if (n->kill_path)
+            return false;
+
+        /* 2. Если ближайшее использование далеко — пропускаем */
+        unsigned dist = (unsigned)nearest_use(instr);
+        if (dist > 32)
+            return true;
+
+        /* 3. Если сильно увеличивает live-range — пропускаем */
+        int live = live_effect(instr);
+        if (live > 4)   /* threshold tuned for Adreno 7xx/8xx */
+            return true;
+
+        /* 4. Во всех остальных случаях — не пропускаем */
+        return false;
+    }
+
+    return false;
 }
 
 /* could an instruction be scheduled if specified ssa src was scheduled? */
