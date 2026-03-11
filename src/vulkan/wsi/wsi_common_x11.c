@@ -79,9 +79,6 @@
 
 #define MAX_DAMAGE_RECTS 64
 
-/* A810: увеличенный размер очереди для лучшей производительности */
-#define A810_PRESENT_QUEUE_SIZE 16
-
 struct wsi_x11_connection {
    bool has_dri3;
    bool has_dri3_modifiers;
@@ -698,11 +695,6 @@ x11_get_min_image_count(const struct wsi_device *wsi_device, bool is_xwayland)
 {
    if (wsi_device->x11.override_minImageCount)
       return wsi_device->x11.override_minImageCount;
-
-   /* A810: увеличенное минимальное количество изображений для лучшей производительности */
-   if (wsi_device->driver_id == VK_DRIVER_ID_MESA_TURNIP) {
-      return is_xwayland ? 4 : 3;
-   }
 
    /* For IMMEDIATE and FIFO, most games work in a pipelined manner where the
     * can produce frames at a rate of 1/MAX(CPU duration, GPU duration), but
@@ -1325,78 +1317,6 @@ x11_wait_for_explicit_sync_release_submission(struct x11_swapchain *chain,
 #ifndef PresentWindowDestroyed
 #define PresentWindowDestroyed (1 << 0)
 #endif
-
-/* A810: функция для восстановления потерянной поверхности */
-static VkResult
-x11_recover_surface(struct x11_swapchain *chain)
-{
-   mesa_logi("TU A810: Attempting to recover lost surface");
-   
-   VkIcdSurfaceBase *surface = (VkIcdSurfaceBase *)chain->base.surface;
-   xcb_window_t old_window = x11_surface_get_window(surface);
-   
-   /* Создаем новое окно с теми же параметрами */
-   xcb_window_t new_window = xcb_generate_id(chain->conn);
-   xcb_screen_t *screen = get_screen_for_root(chain->conn, chain->window);
-   
-   if (!screen) {
-      mesa_loge("TU A810: Failed to get screen for recovery");
-      return VK_ERROR_SURFACE_LOST_KHR;
-   }
-   
-   /* Создаем окно с теми же размерами */
-   xcb_create_window(chain->conn, screen->root_depth, new_window,
-                     screen->root, 0, 0, chain->extent.width,
-                     chain->extent.height, 0,
-                     XCB_WINDOW_CLASS_INPUT_OUTPUT,
-                     screen->root_visual, 0, NULL);
-   
-   /* Копируем свойства */
-   xcb_change_property(chain->conn, XCB_PROP_MODE_REPLACE, new_window,
-                      XCB_ATOM_WM_NAME, XCB_ATOM_STRING, 8,
-                      strlen("Turnip Recovery Window"), "Turnip Recovery Window");
-   
-   /* Заменяем окно в поверхности */
-   if (surface->platform == VK_ICD_WSI_PLATFORM_XLIB) {
-      ((VkIcdSurfaceXlib *)surface)->window = new_window;
-   } else {
-      ((VkIcdSurfaceXcb *)surface)->window = new_window;
-   }
-   
-   /* Пересоздаем swapchain */
-   VkSwapchainCreateInfoKHR create_info = {
-      .sType = VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-      .surface = chain->base.surface,
-      .minImageCount = chain->base.image_count,
-      .imageFormat = chain->base.image_info.format,
-      .imageColorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
-      .imageExtent = chain->extent,
-      .imageArrayLayers = 1,
-      .imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-      .imageSharingMode = VK_SHARING_MODE_EXCLUSIVE,
-      .preTransform = VK_SURFACE_TRANSFORM_IDENTITY_BIT_KHR,
-      .compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-      .presentMode = chain->base.present_mode,
-      .clipped = VK_TRUE,
-   };
-   
-   VkSwapchainKHR new_swapchain;
-   VkResult result = chain->base.wsi->CreateSwapchainKHR(
-      chain->base.device, &create_info, NULL, &new_swapchain);
-   
-   if (result != VK_SUCCESS) {
-      mesa_loge("TU A810: Failed to recreate swapchain: %d", result);
-      return result;
-   }
-   
-   /* Уничтожаем старое окно */
-   xcb_destroy_window(chain->conn, old_window);
-   xcb_flush(chain->conn);
-   
-   mesa_logi("TU A810: Surface recovered successfully");
-   return VK_SUCCESS;
-}
-
 /**
  * Process an X11 Present event. Does not update chain->status.
  */
@@ -1407,16 +1327,8 @@ x11_handle_dri3_present_event(struct x11_swapchain *chain,
    switch (event->evtype) {
    case XCB_PRESENT_CONFIGURE_NOTIFY: {
       xcb_present_configure_notify_event_t *config = (void *) event;
-      if (config->pixmap_flags & PresentWindowDestroyed) {
-         /* A810: специальная обработка для Turnip */
-         if (chain->base.wsi->driver_id == VK_DRIVER_ID_MESA_TURNIP) {
-            VkResult result = x11_recover_surface(chain);
-            if (result == VK_SUCCESS) {
-               return VK_SUCCESS; /* Не возвращаем ошибку */
-            }
-         }
+      if (config->pixmap_flags & PresentWindowDestroyed)
          return VK_ERROR_SURFACE_LOST_KHR;
-      }
 
       struct wsi_device *wsi_device = (struct wsi_device *)chain->base.wsi;
       if (!wsi_device->x11.ignore_suboptimal) {
