@@ -1634,7 +1634,7 @@ a8xx_810 = GPUProps(
         sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
         sysmem_per_ccu_color_cache_size = 32 * 1024,
         sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
-        sysmem_per_ccu_depth_cache_size = 32 * 1024,
+        sysmem_per_ccu_depth_cache_size = 64 * 1024,
         
         # GMEM VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ
         gmem_vpc_attr_buf_size = 49152,         # 48KB - стабильно
@@ -1645,10 +1645,9 @@ a8xx_810 = GPUProps(
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
         gmem_per_ccu_color_cache_size = 16 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
-        gmem_per_ccu_depth_cache_size = 64 * 1024,
+        gmem_per_ccu_depth_cache_size = 128 * 1024,
         
-        gmem_size = 512 * 1024,  # 3MB GMEM
-        
+        gmem_size = 512 * 1024,  # 512kb GMEM, 4MB????       
         # A810 не поддерживает ray tracing
         has_ray_intersection = False,
         has_sw_fuse = False,
