@@ -622,34 +622,59 @@ live_effect(struct ir3_instruction *instr)
 static bool
 should_defer(struct ir3_sched_ctx *ctx, struct ir3_instruction *instr)
 {
-   if (ctx->ss_delay) {
-      if (sched_check_src_cond(instr, is_outstanding_ss, ctx))
-         return true;
-   }
+    /* --- 1. SS (SFU) latency hiding --- */
+    if (ctx->ss_delay) {
+        if (sched_check_src_cond(instr, is_outstanding_ss, ctx)) {
 
-   /* We mostly just want to try to schedule another texture fetch
-    * before scheduling something that would (sy) sync, so we can
-    * limit this rule to cases where there are remaining texture
-    * fetches
-    */
-   if (ctx->sy_delay && ctx->remaining_tex) {
-      if (sched_check_src_cond(instr, is_outstanding_sy, ctx))
-         return true;
-   }
+            int outstanding_ss = ctx->ss_index - ctx->first_outstanding_ss_index;
 
-   /* Avoid scheduling too many outstanding texture or sfu instructions at
-    * once by deferring further tex/SFU instructions. This both prevents
-    * stalls when the queue of texture/sfu instructions becomes too large,
-    * and prevents unacceptably large increases in register pressure from too
-    * many outstanding texture instructions.
-    */
-   if (ctx->sy_index - ctx->first_outstanding_sy_index >= 8 && is_sy_producer(instr))
-      return true;
+            /* Разрешаем больше outstanding SFU на A7xx/A8xx */
+            if (outstanding_ss < 12)
+                return true;
+        }
+    }
 
-   if (ctx->ss_index - ctx->first_outstanding_ss_index >= 8 && is_ss_producer(instr))
-      return true;
+    /* --- 2. SY (texture) latency hiding --- */
+    if (ctx->sy_delay && ctx->remaining_tex) {
+        if (sched_check_src_cond(instr, is_outstanding_sy, ctx)) {
 
-   return false;
+            int outstanding_sy = ctx->sy_index - ctx->first_outstanding_sy_index;
+
+            /* Разрешаем больше outstanding TEX */
+            if (outstanding_sy < 12)
+                return true;
+        }
+    }
+
+    /* --- 3. Оптимизированный лимит outstanding SY (texture fetch) --- */
+    if (is_sy_producer(instr)) {
+
+        int outstanding = ctx->sy_index - ctx->first_outstanding_sy_index;
+
+        /* 1. Базовый лимит увеличен для Adreno 7xx/8xx */
+        if (outstanding >= 12)
+            return true;
+
+        /* 2. Если ближайшее использование далеко — можно отложить */
+        unsigned dist = (unsigned)nearest_use(instr);
+        if (dist > 48 && outstanding >= 8)
+            return true;
+
+        /* 3. Если сильно увеличивает live-range — тоже откладываем */
+        int live = live_effect(instr);
+        if (live > 6 && outstanding >= 6)
+            return true;
+    }
+
+    /* --- 4. Ограничение outstanding SS (SFU) --- */
+    {
+        int outstanding_ss = ctx->ss_index - ctx->first_outstanding_ss_index;
+
+        if (outstanding_ss >= 12 && is_ss_producer(instr))
+            return true;
+    }
+
+    return false;
 }
 
 static struct ir3_sched_node *choose_instr_inc(struct ir3_sched_ctx *ctx,
