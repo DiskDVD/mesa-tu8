@@ -6441,46 +6441,6 @@ tu_save_pre_chain(struct tu_cmd_buffer *cmd)
 }
 
 VKAPI_ATTR void VKAPI_CALL
-
-
-
-static void
-tu_subpass_barrier(struct tu_cmd_buffer *cmd_buffer,
-                   const struct tu_subpass_barrier *barrier,
-                   bool external)
-{
-   /* Note: we don't know until the end of the subpass whether we'll use
-    * sysmem, so assume sysmem here to be safe.
-    */
-   struct tu_cache_state *cache =
-      external ? &cmd_buffer->state.cache : &cmd_buffer->state.renderpass_cache;
-   VkPipelineStageFlags2 src_stage_vk =
-      sanitize_src_stage(barrier->src_stage_mask);
-   VkPipelineStageFlags2 dst_stage_vk =
-      sanitize_dst_stage(barrier->dst_stage_mask);
-   BITMASK_ENUM(tu_cmd_access_mask) src_flags =
-      vk2tu_access(barrier->src_access_mask, barrier->src_access_mask2,
-                   src_stage_vk, false, false,
-                   cmd_buffer->device->vk.enabled_features.sparseResidencyAliased);
-   BITMASK_ENUM(tu_cmd_access_mask) dst_flags =
-      vk2tu_access(barrier->dst_access_mask, barrier->dst_access_mask2,
-                   dst_stage_vk, false, false,
-                   cmd_buffer->device->vk.enabled_features.sparseResidencyAliased);
-
-   if (barrier->incoherent_ccu_color)
-      src_flags |= TU_ACCESS_CCU_COLOR_INCOHERENT_WRITE;
-   if (barrier->incoherent_ccu_depth)
-      src_flags |= TU_ACCESS_CCU_DEPTH_INCOHERENT_WRITE;
-
-   tu_flush_for_access(cache, src_flags, dst_flags);
-
-   enum tu_stage src_stage = vk2tu_src_stage(cmd_buffer->device, src_stage_vk);
-   enum tu_stage dst_stage = vk2tu_dst_stage(cmd_buffer->device, dst_stage_vk);
-   tu_flush_for_stage(cache, src_stage, dst_stage);
-}
-
-template <chip CHIP>
-VKAPI_ATTR void VKAPI_CALL
 tu_CmdExecuteCommands(VkCommandBuffer commandBuffer,
                       uint32_t commandBufferCount,
                       const VkCommandBuffer *pCmdBuffers)
@@ -6489,13 +6449,6 @@ tu_CmdExecuteCommands(VkCommandBuffer commandBuffer,
    VkResult result;
 
    assert(commandBufferCount > 0);
-
-   /* A810: оптимизация для большого количества команд */
-   bool is_a8xx = cmd->device->physical_device->info->chip >= A8XX;
-   if (is_a8xx) {
-      /* Устанавливаем флаг для оптимизации батчинга */
-      cmd->state.use_large_batch = true;
-   }
 
    /* Emit any pending flushes. */
    if (cmd->state.pass) {
@@ -6734,6 +6687,42 @@ tu_CmdExecuteCommands(VkCommandBuffer commandBuffer,
    }
 }
 
+static void
+tu_subpass_barrier(struct tu_cmd_buffer *cmd_buffer,
+                   const struct tu_subpass_barrier *barrier,
+                   bool external)
+{
+   /* Note: we don't know until the end of the subpass whether we'll use
+    * sysmem, so assume sysmem here to be safe.
+    */
+   struct tu_cache_state *cache =
+      external ? &cmd_buffer->state.cache : &cmd_buffer->state.renderpass_cache;
+   VkPipelineStageFlags2 src_stage_vk =
+      sanitize_src_stage(barrier->src_stage_mask);
+   VkPipelineStageFlags2 dst_stage_vk =
+      sanitize_dst_stage(barrier->dst_stage_mask);
+   BITMASK_ENUM(tu_cmd_access_mask) src_flags =
+      vk2tu_access(barrier->src_access_mask, barrier->src_access_mask2,
+                   src_stage_vk, false, false,
+                   cmd_buffer->device->vk.enabled_features.sparseResidencyAliased);
+   BITMASK_ENUM(tu_cmd_access_mask) dst_flags =
+      vk2tu_access(barrier->dst_access_mask, barrier->dst_access_mask2,
+                   dst_stage_vk, false, false,
+                   cmd_buffer->device->vk.enabled_features.sparseResidencyAliased);
+
+   if (barrier->incoherent_ccu_color)
+      src_flags |= TU_ACCESS_CCU_COLOR_INCOHERENT_WRITE;
+   if (barrier->incoherent_ccu_depth)
+      src_flags |= TU_ACCESS_CCU_DEPTH_INCOHERENT_WRITE;
+
+   tu_flush_for_access(cache, src_flags, dst_flags);
+
+   enum tu_stage src_stage = vk2tu_src_stage(cmd_buffer->device, src_stage_vk);
+   enum tu_stage dst_stage = vk2tu_dst_stage(cmd_buffer->device, dst_stage_vk);
+   tu_flush_for_stage(cache, src_stage, dst_stage);
+}
+
+template <chip CHIP>
 static void
 tu_emit_subpass_begin_gmem(struct tu_cmd_buffer *cmd, struct tu_resolve_group *resolve_group)
 {
