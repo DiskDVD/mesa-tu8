@@ -6441,251 +6441,8 @@ tu_save_pre_chain(struct tu_cmd_buffer *cmd)
 }
 
 VKAPI_ATTR void VKAPI_CALL
-tu_CmdExecuteCommands(VkCommandBuffer commandBuffer,
-                      uint32_t commandBufferCount,
-                      const VkCommandBuffer *pCmdBuffers)
-{
-   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
-   VkResult result;
 
-   assert(commandBufferCount > 0);
 
-   /* Emit any pending flushes. */
-   if (cmd->state.pass) {
-      tu_clean_all_pending(&cmd->state.renderpass_cache);
-      TU_CALLX(cmd->device, tu_emit_cache_flush_renderpass)(cmd);
-   } else {
-      tu_clean_all_pending(&cmd->state.cache);
-      TU_CALLX(cmd->device, tu_emit_cache_flush)(cmd);
-   }
-
-   for (uint32_t i = 0; i < commandBufferCount; i++) {
-      VK_FROM_HANDLE(tu_cmd_buffer, secondary, pCmdBuffers[i]);
-
-      if (secondary->usage_flags &
-          VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT) {
-         assert(tu_cs_is_empty(&secondary->cs));
-
-         tu_lrz_flush_valid_at_secondary_rp_boundary(
-            cmd, secondary->state.lrz, &cmd->draw_cs);
-
-         result = tu_cs_add_entries(&cmd->draw_cs, &secondary->draw_cs);
-         if (result != VK_SUCCESS) {
-            vk_command_buffer_set_error(&cmd->vk, result);
-            break;
-         }
-
-         result = tu_cs_add_entries(&cmd->draw_epilogue_cs,
-               &secondary->draw_epilogue_cs);
-         if (result != VK_SUCCESS) {
-            vk_command_buffer_set_error(&cmd->vk, result);
-            break;
-         }
-
-         /* If LRZ was made invalid in secondary - we should disable
-          * LRZ retroactively for the whole renderpass.
-          */
-         if (!secondary->state.lrz.valid)
-            cmd->state.lrz.valid = false;
-         if (secondary->state.lrz.gpu_dir_set)
-            cmd->state.lrz.gpu_dir_set = true;
-         if (cmd->state.lrz.prev_direction == TU_LRZ_UNKNOWN &&
-             secondary->state.lrz.prev_direction != TU_LRZ_UNKNOWN)
-            cmd->state.lrz.prev_direction =
-               secondary->state.lrz.prev_direction;
-
-         cmd->state.lrz.color_written_with_z_test |=
-            secondary->state.lrz.color_written_with_z_test;
-
-         tu_clone_trace(cmd, &cmd->draw_cs, &cmd->rp_trace, &secondary->rp_trace);
-         tu_render_pass_state_merge(&cmd->state.rp, &secondary->state.rp);
-         util_dynarray_append_dynarray(&cmd->fdm_bin_patchpoints,
-                                       &secondary->fdm_bin_patchpoints);
-      } else {
-         struct tu_cs *cs = &cmd->cs;
-
-         /* If the secondary can be used multiple times, we have to set its
-          * patchpoints on the GPU. Set them here, and create a new
-          * patchpoint pointing to the CP_MEM_WRITE packet. Otherwise just
-          * copy them over adjusting the index.
-          */
-         bool simultaneous_use = secondary->usage_flags &
-             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
-
-         /* If this cmdbuf itself can be used multiple times in a submit then
-          * its patchpoint will also be updated on the GPU.
-          */
-         if (cmd->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)
-            tu_cs_set_writeable(cs, true);
-
-         util_dynarray_foreach (&secondary->vis_stream_patchpoints,
-                                struct tu_vis_stream_patchpoint,
-                                secondary_patchpoint) {
-            struct tu_vis_stream_patchpoint patchpoint =
-               *secondary_patchpoint;
-            patchpoint.render_pass_idx += cmd->state.tile_render_pass_count;
-
-            if (simultaneous_use) {
-               tu_cs_reserve_space(cs, 5);
-               tu_cs_emit_pkt7(cs, CP_MEM_WRITE, 4);
-               tu_cs_emit_qw(cs, patchpoint.iova);
-               patchpoint.iova = tu_cs_get_cur_iova(cs);
-               patchpoint.data = cs->cur;
-               tu_cs_emit_qw(cs, 0);
-            }
-
-            util_dynarray_append(&cmd->vis_stream_patchpoints,
-                                 patchpoint);
-         }
-
-         if (cmd->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)
-            tu_cs_set_writeable(cs, false);
-
-         if (simultaneous_use) {
-            tu_cs_emit_pkt7(cs, CP_WAIT_MEM_WRITES, 0);
-            tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
-
-            /* Make BV wait for updates on BR to land */
-            if (cmd->device->physical_device->info->chip >= 7) {
-               tu_cs_emit_pkt7(cs, CP_THREAD_CONTROL, 1);
-               tu_cs_emit(cs, CP_THREAD_CONTROL_0_THREAD(CP_SET_THREAD_BR) |
-                              CP_THREAD_CONTROL_0_SYNC_THREADS);
-            }
-         }
-
-         cmd->state.tile_render_pass_count +=
-            secondary->state.tile_render_pass_count;
-         cmd->vsc_size = MAX2(cmd->vsc_size, secondary->vsc_size);
-
-         switch (secondary->state.suspend_resume) {
-         case SR_NONE:
-            assert(tu_cs_is_empty(&secondary->draw_cs));
-            assert(tu_cs_is_empty(&secondary->draw_epilogue_cs));
-            tu_cs_add_entries(&cmd->cs, &secondary->cs);
-            tu_clone_trace(cmd, &cmd->cs, &cmd->trace, &secondary->trace);
-            break;
-
-         case SR_IN_PRE_CHAIN:
-            /* cmd may be empty, which means that the chain begins before cmd
-             * in which case we have to update its state.
-             */
-            if (cmd->state.suspend_resume == SR_NONE) {
-               cmd->state.suspend_resume = SR_IN_PRE_CHAIN;
-            }
-
-            /* The secondary is just a continuous suspend/resume chain so we
-             * just have to append it to the the command buffer.
-             */
-            assert(tu_cs_is_empty(&secondary->cs));
-            tu_append_pre_post_chain(cmd, secondary);
-            break;
-
-         case SR_AFTER_PRE_CHAIN:
-         case SR_IN_CHAIN:
-         case SR_IN_CHAIN_AFTER_PRE_CHAIN:
-            if (secondary->state.suspend_resume == SR_AFTER_PRE_CHAIN ||
-                secondary->state.suspend_resume == SR_IN_CHAIN_AFTER_PRE_CHAIN) {
-               tu_append_pre_chain(cmd, secondary);
-
-               /* We're about to render, so we need to end the command stream
-                * in case there were any extra commands generated by copying
-                * the trace.
-                */
-               tu_cs_end(&cmd->draw_cs);
-               tu_cs_end(&cmd->draw_epilogue_cs);
-
-               switch (cmd->state.suspend_resume) {
-               case SR_NONE:
-               case SR_IN_PRE_CHAIN:
-                  /* The renderpass chain ends in the secondary but isn't
-                   * started in the primary, so we have to move the state to
-                   * `pre_chain`.
-                   */
-                  tu_save_pre_chain(cmd);
-                  cmd->state.suspend_resume = SR_AFTER_PRE_CHAIN;
-                  break;
-               case SR_IN_CHAIN:
-               case SR_IN_CHAIN_AFTER_PRE_CHAIN: {
-                  /* The renderpass ends in the secondary and starts somewhere
-                   * earlier in this primary. Since the last render pass in
-                   * the chain is in the secondary, we are technically outside
-                   * of a render pass.  Fix that here by reusing the dynamic
-                   * render pass that was setup for the last suspended render
-                   * pass before the secondary.
-                   */
-                  tu_restore_suspended_pass(cmd, cmd);
-
-                  const struct VkOffset2D *fdm_offsets =
-                     cmd->pre_chain.fdm_offset ?
-                     cmd->pre_chain.fdm_offsets : NULL;
-                  TU_CALLX(cmd->device, tu_cmd_render)(cmd, fdm_offsets);
-                  if (cmd->state.suspend_resume == SR_IN_CHAIN)
-                     cmd->state.suspend_resume = SR_NONE;
-                  else
-                     cmd->state.suspend_resume = SR_AFTER_PRE_CHAIN;
-                  break;
-               }
-               case SR_AFTER_PRE_CHAIN:
-                  UNREACHABLE("resuming render pass is not preceded by suspending one");
-               }
-
-               tu_reset_render_pass(cmd);
-            }
-
-            tu_cs_add_entries(&cmd->cs, &secondary->cs);
-
-            if (secondary->state.suspend_resume == SR_IN_CHAIN_AFTER_PRE_CHAIN ||
-                secondary->state.suspend_resume == SR_IN_CHAIN) {
-               /* The secondary ends in a "post-chain" (the opposite of a
-                * pre-chain) that we need to copy into the current command
-                * buffer.
-                */
-               tu_append_post_chain(cmd, secondary);
-               cmd->state.suspended_pass = secondary->state.suspended_pass;
-
-               switch (cmd->state.suspend_resume) {
-               case SR_NONE:
-                  cmd->state.suspend_resume = SR_IN_CHAIN;
-                  break;
-               case SR_AFTER_PRE_CHAIN:
-                  cmd->state.suspend_resume = SR_IN_CHAIN_AFTER_PRE_CHAIN;
-                  break;
-               default:
-                  UNREACHABLE("suspending render pass is followed by a not resuming one");
-               }
-            }
-         }
-
-         cmd->state.total_renderpasses += secondary->state.total_renderpasses;
-         cmd->state.total_dispatches += secondary->state.total_dispatches;
-      }
-
-      cmd->state.index_size = secondary->state.index_size; /* for restart index update */
-   }
-   cmd->state.dirty = ~0u; /* TODO: set dirty only what needs to be */
-
-   if (!cmd->state.lrz.gpu_dir_tracking && cmd->state.pass) {
-      /* After a secondary command buffer is executed, LRZ is not valid
-       * until it is cleared again.
-       */
-      cmd->state.lrz.valid = false;
-   }
-
-   /* After executing secondary command buffers, there may have been arbitrary
-    * flushes executed, so when we encounter a pipeline barrier with a
-    * srcMask, we have to assume that we need to invalidate. Therefore we need
-    * to re-initialize the cache with all pending invalidate bits set.
-    */
-   if (cmd->state.pass) {
-      struct tu_cache_state *cache = &cmd->state.renderpass_cache;
-      BITMASK_ENUM(tu_cmd_flush_bits) retained_pending_flush_bits =
-         cache->pending_flush_bits & TU_CMD_FLAG_BLIT_CACHE_CLEAN;
-      tu_cache_init(cache);
-      cache->pending_flush_bits |= retained_pending_flush_bits;
-   } else {
-      tu_cache_init(&cmd->state.cache);
-   }
-}
 
 static void
 tu_subpass_barrier(struct tu_cmd_buffer *cmd_buffer,
@@ -6723,6 +6480,398 @@ tu_subpass_barrier(struct tu_cmd_buffer *cmd_buffer,
 }
 
 template <chip CHIP>
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdExecuteCommands(VkCommandBuffer commandBuffer,
+                      uint32_t commandBufferCount,
+                      const VkCommandBuffer *pCmdBuffers)
+{
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VkResult result;
+
+   assert(commandBufferCount > 0);
+
+   /* A810: увеличенный батч для производительности */
+   bool is_a8xx = cmd->device->physical_device->info->chip >= A8XX;
+
+   /* Emit any pending flushes. */
+   if (cmd->state.pass) {
+      tu_clean_all_pending(&cmd->state.renderpass_cache);
+      TU_CALLX(cmd->device, tu_emit_cache_flush_renderpass)(cmd);
+   } else {
+      tu_clean_all_pending(&cmd->state.cache);
+      TU_CALLX(cmd->device, tu_emit_cache_flush)(cmd);
+   }
+
+   /* A810: батчинг для большого количества команд */
+   if (is_a8xx && commandBufferCount > 32) {
+      /* Разбиваем на батчи по 32 команды */
+      for (uint32_t b = 0; b < commandBufferCount; b += 32) {
+         uint32_t batch_end = MIN2(b + 32, commandBufferCount);
+         
+         /* Флаши перед каждым батчем */
+         if (cmd->state.pass) {
+            tu_clean_all_pending(&cmd->state.renderpass_cache);
+            TU_CALLX(cmd->device, tu_emit_cache_flush_renderpass)(cmd);
+         } else {
+            tu_clean_all_pending(&cmd->state.cache);
+            TU_CALLX(cmd->device, tu_emit_cache_flush)(cmd);
+         }
+
+         /* Обрабатываем батч */
+         for (uint32_t i = b; i < batch_end; i++) {
+            VK_FROM_HANDLE(tu_cmd_buffer, secondary, pCmdBuffers[i]);
+
+            if (secondary->usage_flags &
+                VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT) {
+               assert(tu_cs_is_empty(&secondary->cs));
+
+               tu_lrz_flush_valid_at_secondary_rp_boundary(
+                  cmd, secondary->state.lrz, &cmd->draw_cs);
+
+               result = tu_cs_add_entries(&cmd->draw_cs, &secondary->draw_cs);
+               if (result != VK_SUCCESS) {
+                  vk_command_buffer_set_error(&cmd->vk, result);
+                  goto out;
+               }
+
+               result = tu_cs_add_entries(&cmd->draw_epilogue_cs,
+                     &secondary->draw_epilogue_cs);
+               if (result != VK_SUCCESS) {
+                  vk_command_buffer_set_error(&cmd->vk, result);
+                  goto out;
+               }
+
+               if (!secondary->state.lrz.valid)
+                  cmd->state.lrz.valid = false;
+               if (secondary->state.lrz.gpu_dir_set)
+                  cmd->state.lrz.gpu_dir_set = true;
+               if (cmd->state.lrz.prev_direction == TU_LRZ_UNKNOWN &&
+                   secondary->state.lrz.prev_direction != TU_LRZ_UNKNOWN)
+                  cmd->state.lrz.prev_direction =
+                     secondary->state.lrz.prev_direction;
+
+               cmd->state.lrz.color_written_with_z_test |=
+                  secondary->state.lrz.color_written_with_z_test;
+
+               tu_clone_trace(cmd, &cmd->draw_cs, &cmd->rp_trace, &secondary->rp_trace);
+               tu_render_pass_state_merge(&cmd->state.rp, &secondary->state.rp);
+               util_dynarray_append_dynarray(&cmd->fdm_bin_patchpoints,
+                                             &secondary->fdm_bin_patchpoints);
+            } else {
+               struct tu_cs *cs = &cmd->cs;
+
+               bool simultaneous_use = secondary->usage_flags &
+                   VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+
+               if (cmd->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)
+                  tu_cs_set_writeable(cs, true);
+
+               util_dynarray_foreach (&secondary->vis_stream_patchpoints,
+                                      struct tu_vis_stream_patchpoint,
+                                      secondary_patchpoint) {
+                  struct tu_vis_stream_patchpoint patchpoint =
+                     *secondary_patchpoint;
+                  patchpoint.render_pass_idx += cmd->state.tile_render_pass_count;
+
+                  if (simultaneous_use) {
+                     tu_cs_reserve_space(cs, 5);
+                     tu_cs_emit_pkt7(cs, CP_MEM_WRITE, 4);
+                     tu_cs_emit_qw(cs, patchpoint.iova);
+                     patchpoint.iova = tu_cs_get_cur_iova(cs);
+                     patchpoint.data = cs->cur;
+                     tu_cs_emit_qw(cs, 0);
+                  }
+
+                  util_dynarray_append(&cmd->vis_stream_patchpoints,
+                                       patchpoint);
+               }
+
+               if (cmd->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)
+                  tu_cs_set_writeable(cs, false);
+
+               if (simultaneous_use) {
+                  tu_cs_emit_pkt7(cs, CP_WAIT_MEM_WRITES, 0);
+                  tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
+
+                  if (cmd->device->physical_device->info->chip >= 7) {
+                     tu_cs_emit_pkt7(cs, CP_THREAD_CONTROL, 1);
+                     tu_cs_emit(cs, CP_THREAD_CONTROL_0_THREAD(CP_SET_THREAD_BR) |
+                                    CP_THREAD_CONTROL_0_SYNC_THREADS);
+                  }
+               }
+
+               cmd->state.tile_render_pass_count +=
+                  secondary->state.tile_render_pass_count;
+               cmd->vsc_size = MAX2(cmd->vsc_size, secondary->vsc_size);
+
+               switch (secondary->state.suspend_resume) {
+               case SR_NONE:
+                  assert(tu_cs_is_empty(&secondary->draw_cs));
+                  assert(tu_cs_is_empty(&secondary->draw_epilogue_cs));
+                  tu_cs_add_entries(&cmd->cs, &secondary->cs);
+                  tu_clone_trace(cmd, &cmd->cs, &cmd->trace, &secondary->trace);
+                  break;
+
+               case SR_IN_PRE_CHAIN:
+                  if (cmd->state.suspend_resume == SR_NONE) {
+                     cmd->state.suspend_resume = SR_IN_PRE_CHAIN;
+                  }
+
+                  assert(tu_cs_is_empty(&secondary->cs));
+                  tu_append_pre_post_chain(cmd, secondary);
+                  break;
+
+               case SR_AFTER_PRE_CHAIN:
+               case SR_IN_CHAIN:
+               case SR_IN_CHAIN_AFTER_PRE_CHAIN:
+                  if (secondary->state.suspend_resume == SR_AFTER_PRE_CHAIN ||
+                      secondary->state.suspend_resume == SR_IN_CHAIN_AFTER_PRE_CHAIN) {
+                     tu_append_pre_chain(cmd, secondary);
+
+                     tu_cs_end(&cmd->draw_cs);
+                     tu_cs_end(&cmd->draw_epilogue_cs);
+
+                     switch (cmd->state.suspend_resume) {
+                     case SR_NONE:
+                     case SR_IN_PRE_CHAIN:
+                        tu_save_pre_chain(cmd);
+                        cmd->state.suspend_resume = SR_AFTER_PRE_CHAIN;
+                        break;
+                     case SR_IN_CHAIN:
+                     case SR_IN_CHAIN_AFTER_PRE_CHAIN: {
+                        tu_restore_suspended_pass(cmd, cmd);
+
+                        const struct VkOffset2D *fdm_offsets =
+                           cmd->pre_chain.fdm_offset ?
+                           cmd->pre_chain.fdm_offsets : NULL;
+                        TU_CALLX(cmd->device, tu_cmd_render)(cmd, fdm_offsets);
+                        if (cmd->state.suspend_resume == SR_IN_CHAIN)
+                           cmd->state.suspend_resume = SR_NONE;
+                        else
+                           cmd->state.suspend_resume = SR_AFTER_PRE_CHAIN;
+                        break;
+                     }
+                     case SR_AFTER_PRE_CHAIN:
+                        UNREACHABLE("resuming render pass is not preceded by suspending one");
+                     }
+
+                     tu_reset_render_pass(cmd);
+                  }
+
+                  tu_cs_add_entries(&cmd->cs, &secondary->cs);
+
+                  if (secondary->state.suspend_resume == SR_IN_CHAIN_AFTER_PRE_CHAIN ||
+                      secondary->state.suspend_resume == SR_IN_CHAIN) {
+                     tu_append_post_chain(cmd, secondary);
+                     cmd->state.suspended_pass = secondary->state.suspended_pass;
+
+                     switch (cmd->state.suspend_resume) {
+                     case SR_NONE:
+                        cmd->state.suspend_resume = SR_IN_CHAIN;
+                        break;
+                     case SR_AFTER_PRE_CHAIN:
+                        cmd->state.suspend_resume = SR_IN_CHAIN_AFTER_PRE_CHAIN;
+                        break;
+                     default:
+                        UNREACHABLE("suspending render pass is followed by a not resuming one");
+                     }
+                  }
+               }
+
+               cmd->state.total_renderpasses += secondary->state.total_renderpasses;
+               cmd->state.total_dispatches += secondary->state.total_dispatches;
+            }
+
+            cmd->state.index_size = secondary->state.index_size;
+         }
+      }
+   } else {
+      /* Оригинальная обработка для малого количества команд */
+      for (uint32_t i = 0; i < commandBufferCount; i++) {
+         VK_FROM_HANDLE(tu_cmd_buffer, secondary, pCmdBuffers[i]);
+
+         if (secondary->usage_flags &
+             VK_COMMAND_BUFFER_USAGE_RENDER_PASS_CONTINUE_BIT) {
+            assert(tu_cs_is_empty(&secondary->cs));
+
+            tu_lrz_flush_valid_at_secondary_rp_boundary(
+               cmd, secondary->state.lrz, &cmd->draw_cs);
+
+            result = tu_cs_add_entries(&cmd->draw_cs, &secondary->draw_cs);
+            if (result != VK_SUCCESS) {
+               vk_command_buffer_set_error(&cmd->vk, result);
+               goto out;
+            }
+
+            result = tu_cs_add_entries(&cmd->draw_epilogue_cs,
+                  &secondary->draw_epilogue_cs);
+            if (result != VK_SUCCESS) {
+               vk_command_buffer_set_error(&cmd->vk, result);
+               goto out;
+            }
+
+            if (!secondary->state.lrz.valid)
+               cmd->state.lrz.valid = false;
+            if (secondary->state.lrz.gpu_dir_set)
+               cmd->state.lrz.gpu_dir_set = true;
+            if (cmd->state.lrz.prev_direction == TU_LRZ_UNKNOWN &&
+                secondary->state.lrz.prev_direction != TU_LRZ_UNKNOWN)
+               cmd->state.lrz.prev_direction =
+                  secondary->state.lrz.prev_direction;
+
+            cmd->state.lrz.color_written_with_z_test |=
+               secondary->state.lrz.color_written_with_z_test;
+
+            tu_clone_trace(cmd, &cmd->draw_cs, &cmd->rp_trace, &secondary->rp_trace);
+            tu_render_pass_state_merge(&cmd->state.rp, &secondary->state.rp);
+            util_dynarray_append_dynarray(&cmd->fdm_bin_patchpoints,
+                                          &secondary->fdm_bin_patchpoints);
+         } else {
+            struct tu_cs *cs = &cmd->cs;
+
+            bool simultaneous_use = secondary->usage_flags &
+                VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
+
+            if (cmd->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)
+               tu_cs_set_writeable(cs, true);
+
+            util_dynarray_foreach (&secondary->vis_stream_patchpoints,
+                                   struct tu_vis_stream_patchpoint,
+                                   secondary_patchpoint) {
+               struct tu_vis_stream_patchpoint patchpoint =
+                  *secondary_patchpoint;
+               patchpoint.render_pass_idx += cmd->state.tile_render_pass_count;
+
+               if (simultaneous_use) {
+                  tu_cs_reserve_space(cs, 5);
+                  tu_cs_emit_pkt7(cs, CP_MEM_WRITE, 4);
+                  tu_cs_emit_qw(cs, patchpoint.iova);
+                  patchpoint.iova = tu_cs_get_cur_iova(cs);
+                  patchpoint.data = cs->cur;
+                  tu_cs_emit_qw(cs, 0);
+               }
+
+               util_dynarray_append(&cmd->vis_stream_patchpoints,
+                                    patchpoint);
+            }
+
+            if (cmd->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)
+               tu_cs_set_writeable(cs, false);
+
+            if (simultaneous_use) {
+               tu_cs_emit_pkt7(cs, CP_WAIT_MEM_WRITES, 0);
+               tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
+
+               if (cmd->device->physical_device->info->chip >= 7) {
+                  tu_cs_emit_pkt7(cs, CP_THREAD_CONTROL, 1);
+                  tu_cs_emit(cs, CP_THREAD_CONTROL_0_THREAD(CP_SET_THREAD_BR) |
+                                 CP_THREAD_CONTROL_0_SYNC_THREADS);
+               }
+            }
+
+            cmd->state.tile_render_pass_count +=
+               secondary->state.tile_render_pass_count;
+            cmd->vsc_size = MAX2(cmd->vsc_size, secondary->vsc_size);
+
+            switch (secondary->state.suspend_resume) {
+            case SR_NONE:
+               assert(tu_cs_is_empty(&secondary->draw_cs));
+               assert(tu_cs_is_empty(&secondary->draw_epilogue_cs));
+               tu_cs_add_entries(&cmd->cs, &secondary->cs);
+               tu_clone_trace(cmd, &cmd->cs, &cmd->trace, &secondary->trace);
+               break;
+
+            case SR_IN_PRE_CHAIN:
+               if (cmd->state.suspend_resume == SR_NONE) {
+                  cmd->state.suspend_resume = SR_IN_PRE_CHAIN;
+               }
+
+               assert(tu_cs_is_empty(&secondary->cs));
+               tu_append_pre_post_chain(cmd, secondary);
+               break;
+
+            case SR_AFTER_PRE_CHAIN:
+            case SR_IN_CHAIN:
+            case SR_IN_CHAIN_AFTER_PRE_CHAIN:
+               if (secondary->state.suspend_resume == SR_AFTER_PRE_CHAIN ||
+                   secondary->state.suspend_resume == SR_IN_CHAIN_AFTER_PRE_CHAIN) {
+                  tu_append_pre_chain(cmd, secondary);
+
+                  tu_cs_end(&cmd->draw_cs);
+                  tu_cs_end(&cmd->draw_epilogue_cs);
+
+                  switch (cmd->state.suspend_resume) {
+                  case SR_NONE:
+                  case SR_IN_PRE_CHAIN:
+                     tu_save_pre_chain(cmd);
+                     cmd->state.suspend_resume = SR_AFTER_PRE_CHAIN;
+                     break;
+                  case SR_IN_CHAIN:
+                  case SR_IN_CHAIN_AFTER_PRE_CHAIN: {
+                     tu_restore_suspended_pass(cmd, cmd);
+
+                     const struct VkOffset2D *fdm_offsets =
+                        cmd->pre_chain.fdm_offset ?
+                        cmd->pre_chain.fdm_offsets : NULL;
+                     TU_CALLX(cmd->device, tu_cmd_render)(cmd, fdm_offsets);
+                     if (cmd->state.suspend_resume == SR_IN_CHAIN)
+                        cmd->state.suspend_resume = SR_NONE;
+                     else
+                        cmd->state.suspend_resume = SR_AFTER_PRE_CHAIN;
+                     break;
+                  }
+                  case SR_AFTER_PRE_CHAIN:
+                     UNREACHABLE("resuming render pass is not preceded by suspending one");
+                  }
+
+                  tu_reset_render_pass(cmd);
+               }
+
+               tu_cs_add_entries(&cmd->cs, &secondary->cs);
+
+               if (secondary->state.suspend_resume == SR_IN_CHAIN_AFTER_PRE_CHAIN ||
+                   secondary->state.suspend_resume == SR_IN_CHAIN) {
+                  tu_append_post_chain(cmd, secondary);
+                  cmd->state.suspended_pass = secondary->state.suspended_pass;
+
+                  switch (cmd->state.suspend_resume) {
+                  case SR_NONE:
+                     cmd->state.suspend_resume = SR_IN_CHAIN;
+                     break;
+                  case SR_AFTER_PRE_CHAIN:
+                     cmd->state.suspend_resume = SR_IN_CHAIN_AFTER_PRE_CHAIN;
+                     break;
+                  default:
+                     UNREACHABLE("suspending render pass is followed by a not resuming one");
+                  }
+               }
+            }
+
+            cmd->state.total_renderpasses += secondary->state.total_renderpasses;
+            cmd->state.total_dispatches += secondary->state.total_dispatches;
+         }
+
+         cmd->state.index_size = secondary->state.index_size;
+      }
+   }
+
+out:
+   cmd->state.dirty = ~0u;
+
+   if (!cmd->state.lrz.gpu_dir_tracking && cmd->state.pass) {
+      cmd->state.lrz.valid = false;
+   }
+
+   if (cmd->state.pass) {
+      struct tu_cache_state *cache = &cmd->state.renderpass_cache;
+      BITMASK_ENUM(tu_cmd_flush_bits) retained_pending_flush_bits =
+         cache->pending_flush_bits & TU_CMD_FLAG_BLIT_CACHE_CLEAN;
+      tu_cache_init(cache);
+      cache->pending_flush_bits |= retained_pending_flush_bits;
+   } else {
+      tu_cache_init(&cmd->state.cache);
+   }
+}
 static void
 tu_emit_subpass_begin_gmem(struct tu_cmd_buffer *cmd, struct tu_resolve_group *resolve_group)
 {
