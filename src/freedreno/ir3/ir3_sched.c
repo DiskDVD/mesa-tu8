@@ -740,12 +740,11 @@ choose_instr_dec(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes,
 
       int live = live_effect(n->instr);
       if (live > 0)
-         continue;   // dec-ветка выбирает только freeing или neutral
+         continue;
 
       if (!check_instr(ctx, notes, n->instr))
          continue;
 
-      /* мягкий штраф collect-групп */
       if (n->collect)
          live += 1;
 
@@ -753,24 +752,11 @@ choose_instr_dec(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes,
 
       enum choose_instr_dec_rank rank;
       if (live < 0) {
-         if (d == 0)
-            rank = DEC_FREED_READY;
-         else
-            rank = DEC_FREED;
+         rank = (d == 0) ? DEC_FREED_READY : DEC_FREED;
       } else {
-         if (d == 0)
-            rank = DEC_NEUTRAL_READY;
-         else
-            rank = DEC_NEUTRAL;
+         rank = (d == 0) ? DEC_NEUTRAL_READY : DEC_NEUTRAL;
       }
 
-      /* Улучшенное ранжирование:
-       * 1) freeing > neutral
-       * 2) READY > not ready
-       * 3) меньший live лучше
-       * 4) меньший nearest_use лучше
-       * 5) max_delay — последний критерий
-       */
       if (!chosen ||
           rank > chosen_rank ||
           (rank == chosen_rank &&
@@ -794,11 +780,7 @@ choose_instr_dec(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes,
 
    return choose_instr_inc(ctx, notes, defer, true);
 }
-
-/**
- * When we can't choose an instruction that reduces register pressure or
- * is neutral, we end up here to try and pick the least bad option.
- */
+static struct ir3_sched_node *
 static struct ir3_sched_node *
 choose_instr_inc(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes,
                  bool defer, bool avoid_output)
@@ -806,15 +788,9 @@ choose_instr_inc(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes,
    const char *mode = defer ? "-d" : "";
    struct ir3_sched_node *chosen = NULL;
    enum choose_instr_inc_rank chosen_rank = INC_DISTANCE;
-
-   /*
-    * From hear on out, we are picking something that increases
-    * register pressure.  So try to pick something which will
-    * be consumed soon:
-    */
    unsigned chosen_distance = 0;
+   int chosen_live = 0;
 
-   /* Pick the max delay of the remaining ready set. */
    foreach_sched_node (n, &ctx->dag->heads) {
       if (avoid_output && n->output)
          continue;
@@ -827,13 +803,35 @@ choose_instr_inc(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes,
 
       unsigned d = node_delay(ctx, n);
       int live = live_effect(n->instr);
-      if (n->collect) live += 1;
 
-      enum choose_instr_inc_rank {
-   INC_DISTANCE,
-   INC_DISTANCE_READY,
-};
+      if (n->collect)
+         live += 1;
 
+      enum choose_instr_inc_rank rank =
+         (d == 0) ? INC_DISTANCE_READY : INC_DISTANCE;
+
+      unsigned distance = nearest_use(n->instr);
+
+      if (!chosen ||
+          rank > chosen_rank ||
+          (rank == chosen_rank &&
+           (live < chosen_live ||
+            (live == chosen_live && distance < chosen_distance)))) {
+
+         chosen = n;
+         chosen_rank = rank;
+         chosen_live = live;
+         chosen_distance = distance;
+      }
+   }
+
+   if (chosen) {
+      di(chosen->instr, "inc%s: chose (%s)", mode, inc_rank_name(chosen_rank));
+      return chosen;
+   }
+
+   return NULL;
+}
 static const char *
 inc_rank_name(enum choose_instr_inc_rank rank)
 {
