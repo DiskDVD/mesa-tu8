@@ -1783,7 +1783,9 @@ tu_physical_device_init(struct tu_physical_device *device,
    mesa_bytes_to_hex(buf, device->cache_uuid, VK_UUID_SIZE);
    
    /* A810: используем стандартный disk_cache */
-   device->vk.disk_cache = disk_cache_create(device->name, buf, 0);
+   device->vk.disk_cache = disk_cache_create(device->name, buf,
+                        DISK_CACHE_SUCCESS |
+                        DISK_CACHE_WRITE_THROUGH);
 
    device->vk.pipeline_cache_import_ops = cache_import_ops;
 
