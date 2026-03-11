@@ -161,6 +161,9 @@ static void sched_node_init(struct ir3_sched_ctx *ctx,
 static void sched_node_add_dep(struct ir3_sched_ctx *ctx,
                                struct ir3_instruction *instr,
                                struct ir3_instruction *src, int i);
+/* Prototypes for functions used before definition */
+static int nearest_use(struct ir3_instruction *instr);
+static int live_effect(struct ir3_instruction *instr);
 
 static bool
 is_scheduled(struct ir3_instruction *instr)
