@@ -203,8 +203,12 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
       compiler->max_const_geom = 512;
       compiler->max_const_safe = 100;
 
-      /* A810: Увеличиваем размер константной памяти для compute-шейдеров до 1024 */
-      compiler->max_const_compute = (compiler->gen >= 7) ? 1024 : 256;  /* A810: было 512, теперь 1024 */
+      /* A810: Увеличиваем размер константной памяти для compute-шейдеров */
+      if (compiler->gen >= 7) {
+         compiler->max_const_compute = 1024;  /* A810: было 512, теперь 1024 */
+      } else {
+         compiler->max_const_compute = 256;
+      }
 
       if (dev_info->props.is_a702) {
          /* No GS/tess, 128 per stage otherwise: */
@@ -323,7 +327,6 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
       compiler->nir_options.lower_device_index_to_zero = true;
       compiler->nir_options.instance_id_includes_base_index = true;
 
-      /* A810: Включаем поддержку всех dot-инструкций */
       if (dev_info->props.has_dp2acc || dev_info->props.has_dp4acc) {
          compiler->nir_options.has_udot_4x8 =
             compiler->nir_options.has_udot_4x8_sat = true;
@@ -335,15 +338,6 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
          compiler->nir_options.has_sdot_4x8 =
             compiler->nir_options.has_sdot_4x8_sat = true;
       }
-
-      /* A810: Добавляем поддержку 8-битных dot-инструкций (если доступно) */
-      if (dev_info->props.has_dp8acc) {  /* A810: новое условие */
-         compiler->nir_options.has_udot_8x8 =
-            compiler->nir_options.has_udot_8x8_sat = true;
-         compiler->nir_options.has_sdot_8x8 =
-            compiler->nir_options.has_sdot_8x8_sat = true;
-      }
-
    } else if (compiler->gen >= 3 && compiler->gen <= 5) {
       compiler->nir_options.vertex_id_zero_based = true;
    } else if (compiler->gen <= 2) {
