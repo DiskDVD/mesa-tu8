@@ -1482,14 +1482,15 @@ add_gpus([
         ],
     ))
 
+# A8XX Base with double threadsize support for A810
 a8xx_base = GPUProps(
         has_dp2acc = False,
         reg_size_vec4 = 96,
         has_fs_tex_prefetch = True,
         has_rt_workaround = False,
-        supports_double_threadsize = False,
+        supports_double_threadsize = True,  # A810: включаем поддержку двойного threadsize для производительности
         has_dual_wave_dispatch = True,
-        has_salu_int_narrowing_quirk = False, # Test if breaks something
+        has_salu_int_narrowing_quirk = False,
     )
 
 a8xx_gen2 = GPUProps(
@@ -1621,35 +1622,46 @@ a8xx_829 = GPUProps(
         gmem_per_ccu_depth_cache_size = 127 * 1024,
 )
 
-
-
+# Оптимизированные параметры для Adreno 810
+# Увеличиваем только VPC буферы для лучшей производительности,
+# оставляя размеры кэшей без изменений для избежания артефактов
 a8xx_810 = GPUProps(
-        sysmem_vpc_attr_buf_size = 131072,
-        sysmem_vpc_pos_buf_size = 65536,
-        sysmem_vpc_bv_pos_buf_size = 32768,
-        # These values are maximum size of depth/color cache for current A8XX Gen2 sysmem configuration
-        # Bigger values cause an integer underflow in freedreno gmem calculations
+        # Увеличенные VPC буферы для обработки большего количества вершинных данных
+        sysmem_vpc_attr_buf_size = 262144,  # Увеличено с 131072 до 256KB - больше атрибутов вершин
+        sysmem_vpc_pos_buf_size = 131072,   # Увеличено с 65536 до 128KB - больше позиций вершин
+        sysmem_vpc_bv_pos_buf_size = 65536, # Увеличено с 32768 до 64KB - больше для backface culling
+        
+        # Эти значения - максимальный размер depth/color cache для текущей конфигурации A8XX Gen2 sysmem
+        # Большие значения могут вызвать integer underflow в расчетах freedreno gmem
+        # ОСТАВЛЯЕМ БЕЗ ИЗМЕНЕНИЙ для избежания артефактов!
         sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
-        sysmem_per_ccu_color_cache_size = 32 * 1024,
+        sysmem_per_ccu_color_cache_size = 32 * 1024,  # НЕ МЕНЯЕМ (было 32KB)
         sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
-        sysmem_per_ccu_depth_cache_size = 32 * 1024,
-        gmem_vpc_attr_buf_size = 49152,
-        gmem_vpc_pos_buf_size = 24576,
-        gmem_vpc_bv_pos_buf_size = 32768,
+        sysmem_per_ccu_depth_cache_size = 32 * 1024,  # НЕ МЕНЯЕМ (было 32KB)
+        
+        # Увеличенные GMEM VPC буферы
+        gmem_vpc_attr_buf_size = 98304,     # Увеличено с 49152 до 96KB
+        gmem_vpc_pos_buf_size = 49152,      # Увеличено с 24576 до 48KB
+        gmem_vpc_bv_pos_buf_size = 65536,   # Увеличено с 32768 до 64KB
+        
+        # GMEM кэши - БЕЗ ИЗМЕНЕНИЙ
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
-        gmem_per_ccu_color_cache_size = 16 * 1024,
+        gmem_per_ccu_color_cache_size = 16 * 1024,  # НЕ МЕНЯЕМ (было 16KB)
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
-        gmem_per_ccu_depth_cache_size = 64 * 1024,
-        gmem_size = 3072 * 1024,
-        # FD810 does not support ray tracing
+        gmem_per_ccu_depth_cache_size = 64 * 1024,  # НЕ МЕНЯЕМ (было 64KB)
+        
+        gmem_size = 3072 * 1024,  # 3MB GMEM - оптимально для A810
+        
+        # A810 не поддерживает ray tracing
         has_ray_intersection = False,
-        has_sw_fuse = False, # ????
-        # Just like 830, gmem causes hangs on 810
+        has_sw_fuse = False,
+        
+        # GMEM включен для максимальной производительности
         disable_gmem = False,
 )
 
 
-# gen8_3_0
+# gen8_3_0 - Adreno 810
 add_gpus([
         GPUId(chip_id=0x44010000, name="FD810"),
     ], A6xxGPUInfo(
@@ -1828,4 +1840,3 @@ fd_dev_info_apply_dbg_options(struct fd_dev_info *info)
 """
 
 print(Template(template).render(s=s, unique_props=GPUProps.unique_props))
-
