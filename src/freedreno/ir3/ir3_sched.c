@@ -89,8 +89,12 @@ static void sched_node_init(struct ir3_sched_ctx *ctx,
 static void sched_node_add_dep(struct ir3_sched_ctx *ctx,
                                struct ir3_instruction *instr,
                                struct ir3_instruction *src, int i);
+
+/* Объявления функций */
 static int nearest_use(struct ir3_instruction *instr);
 static int live_effect(struct ir3_instruction *instr);
+static unsigned node_delay(struct ir3_sched_ctx *ctx, struct ir3_sched_node *n);
+static void dump_state(struct ir3_sched_ctx *ctx);
 
 static bool
 is_scheduled(struct ir3_instruction *instr)
@@ -263,13 +267,89 @@ schedule(struct ir3_sched_ctx *ctx, struct ir3_instruction *instr)
    } else if (ctx->sy_delay > 0) {
       ctx->sy_delay -= MIN2(cycles, ctx->sy_delay);
    }
-
 }
 
 struct ir3_sched_notes {
    bool blocked_kill;
    bool addr0_conflict, addr1_conflict;
 };
+
+/* Определение базовых функций до их использования */
+static unsigned
+node_delay(struct ir3_sched_ctx *ctx, struct ir3_sched_node *n)
+{
+   return MAX2(n->earliest_ip, ctx->ip) - ctx->ip;
+}
+
+static int
+nearest_use(struct ir3_instruction *instr)
+{
+    unsigned nearest = ~0;
+    foreach_ssa_use (use, instr)
+        if (!is_scheduled(use))
+            nearest = MIN2(nearest, use->ip);
+
+    if (is_input(instr))
+        nearest = nearest / 3;
+
+    if (is_tex(instr))
+        nearest = nearest * 2 / 3;
+
+    return nearest;
+}
+
+static unsigned
+new_regs(struct ir3_instruction *instr)
+{
+   unsigned regs = 0;
+
+   foreach_dst (dst, instr) {
+      if (!is_dest_gpr(dst))
+         continue;
+      regs += reg_elems(dst);
+   }
+
+   return regs;
+}
+
+static bool
+is_only_nonscheduled_use(struct ir3_instruction *instr,
+                         struct ir3_instruction *use)
+{
+   foreach_ssa_use (other_use, instr) {
+      if (other_use != use && !is_scheduled(other_use))
+         return false;
+   }
+
+   return true;
+}
+
+static int
+live_effect(struct ir3_instruction *instr)
+{
+    struct ir3_sched_node *n = instr->data;
+    int new_live =
+        (n->partially_live || !instr->uses || instr->uses->entries == 0)
+            ? 0
+            : new_regs(instr);
+    int freed_live = 0;
+
+    if (n->collect)
+        new_live = new_live * n->collect->srcs_count / 2;
+
+    foreach_ssa_src_n (src, n, instr) {
+        if (__is_false_dep(instr, n))
+            continue;
+
+        if (instr->block != src->block)
+            continue;
+
+        if (is_only_nonscheduled_use(src, instr))
+            freed_live += new_regs(src);
+    }
+
+    return new_live - freed_live;
+}
 
 static bool
 should_skip(struct ir3_sched_ctx *ctx, struct ir3_instruction *instr)
@@ -385,76 +465,6 @@ check_instr(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes,
    return true;
 }
 
-static int
-nearest_use(struct ir3_instruction *instr)
-{
-    unsigned nearest = ~0;
-    foreach_ssa_use (use, instr)
-        if (!is_scheduled(use))
-            nearest = MIN2(nearest, use->ip);
-
-    if (is_input(instr))
-        nearest = nearest / 3;
-
-    if (is_tex(instr))
-        nearest = nearest * 2 / 3;
-
-    return nearest;
-}
-
-static bool
-is_only_nonscheduled_use(struct ir3_instruction *instr,
-                         struct ir3_instruction *use)
-{
-   foreach_ssa_use (other_use, instr) {
-      if (other_use != use && !is_scheduled(other_use))
-         return false;
-   }
-
-   return true;
-}
-
-static unsigned
-new_regs(struct ir3_instruction *instr)
-{
-   unsigned regs = 0;
-
-   foreach_dst (dst, instr) {
-      if (!is_dest_gpr(dst))
-         continue;
-      regs += reg_elems(dst);
-   }
-
-   return regs;
-}
-
-static int
-live_effect(struct ir3_instruction *instr)
-{
-    struct ir3_sched_node *n = instr->data;
-    int new_live =
-        (n->partially_live || !instr->uses || instr->uses->entries == 0)
-            ? 0
-            : new_regs(instr);
-    int freed_live = 0;
-
-    if (n->collect)
-        new_live = new_live * n->collect->srcs_count / 2;
-
-    foreach_ssa_src_n (src, n, instr) {
-        if (__is_false_dep(instr, n))
-            continue;
-
-        if (instr->block != src->block)
-            continue;
-
-        if (is_only_nonscheduled_use(src, instr))
-            freed_live += new_regs(src);
-    }
-
-    return new_live - freed_live;
-}
-
 static bool
 should_defer(struct ir3_sched_ctx *ctx, struct ir3_instruction *instr)
 {
@@ -557,12 +567,6 @@ dec_rank_name(enum choose_instr_dec_rank rank)
    default:
       return NULL;
    }
-}
-
-static unsigned
-node_delay(struct ir3_sched_ctx *ctx, struct ir3_sched_node *n)
-{
-   return MAX2(n->earliest_ip, ctx->ip) - ctx->ip;
 }
 
 static struct ir3_sched_node *
@@ -699,6 +703,24 @@ choose_instr_prio(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes)
    return NULL;
 }
 
+static void
+dump_state(struct ir3_sched_ctx *ctx)
+{
+   if (!SCHED_DEBUG)
+      return;
+
+   foreach_sched_node (n, &ctx->dag->heads) {
+      di(n->instr, "maxdel=%3d le=%d del=%u ", n->max_delay,
+         live_effect(n->instr), node_delay(ctx, n));
+
+      util_dynarray_foreach (&n->dag.edges, struct dag_edge, edge) {
+         struct ir3_sched_node *child = (struct ir3_sched_node *)edge->child;
+
+         di(child->instr, " -> (%d parents) ", child->dag.parent_count);
+      }
+   }
+}
+
 static struct ir3_instruction *
 choose_instr(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes)
 {
@@ -727,24 +749,6 @@ choose_instr(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes)
         return chosen->instr;
 
     return NULL;
-}
-
-static void
-dump_state(struct ir3_sched_ctx *ctx)
-{
-   if (!SCHED_DEBUG)
-      return;
-
-   foreach_sched_node (n, &ctx->dag->heads) {
-      di(n->instr, "maxdel=%3d le=%d del=%u ", n->max_delay,
-         live_effect(n->instr), node_delay(ctx, n));
-
-      util_dynarray_foreach (&n->dag.edges, struct dag_edge, edge) {
-         struct ir3_sched_node *child = (struct ir3_sched_node *)edge->child;
-
-         di(child->instr, " -> (%d parents) ", child->dag.parent_count);
-      }
-   }
 }
 
 static struct ir3_instruction *
