@@ -167,7 +167,7 @@ tu_cs_add_bo(struct tu_cs *cs, uint32_t size)
    struct tu_bo *new_bo;
 
    /* A810: увеличиваем выравнивание для больших буферов */
-   if (cs->device->physical_device->gpu_id == 810 && size > 4096) {
+   if (cs->device->physical_device->dev_id.gpu_id == 810 && size > 4096) {
       /* Для больших буферов просим выравнивание по 64KB */
       size = align(size, 64 * 1024 / sizeof(uint32_t));
    }
@@ -491,7 +491,7 @@ tu_cs_reserve_space(struct tu_cs *cs, uint32_t reserved_size)
       new_size = tu_sanitize_ib_size(new_size << 1);
 
       /* A810: более агрессивный рост для больших батчей */
-      if (cs->device->physical_device->gpu_id == 810) {
+      if (cs->device->physical_device->dev_id.gpu_id == 810) {
          /* Для A810 растем быстрее, но не слишком */
          if (new_size < 64 * 1024) {
             /* Маленькие буферы: рост x4 */
