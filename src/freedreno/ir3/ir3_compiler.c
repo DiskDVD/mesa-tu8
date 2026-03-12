@@ -340,12 +340,6 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
    if (compiler->gen >= 8) {
       /* Увеличиваем размер кэша констант */
       compiler->const_upload_unit = 16;  /* Было 4, теперь 16 */
-      
-      /* Включаем предзагрузку дескрипторов */
-      compiler->prefetch_descriptors = true;
-      
-      /* A810 может загружать больше констант за раз */
-      compiler->max_const_load_size = 64;  /* 64 vec4 за раз */
    }
 
    compiler->bool_type = (compiler->gen >= 5) ? TYPE_U16 : TYPE_U32;
@@ -378,16 +372,9 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
             compiler->nir_options.has_sdot_4x8_sat = true;
       }
 
-      /* A810: включаем дополнительные оптимизации NIR */
+      /* A810: увеличиваем лимит развертывания циклов */
       if (compiler->gen >= 8) {
-         compiler->nir_options.optimize_sample_heuristics = true;
-         compiler->nir_options.optimize_input_assignments = true;
-         compiler->nir_options.merge_samplers = true;
-         compiler->nir_options.tex_optimizations = true;
          compiler->nir_options.max_unroll_iterations = 64;  /* Было 32 */
-         compiler->nir_options.support_int64 = true;
-         compiler->nir_options.support_int64_atomics = true;
-         compiler->nir_options.lower_ssbo_to_global = false;  /* Оставляем SSBO как есть */
       }
    } else if (compiler->gen >= 3 && compiler->gen <= 5) {
       compiler->nir_options.vertex_id_zero_based = true;
