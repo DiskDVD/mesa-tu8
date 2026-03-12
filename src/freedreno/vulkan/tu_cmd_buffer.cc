@@ -43,17 +43,23 @@ struct tu_cmd_cache_state {
     bool valid;
 };
 
-/* Расширенное состояние кэша */
-struct tu_cache_state_ext {
-    bool optimized;
-    struct tu_cmd_cache_state cmd_cache;
-};
-
 /* Статистика батчинга */
 struct tu_batch_stats {
     uint32_t render_commands;
     uint32_t compute_commands;
     uint32_t transfer_commands;
+};
+
+/* Расширяем структуру tu_cmd_state */
+struct tu_cmd_state {
+   /* ... existing fields ... */
+   
+   /* Новые поля для оптимизации A810 */
+   struct tu_cmd_cache_state cmd_cache;
+   struct tu_batch_stats batch_stats;
+   
+   /* Флаг оптимизации */
+   bool optimized;
 };
 
 enum tu_cmd_buffer_status {
@@ -4414,7 +4420,7 @@ tu_cmd_render(struct tu_cmd_buffer *cmd_buffer,
 
    /* Обновляем статистику батчинга для A810 */
    if (CHIP >= A8XX) {
-      cmd_buffer->batch_stats.render_commands++;
+      cmd_buffer->state.batch_stats.render_commands++;
    }
 }
 
@@ -4674,7 +4680,7 @@ tu_reset_cmd_buffer(struct vk_command_buffer *vk_cmd_buffer,
    util_dynarray_clear(&cmd_buffer->vis_stream_cs_bos);
 
    /* Сбрасываем статистику батчинга */
-   memset(&cmd_buffer->batch_stats, 0, sizeof(cmd_buffer->batch_stats));
+   memset(&cmd_buffer->state.batch_stats, 0, sizeof(cmd_buffer->state.batch_stats));
 }
 
 const struct vk_command_buffer_ops tu_cmd_buffer_ops = {
