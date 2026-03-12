@@ -29,24 +29,6 @@
 #define TU_A810_MAX_QUEUE_PRIORITY 4     /* 4 уровня приоритета */
 #define TU_A810_BATCH_SIZE 128           /* Размер батча */
 
-/* Структура для оптимизированной работы с очередями */
-struct tu_a810_queue_stats {
-    uint32_t submissions;
-    uint32_t total_cmdbufs;
-    uint32_t avg_cmdbufs_per_submit;
-    uint32_t peak_cmdbufs;
-};
-
-/* Расширенная информация о submit */
-struct tu_submit_info {
-    uint32_t cmd_count;
-    uint32_t vis_stream_patches;
-    uint32_t cb_patches;
-    bool has_simultaneous_use;
-    bool has_trace_points;
-    uint32_t priority_level;
-};
-
 static int
 tu_get_submitqueue_priority(const struct tu_physical_device *pdevice,
                             VkQueueGlobalPriorityKHR global_priority,
@@ -677,14 +659,6 @@ queue_submit(struct vk_queue *_queue, struct vk_queue_submit *vk_submit)
    bool u_trace_enabled = u_trace_should_process(&queue->device->trace_context);
    struct util_dynarray dump_cmds;
 
-   /* Собираем информацию о submit для оптимизации */
-   struct tu_submit_info submit_info = {
-      .cmd_count = vk_submit->command_buffer_count,
-      .has_simultaneous_use = false,
-      .has_trace_points = false,
-      .priority_level = queue->priority
-   };
-
    if (vk_submit->buffer_bind_count ||
        vk_submit->image_bind_count ||
        vk_submit->image_opaque_bind_count)
@@ -715,11 +689,7 @@ queue_submit(struct vk_queue *_queue, struct vk_queue_submit *vk_submit)
    for (unsigned i = 0; i < vk_submit->command_buffer_count; i++) {
       if (u_trace_enabled && u_trace_has_points(&cmd_buffers[i]->trace))
          has_trace_points = true;
-      if (cmd_buffers[i]->usage_flags &
-          VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)
-         submit_info.has_simultaneous_use = true;
    }
-   submit_info.has_trace_points = has_trace_points;
 
    struct tu_u_trace_submission_data *u_trace_submission_data = NULL;
 
@@ -935,12 +905,6 @@ tu_queue_init(struct tu_device *device,
    queue->vk.driver_submit =
       (type == TU_QUEUE_SPARSE) ? queue_submit_sparse : queue_submit;
    queue->type = type;
-
-   /* Для A810 устанавливаем увеличенные лимиты */
-   if (device->physical_device->info->chip >= 8) {
-      queue->vk.submission_count = 64; /* Увеличено с 32 */
-      queue->vk.max_command_buffers_per_submit = 128; /* Увеличено с 64 */
-   }
 
    int ret = tu_drm_submitqueue_new(device, queue);
    if (ret)
