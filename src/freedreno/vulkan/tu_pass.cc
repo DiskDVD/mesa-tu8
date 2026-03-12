@@ -51,24 +51,27 @@ layout_undefined_fast(VkImageLayout layout)
           layout == VK_IMAGE_LAYOUT_PREINITIALIZED;
 }
 
-/* Определяем поколение Adreno GPU */
+/* Определяем поколение Adreno GPU через dev_id из info */
 static inline enum adreno_gpu_gen
 tu_get_adreno_gen(const struct tu_physical_device *phys_dev)
 {
-   uint32_t gpu_id = phys_dev->gpu_id;
+   uint32_t dev_id = phys_dev->info->dev_id;
    
-   if (gpu_id >= 840) return ADRENO_GEN_840;
-   if (gpu_id >= 830) return ADRENO_GEN_830;
-   if (gpu_id >= 829) return ADRENO_GEN_829;
-   if (gpu_id >= 825) return ADRENO_GEN_825;
-   return ADRENO_GEN_810;
+   /* Adreno 6xx и 7xx имеют свои id, но для 8xx используем приблизительное определение */
+   if (dev_id >= 840) return ADRENO_GEN_840;
+   if (dev_id >= 830) return ADRENO_GEN_830;
+   if (dev_id >= 825) return ADRENO_GEN_825;
+   if (dev_id >= 810) return ADRENO_GEN_810;
+   return ADRENO_GEN_810; /* По умолчанию 810 для максимальной производительности */
 }
 
 /* Оптимизированная версия для Adreno 810 */
 static inline bool
 tu_is_adreno_810_max_perf(const struct tu_physical_device *phys_dev)
 {
-   return tu_get_adreno_gen(phys_dev) == ADRENO_GEN_810;
+   /* A305B/A306/A308 - это старые GPU, для 8xx используем приближение */
+   uint32_t dev_id = phys_dev->info->dev_id;
+   return (dev_id >= 810 && dev_id < 825); /* Приблизительный диапазон для 810 */
 }
 
 static void
@@ -81,7 +84,7 @@ tu_render_pass_add_subpass_dep(struct tu_render_pass *pass,
    if (unlikely(src == dst))
       return;
 
-   /* Prefetch for Adreno 810 */
+   /* Prefetch для Adreno 810 */
    if (tu_is_adreno_810_max_perf((const struct tu_physical_device *)pass->base.device)) {
       __builtin_prefetch(&dep->pNext, 0, 3);
       __builtin_prefetch(&pass->subpasses[dst], 0, 3);
@@ -1284,7 +1287,7 @@ tu_setup_dynamic_attachment(struct tu_render_pass_attachment *att,
                             struct tu_image_view *view,
                             VkSampleCountFlagBits samples)
 {
-   *att = (struct tu_render_pass_attachment){0};
+   memset(att, 0, sizeof(*att));
    att->format = view->vk.format;
    att->samples = samples;
 
@@ -1309,11 +1312,11 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
    /* Определяем GPU для оптимизаций */
    bool is_adreno_810_max = tu_is_adreno_810_max_perf(device->physical_device);
 
-   *pass = (struct tu_render_pass){0};
-   *subpass = (struct tu_subpass){0};
+   memset(pass, 0, sizeof(*pass));
+   memset(subpass, 0, sizeof(*subpass));
 
    if (info->flags & VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT) {
-      *resolve_subpass = (struct tu_subpass){0};
+      memset(resolve_subpass, 0, sizeof(*resolve_subpass));
       resolve_subpass->custom_resolve = true;
       resolve_subpass->samples = VK_SAMPLE_COUNT_1_BIT;
       resolve_subpass->color_count = info->colorAttachmentCount;
@@ -1695,6 +1698,9 @@ tu_setup_dynamic_inheritance(struct tu_cmd_buffer *cmd_buffer,
       vk_find_struct_const(info->pNext, CUSTOM_RESOLVE_CREATE_INFO_EXT);
    bool custom_resolve = crc_info && crc_info->customResolve;
 
+   memset(pass, 0, sizeof(*pass));
+   memset(subpass, 0, sizeof(*subpass));
+
    pass->subpass_count = 1;
    pass->attachments = cmd_buffer->dynamic_rp_attachments;
    pass->fragment_density_map.attachment = VK_ATTACHMENT_UNUSED;
@@ -1727,6 +1733,7 @@ tu_setup_dynamic_inheritance(struct tu_cmd_buffer *cmd_buffer,
          continue;
       }
 
+      memset(att, 0, sizeof(*att));
       att->format = format;
       att->samples = subpass->samples;
       subpass->color_attachments[i].attachment = a++;
@@ -1744,6 +1751,7 @@ tu_setup_dynamic_inheritance(struct tu_cmd_buffer *cmd_buffer,
    if (depth_format != VK_FORMAT_UNDEFINED ||
        stencil_format != VK_FORMAT_UNDEFINED) {
       struct tu_render_pass_attachment *att = &pass->attachments[a];
+      memset(att, 0, sizeof(*att));
       att->format = depth_format != VK_FORMAT_UNDEFINED ?
          depth_format : stencil_format;
       att->samples = subpass->samples;
