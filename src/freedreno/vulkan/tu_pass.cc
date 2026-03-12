@@ -5,11 +5,6 @@
  *
  * based in part on anv driver which is:
  * Copyright © 2015 Intel Corporation
- *
- * OPTIMIZED FOR ADRENO 8xx SERIES
- * - Adreno 810: Maximum performance mode
- * - Adreno 825/829: Balanced mode  
- * - Adreno 830/840: Standard mode
  */
 
 #include "tu_pass.h"
@@ -24,55 +19,10 @@
 #define XXH_INLINE_ALL
 #include "util/xxhash.h"
 
-/* Adreno GPU family detection */
-enum adreno_gpu_gen {
-   ADRENO_GEN_810 = 810,
-   ADRENO_GEN_825 = 825,
-   ADRENO_GEN_829 = 829,
-   ADRENO_GEN_830 = 830,
-   ADRENO_GEN_840 = 840,
-};
-
-/* Adreno 810 specific optimizations */
-#define ADRENO_810_GMEM_SIZE (512 * 1024)
-#define ADRENO_810_MAX_TILE_SIZE 1024
-#define ADRENO_810_CACHE_LINE 64
-#define PREFETCH_DISTANCE 8
-
-/* Оптимизированные макросы */
-#define likely(x)   __builtin_expect(!!(x), 1)
-#define unlikely(x) __builtin_expect(!!(x), 0)
-
-/* Быстрая проверка UNDEFINED layout */
-static inline bool
-layout_undefined_fast(VkImageLayout layout)
-{
-   return layout == VK_IMAGE_LAYOUT_UNDEFINED ||
-          layout == VK_IMAGE_LAYOUT_PREINITIALIZED;
-}
-
-/* Определяем поколение Adreno GPU через dev_id из info */
-static inline enum adreno_gpu_gen
-tu_get_adreno_gen(const struct tu_physical_device *phys_dev)
-{
-   uint32_t dev_id = phys_dev->info->dev_id;
-   
-   /* Adreno 6xx и 7xx имеют свои id, но для 8xx используем приблизительное определение */
-   if (dev_id >= 840) return ADRENO_GEN_840;
-   if (dev_id >= 830) return ADRENO_GEN_830;
-   if (dev_id >= 825) return ADRENO_GEN_825;
-   if (dev_id >= 810) return ADRENO_GEN_810;
-   return ADRENO_GEN_810; /* По умолчанию 810 для максимальной производительности */
-}
-
-/* Оптимизированная версия для Adreno 810 */
-static inline bool
-tu_is_adreno_810_max_perf(const struct tu_physical_device *phys_dev)
-{
-   /* A305B/A306/A308 - это старые GPU, для 8xx используем приближение */
-   uint32_t dev_id = phys_dev->info->dev_id;
-   return (dev_id >= 810 && dev_id < 825); /* Приблизительный диапазон для 810 */
-}
+/* ADRENO810_OPT: Определяем размер GMEM для Adreno 810 */
+#define ADRENO_810_GMEM_SIZE (512 * 1024) /* 512KB */
+#define ADRENO_810_TILE_ALIGN_W 32
+#define ADRENO_810_TILE_ALIGN_H 16
 
 static void
 tu_render_pass_add_subpass_dep(struct tu_render_pass *pass,
@@ -81,15 +31,22 @@ tu_render_pass_add_subpass_dep(struct tu_render_pass *pass,
    uint32_t src = dep->srcSubpass;
    uint32_t dst = dep->dstSubpass;
 
-   if (unlikely(src == dst))
+   /* Ignore subpass self-dependencies as they allow the app to call
+    * vkCmdPipelineBarrier() inside the render pass and the driver should only
+    * do the barrier when called, not when starting the render pass.
+    *
+    * We cannot decide whether to allow gmem rendering before a barrier
+    * is actually emitted, so we delay the decision until then.
+    */
+   if (src == dst)
       return;
 
-   /* Prefetch для Adreno 810 */
-   if (tu_is_adreno_810_max_perf((const struct tu_physical_device *)pass->base.device)) {
-      __builtin_prefetch(&dep->pNext, 0, 3);
-      __builtin_prefetch(&pass->subpasses[dst], 0, 3);
-   }
-
+   /* From the Vulkan 1.2.195 spec:
+    *
+    * "If an instance of VkMemoryBarrier2 is included in the pNext chain, srcStageMask,
+    *  dstStageMask, srcAccessMask, and dstAccessMask parameters are ignored. The synchronization
+    *  and access scopes instead are defined by the parameters of VkMemoryBarrier2."
+    */
    const VkMemoryBarrier2 *barrier =
       vk_find_struct_const(dep->pNext, MEMORY_BARRIER_2);
    VkPipelineStageFlags2 src_stage_mask = barrier ? barrier->srcStageMask : dep->srcStageMask;
@@ -97,8 +54,7 @@ tu_render_pass_add_subpass_dep(struct tu_render_pass *pass,
    VkPipelineStageFlags2 dst_stage_mask = barrier ? barrier->dstStageMask : dep->dstStageMask;
    VkAccessFlags2 dst_access_mask = barrier ? barrier->dstAccessMask : dep->dstAccessMask;
    VkAccessFlags3KHR src_access_mask2 = 0, dst_access_mask2 = 0;
-   
-   if (unlikely(barrier)) {
+   if (barrier) {
       const VkMemoryBarrierAccessFlags3KHR *access3 =
          vk_find_struct_const(dep->pNext, MEMORY_BARRIER_ACCESS_FLAGS_3_KHR);
       if (access3) {
@@ -107,15 +63,37 @@ tu_render_pass_add_subpass_dep(struct tu_render_pass *pass,
       }
    }
 
+   /* We can conceptually break down the process of rewriting a sysmem
+    * renderpass into a gmem one into two parts:
+    *
+    * 1. Split each draw and multisample resolve into N copies, one for each
+    * bin. (If hardware binning, add one more copy where the FS is disabled
+    * for the binning pass). This is always allowed because the vertex stage
+    * is allowed to run an arbitrary number of times and there are no extra
+    * ordering constraints within a draw.
+    * 2. Take the last copy of the second-to-last draw and slide it down to
+    * before the last copy of the last draw. Repeat for each earlier draw
+    * until the draw pass for the last bin is complete, then repeat for each
+    * earlier bin until we finish with the first bin.
+    *
+    * During this rearranging process, we can't slide draws past each other in
+    * a way that breaks the subpass dependencies. For each draw, we must slide
+    * it past (copies of) the rest of the draws in the renderpass. We can
+    * slide a draw past another if there isn't a dependency between them, or
+    * if the dependenc(ies) are dependencies between framebuffer-space stages
+    * only with the BY_REGION bit set. Note that this includes
+    * self-dependencies, since these may result in pipeline barriers that also
+    * break the rearranging process.
+    */
+
    if (!vk_subpass_dependency_is_fb_local(dep, src_stage_mask, dst_stage_mask)) {
-      perf_debug((struct tu_device *)pass->base.device, 
-                 "Disabling gmem rendering due to invalid subpass dependency");
+      perf_debug((struct tu_device *)pass->base.device, "Disabling gmem rendering due to invalid subpass dependency");
       for (int i = 0; i < ARRAY_SIZE(pass->gmem_pixels); i++)
          pass->gmem_pixels[i] = 0;
    }
 
    struct tu_subpass_barrier *dst_barrier;
-   if (unlikely(dst == VK_SUBPASS_EXTERNAL)) {
+   if (dst == VK_SUBPASS_EXTERNAL) {
       dst_barrier = &pass->end_barrier;
    } else {
       dst_barrier = &pass->subpasses[dst].start_barrier;
@@ -129,12 +107,69 @@ tu_render_pass_add_subpass_dep(struct tu_render_pass *pass,
    dst_barrier->dst_access_mask2 |= dst_access_mask2;
 }
 
+/* We currently only care about undefined layouts, because we have to
+ * flush/invalidate CCU for those. PREINITIALIZED is the same thing as
+ * UNDEFINED for anything not linear tiled, but we don't know yet whether the
+ * images used are tiled, so just assume they are.
+ */
+
 static bool
 layout_undefined(VkImageLayout layout)
 {
-   return layout_undefined_fast(layout);
+   return layout == VK_IMAGE_LAYOUT_UNDEFINED ||
+          layout == VK_IMAGE_LAYOUT_PREINITIALIZED;
 }
 
+/* This implements the following bit of spec text:
+ *
+ *    If there is no subpass dependency from VK_SUBPASS_EXTERNAL to the
+ *    first subpass that uses an attachment, then an implicit subpass
+ *    dependency exists from VK_SUBPASS_EXTERNAL to the first subpass it is
+ *    used in. The implicit subpass dependency only exists if there
+ *    exists an automatic layout transition away from initialLayout.
+ *    The subpass dependency operates as if defined with the
+ *    following parameters:
+ *
+ *    VkSubpassDependency implicitDependency = {
+ *        .srcSubpass = VK_SUBPASS_EXTERNAL;
+ *        .dstSubpass = firstSubpass; // First subpass attachment is used in
+ *        .srcStageMask = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+ *        .dstStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+ *        .srcAccessMask = 0;
+ *        .dstAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT |
+ *                         VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+ *                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+ *                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+ *                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+ *        .dependencyFlags = 0;
+ *    };
+ *
+ *    Similarly, if there is no subpass dependency from the last subpass
+ *    that uses an attachment to VK_SUBPASS_EXTERNAL, then an implicit
+ *    subpass dependency exists from the last subpass it is used in to
+ *    VK_SUBPASS_EXTERNAL. The implicit subpass dependency only exists
+ *    if there exists an automatic layout transition into finalLayout.
+ *    The subpass dependency operates as if defined with the following
+ *    parameters:
+ *
+ *    VkSubpassDependency implicitDependency = {
+ *        .srcSubpass = lastSubpass; // Last subpass attachment is used in
+ *        .dstSubpass = VK_SUBPASS_EXTERNAL;
+ *        .srcStageMask = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+ *        .dstStageMask = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+ *        .srcAccessMask = VK_ACCESS_INPUT_ATTACHMENT_READ_BIT |
+ *                         VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+ *                         VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT |
+ *                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+ *                         VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+ *        .dstAccessMask = 0;
+ *        .dependencyFlags = 0;
+ *    };
+ *
+ * Note: currently this is the only use we have for layout transitions,
+ * besides needing to invalidate CCU at the beginning, so we also flag
+ * transitions from UNDEFINED here.
+ */
 static void
 tu_render_pass_add_implicit_deps(struct tu_render_pass *pass,
                                  const VkRenderPassCreateInfo2 *info)
@@ -351,7 +386,10 @@ tu_render_pass_add_implicit_deps(struct tu_render_pass *pass,
       }
    }
 
-   /* Handle UNDEFINED transitions */
+   /* Handle UNDEFINED transitions, similar to the handling in tu_barrier().
+    * Assume that if an attachment has an initial layout of UNDEFINED, it gets
+    * transitioned eventually.
+    */
    for (unsigned i = 0; i < info->attachmentCount; i++) {
       if (layout_undefined(att[i].initialLayout)) {
          if (vk_format_is_depth_or_stencil(att[i].format)) {
@@ -363,6 +401,16 @@ tu_render_pass_add_implicit_deps(struct tu_render_pass *pass,
    }
 }
 
+/* If an input attachment is used without an intervening write to the same
+ * attachment, then we can just use the original image, even in GMEM mode.
+ * This is an optimization, but it's also important because it allows us to
+ * avoid having to invalidate UCHE at the beginning of each tile due to it
+ * becoming invalid. The only reads of GMEM via UCHE should be after an
+ * earlier subpass modified it, which only works if there's already an
+ * appropriate dependency that will add the CACHE_INVALIDATE anyway. We
+ * don't consider this in the dependency code, so this is also required for
+ * correctness.
+ */
 static void
 tu_render_pass_patch_input_gmem(struct tu_render_pass *pass)
 {
@@ -370,6 +418,7 @@ tu_render_pass_patch_input_gmem(struct tu_render_pass *pass)
       return;
 
    bool written[pass->attachment_count];
+
    memset(written, 0, sizeof(written));
 
    for (unsigned i = 0; i < pass->subpass_count; i++) {
@@ -379,7 +428,10 @@ tu_render_pass_patch_input_gmem(struct tu_render_pass *pass)
          uint32_t a = subpass->input_attachments[j].attachment;
          if (a == VK_ATTACHMENT_UNUSED)
             continue;
-         
+         /* Clears happen in GMEM, so we have to patch input attachments that
+          * are cleared to use GMEM and that requires us to invalidate UCHE to
+          * get the cleared value when reading as an input attachment.
+          */
          if (!written[a] && pass->attachments[a].clear_mask) {
             written[a] = true;
             subpass->feedback_invalidate = true;
@@ -397,6 +449,12 @@ tu_render_pass_patch_input_gmem(struct tu_render_pass *pass)
          for (unsigned k = 0; k < subpass->input_count; k++) {
             if (subpass->input_attachments[k].attachment == a &&
                 !subpass->input_attachments[k].patch_input_gmem) {
+               /* For render feedback loops, we have no idea whether the use
+                * as a color attachment or input attachment will come first,
+                * so we have to always use GMEM in case the color attachment
+                * comes first and defensively invalidate UCHE in case the
+                * input attachment comes first.
+                */
                subpass->feedback_invalidate = true;
                subpass->input_attachments[k].patch_input_gmem = true;
             }
@@ -470,6 +528,11 @@ tu_render_pass_calc_views(struct tu_render_pass *pass)
    pass->num_views = util_last_bit(view_mask);
 }
 
+/* If there are any multisample attachments with a load op other than
+ * clear/don't-care/none and store op other than don't-care/none, then we'd
+ * have to load/store a scaled multisample image which doesn't make much
+ * sense. Just disable fragment_density_map in this case.
+ */
 static bool
 tu_render_pass_disable_fdm(struct tu_device *dev, struct tu_render_pass *pass)
 {
@@ -516,12 +579,21 @@ static void
 tu_render_pass_cond_config(struct tu_device *device,
                            struct tu_render_pass *pass)
 {
+   /* With generic clears CmdClearAttachments isn't a draw and doesn't
+    * contribute to bin's geometry.
+    */
    if (device->physical_device->info->props.has_generic_clear)
       return;
 
    for (uint32_t i = 0; i < pass->attachment_count; i++) {
       struct tu_render_pass_attachment *att = &pass->attachments[i];
 
+      /* When there is no geometry in a tile, and there is no other operations to
+       * read/write the tile, we can skip load/store.
+       *
+       * The only other operations are clear and resolve, which disable
+       * conditional load/store.
+       */
       att->cond_load_allowed =
          (att->load || att->load_stencil) && !att->clear_mask && !att->will_be_resolved;
       att->cond_store_allowed =
@@ -532,6 +604,16 @@ tu_render_pass_cond_config(struct tu_device *device,
    }
 }
 
+/**
+ * Optimizes MSRTSS resolves/unresolves.
+ *
+ * We always emit a resolve/unresolve around each attachment used as MSRTSS
+ * for each subpass. But if the attachment isn't loaded or isn't stored and
+ * it's the first or last use respectively, then we can optimize it away. We
+ * can also transfer clears from the original attachment to the multisample
+ * attachment. We have to do this optimization after use tracking information
+ * is populated.
+ */
 static void
 tu_render_pass_opt_resolve_unresolve(struct tu_render_pass *pass)
 {
@@ -550,6 +632,9 @@ tu_render_pass_opt_resolve_unresolve(struct tu_render_pass *pass)
                &pass->attachments[dst_att_idx];
             if (i == src_att->first_subpass_idx &&
                 !src_att->load && !src_att->load_stencil) {
+               /* Transfer the clear to the (in-tile-memory) multisample
+                * attachment.
+                */
                if (src_att->clear_mask) {
                   dst_att->clear_mask = src_att->clear_mask;
                   dst_att->used_views = src_att->used_views;
@@ -558,6 +643,7 @@ tu_render_pass_opt_resolve_unresolve(struct tu_render_pass *pass)
                   src_att->used_views = 0;
                }
 
+               /* Delete the unresolve. */
                subpass->unresolve_attachments[j].attachment =
                   VK_ATTACHMENT_UNUSED;
             }
@@ -570,12 +656,18 @@ tu_render_pass_opt_resolve_unresolve(struct tu_render_pass *pass)
             struct tu_render_pass_attachment *att = 
                &pass->attachments[subpass->resolve_attachments[j].attachment];
             if (
+                 /* Check that the resolve source is a fake MSRTSS attachment.
+                  */
                  (j == subpass->color_count ?
                  subpass->depth_stencil_attachment.attachment :
                  subpass->color_attachments[j].attachment) >=
                 pass->user_attachment_count &&
+                /* Check that it's the last use and the original attachment is
+                 * not stored.
+                 */
                 i == att->last_subpass_idx &&
                 !att->store && !att->store_stencil) {
+               /* Delete the resolve. */
                subpass->resolve_attachments[j].attachment =
                   VK_ATTACHMENT_UNUSED;
                att->will_be_resolved = false;
@@ -589,6 +681,13 @@ tu_render_pass_opt_resolve_unresolve(struct tu_render_pass *pass)
    }
 }
 
+/**
+ * Checks if the pass should allow IB2 skipping.
+ *
+ * If any stores or resolves would be emitted in a non-final subpass, then we
+ * need to turn off IB2 skipping to make sure that we don't early-return before
+ * they happen.
+ */
 static void
 tu_render_pass_check_ib2_skip(struct tu_render_pass *pass)
 {
@@ -629,6 +728,9 @@ tu_gmem_alloc(struct tu_gmem_alloc *allocs,
 {
    struct tu_gmem_alloc *alloc = NULL;
 
+   /* Find an allocation that is free during our subpass range, with the
+    * closet usable cpp.
+    */
    for (int i = 0; i < *num_allocs; i++) {
       if (!(allocs[i].first_subpass > last_subpass ||
             allocs[i].last_subpass < first_subpass)) {
@@ -642,11 +744,12 @@ tu_gmem_alloc(struct tu_gmem_alloc *allocs,
       if (allocs[i].cpp > cpp && (!alloc || alloc->cpp > allocs[i].cpp))
          alloc = &allocs[i];
    }
-   
    if (alloc) {
+      /* Expand the range of the existing allocation */
       alloc->first_subpass = MIN2(alloc->first_subpass, first_subpass);
       alloc->last_subpass = MAX2(alloc->last_subpass, last_subpass);
    } else {
+      /* Make a new gmem allocation for this cpp. */
       alloc = &allocs[(*num_allocs)++];
       alloc->cpp = cpp;
       alloc->first_subpass = first_subpass;
@@ -663,41 +766,57 @@ tu_render_pass_gmem_config(struct tu_render_pass *pass,
    if (pass->attachment_count == 0)
       return;
 
-   /* Определяем поколение GPU для оптимизаций */
-   enum adreno_gpu_gen gpu_gen = tu_get_adreno_gen(phys_dev);
-   bool is_adreno_810 = (gpu_gen == ADRENO_GEN_810);
+   /* ADRENO810_OPT: Определяем, работаем ли мы на Adreno 810 (512KB GMEM) */
+   bool is_adreno_810 = (phys_dev->info->gmem_size == ADRENO_810_GMEM_SIZE);
 
    for (enum tu_gmem_layout layout = (enum tu_gmem_layout) 0;
         layout < TU_GMEM_LAYOUT_COUNT;
         layout = (enum tu_gmem_layout)(layout + 1)) {
       
-      uint32_t block_align_shift = 3;
-      uint32_t tile_align_w = phys_dev->info->tile_align_w;
-      uint32_t gmem_align = (1 << block_align_shift) * tile_align_w * phys_dev->info->tile_align_h;
+      /* ADRENO810_OPT: Оптимизированные параметры для 512KB GMEM */
+      uint32_t block_align_shift = is_adreno_810 ? 2 : 3; /* Меньше выравнивание = больше утилизация */
+      uint32_t tile_align_w = is_adreno_810 ? ADRENO_810_TILE_ALIGN_W : phys_dev->info->tile_align_w;
+      uint32_t tile_align_h = is_adreno_810 ? ADRENO_810_TILE_ALIGN_H : phys_dev->info->tile_align_h;
+      
+      uint32_t gmem_align = (1 << block_align_shift) * tile_align_w * tile_align_h;
+      
+      /* ADRENO810_OPT: Минимальное выравнивание для оптимальной производительности */
+      if (is_adreno_810 && gmem_align < 128) {
+         gmem_align = 128;
+      }
 
+      /* gmem allocations to make, possibly shared between attachments. Each
+       * attachment may have 2 allocations, to handle separate stencil.
+       */
       struct tu_gmem_alloc gmem_alloc[2 * pass->attachment_count];
       uint32_t num_gmem_alloc = 0;
       struct tu_gmem_alloc *att_gmem_alloc[2 * pass->attachment_count];
-      
       for (int i = 0; i < ARRAY_SIZE(att_gmem_alloc); i++)
          att_gmem_alloc[i] = NULL;
 
-      /* Prefetch для Adreno 810 */
-      if (is_adreno_810) {
-         for (uint32_t i = 0; i < pass->attachment_count; i += PREFETCH_DISTANCE) {
-            __builtin_prefetch(&pass->attachments[i], 0, 3);
-         }
-      }
-
+      /* ADRENO810_OPT: Предварительный расчет весов для оптимального распределения GMEM */
+      uint32_t total_weight = 0;
+      uint32_t att_weights[pass->attachment_count];
+      
       for (uint32_t i = 0; i < pass->attachment_count; i++) {
          struct tu_render_pass_attachment *att = &pass->attachments[i];
          bool cpp1 = (att->cpp == 1);
+         
+         /* ADRENO810_OPT: Вес зависит от частоты использования */
+         att_weights[i] = att->gmem ? att->cpp : 0;
+         if (att->gmem && is_adreno_810) {
+            /* Увеличиваем вес для attachment'ов, которые используются в нескольких subpass */
+            uint32_t subpass_span = att->last_subpass_idx - att->first_subpass_idx + 1;
+            att_weights[i] = att->cpp * (1 + subpass_span / 2); /* Приоритет для часто используемых */
+         }
+         total_weight += att_weights[i];
          
          if (att->gmem) {
             att_gmem_alloc[i * 2] =
                tu_gmem_alloc(gmem_alloc, &num_gmem_alloc, att->cpp,
                            att->first_subpass_idx, att->last_subpass_idx);
 
+            /* take into account the separate stencil: */
             if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
                cpp1 = (att->samples == 1);
                att_gmem_alloc[i * 2 + 1] =
@@ -705,8 +824,11 @@ tu_render_pass_gmem_config(struct tu_render_pass *pass,
                               att->first_subpass_idx, att->last_subpass_idx);
             }
 
-            /* Adreno 810: агрессивное выравнивание */
-            if (is_adreno_810 && cpp1 && tile_align_w % 64 != 0) {
+            /* texture pitch must be aligned to 64, use a tile_align_w that is
+             * a multiple of 64 for cpp==1 attachment to work as input
+             * attachment
+             */
+            if (cpp1 && tile_align_w % 64 != 0) {
                tile_align_w *= 2;
                block_align_shift -= 1;
             }
@@ -723,48 +845,84 @@ tu_render_pass_gmem_config(struct tu_render_pass *pass,
       pass->tile_align_w = tile_align_w;
       pass->min_cpp = min_cpp;
 
+      /* no gmem attachments */
       if (cpp_total == 0) {
+         /* any non-zero value so tiling config works with no attachments */
          for (int i = 0; i < ARRAY_SIZE(pass->gmem_pixels); i++)
-            pass->gmem_pixels[i] = is_adreno_810 ? 
-               ADRENO_810_MAX_TILE_SIZE * ADRENO_810_MAX_TILE_SIZE : 1024 * 1024;
+            pass->gmem_pixels[i] = 1024*1024;
          return;
       }
 
-      /* Adreno 810: оптимизированный алгоритм распределения */
-      uint32_t gmem_size;
-      if (is_adreno_810) {
-         gmem_size = layout == TU_GMEM_LAYOUT_FULL ? 
-            ADRENO_810_GMEM_SIZE : phys_dev->config_gmem.color_ccu_offset;
-      } else {
-         gmem_size = layout == TU_GMEM_LAYOUT_FULL
-                     ? phys_dev->usable_gmem_size_gmem
-                     : phys_dev->config_gmem.color_ccu_offset;
+      /* ADRENO810_OPT: Улучшенный алгоритм распределения GMEM */
+      uint32_t gmem_size = layout == TU_GMEM_LAYOUT_FULL
+                              ? phys_dev->usable_gmem_size_gmem
+                              : phys_dev->config_gmem.color_ccu_offset;
+      
+      /* ADRENO810_OPT: Для Adreno 810 всегда используем полный GMEM если возможно */
+      if (is_adreno_810 && layout == TU_GMEM_LAYOUT_FULL) {
+         gmem_size = ADRENO_810_GMEM_SIZE;
       }
       
       uint32_t gmem_blocks = gmem_size / gmem_align;
-      uint32_t offset = 0, pixels = ~0u, i;
+      uint32_t offset = 0, pixels = ~0u;
       
-      for (i = 0; i < num_gmem_alloc; i++) {
+      /* ADRENO810_OPT: Сортируем аллокации по убыванию cpp для лучшего заполнения */
+      if (is_adreno_810 && num_gmem_alloc > 1) {
+         /* Простая сортировка пузырьком для упрощения */
+         for (int i = 0; i < num_gmem_alloc - 1; i++) {
+            for (int j = 0; j < num_gmem_alloc - i - 1; j++) {
+               if (gmem_alloc[j].cpp < gmem_alloc[j + 1].cpp) {
+                  struct tu_gmem_alloc tmp = gmem_alloc[j];
+                  gmem_alloc[j] = gmem_alloc[j + 1];
+                  gmem_alloc[j + 1] = tmp;
+               }
+            }
+         }
+      }
+      
+      uint32_t remaining_blocks = gmem_blocks;
+      uint32_t remaining_cpp = cpp_total;
+      
+      for (int i = 0; i < num_gmem_alloc; i++) {
          struct tu_gmem_alloc *alloc = &gmem_alloc[i];
 
          uint32_t align = MAX2(1, alloc->cpp >> block_align_shift);
-         uint32_t nblocks;
          
-         if (is_adreno_810) {
-            /* Adreno 810: оптимизированное распределение */
-            nblocks = (gmem_blocks * alloc->cpp / cpp_total);
-            nblocks = MAX2((nblocks + align - 1) & ~(align - 1), align);
+         /* ADRENO810_OPT: Более умное распределение на основе весов */
+         uint32_t target_blocks;
+         if (is_adreno_810 && total_weight > 0) {
+            /* Используем веса для более точного распределения */
+            uint32_t att_idx = -1;
+            for (uint32_t j = 0; j < pass->attachment_count; j++) {
+               if (pass->attachments[j].gmem && 
+                   pass->attachments[j].cpp == alloc->cpp) {
+                  att_idx = j;
+                  break;
+               }
+            }
+            
+            if (att_idx != -1 && att_weights[att_idx] > 0) {
+               target_blocks = (gmem_blocks * att_weights[att_idx] / total_weight);
+            } else {
+               target_blocks = (remaining_blocks * alloc->cpp) / remaining_cpp;
+            }
          } else {
-            nblocks = MAX2((gmem_blocks * alloc->cpp / cpp_total) & ~(align - 1), align);
+            target_blocks = (remaining_blocks * alloc->cpp) / remaining_cpp;
+         }
+         
+         uint32_t nblocks = MAX2(target_blocks & ~(align - 1), align);
+
+         if (nblocks > remaining_blocks) {
+            /* gmem layout impossible - пробуем уменьшить */
+            nblocks = remaining_blocks & ~(align - 1);
+            if (nblocks < align) {
+               pass->gmem_pixels[layout] = 0;
+               continue;
+            }
          }
 
-         if (nblocks > gmem_blocks) {
-            pass->gmem_pixels[layout] = 0;
-            continue;
-         }
-
-         gmem_blocks -= nblocks;
-         cpp_total -= alloc->cpp;
+         remaining_blocks -= nblocks;
+         remaining_cpp -= alloc->cpp;
          alloc->gmem_offset = offset;
          offset += nblocks * gmem_align;
          pixels = MIN2(pixels, nblocks * gmem_align / alloc->cpp);
@@ -772,14 +930,45 @@ tu_render_pass_gmem_config(struct tu_render_pass *pass,
 
       pass->gmem_pixels[layout] = pixels;
 
-      for (i = 0; i < pass->attachment_count; i++) {
+      /* ADRENO810_OPT: Восстанавливаем порядок для att_gmem_alloc */
+      if (is_adreno_810) {
+         /* Проходим по всем attachment и находим соответствующие аллокации */
+         for (uint32_t i = 0; i < pass->attachment_count; i++) {
+            struct tu_render_pass_attachment *att = &pass->attachments[i];
+            if (!att->gmem)
+               continue;
+               
+            /* Ищем аллокацию с соответствующим cpp */
+            for (int j = 0; j < num_gmem_alloc; j++) {
+               if (gmem_alloc[j].cpp == att->cpp) {
+                  att_gmem_alloc[2 * i] = &gmem_alloc[j];
+                  break;
+               }
+            }
+            
+            if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
+               for (int j = 0; j < num_gmem_alloc; j++) {
+                  if (gmem_alloc[j].cpp == att->samples) {
+                     att_gmem_alloc[2 * i + 1] = &gmem_alloc[j];
+                     break;
+                  }
+               }
+            }
+         }
+      }
+
+      for (uint32_t i = 0; i < pass->attachment_count; i++) {
          struct tu_render_pass_attachment *att = &pass->attachments[i];
          if (!att->gmem)
             continue;
 
-         att->gmem_offset[layout] = att_gmem_alloc[2 * i]->gmem_offset;
-         if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT)
+         if (att_gmem_alloc[2 * i]) {
+            att->gmem_offset[layout] = att_gmem_alloc[2 * i]->gmem_offset;
+         }
+         
+         if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT && att_gmem_alloc[2 * i + 1]) {
             att->gmem_offset_stencil[layout] = att_gmem_alloc[2 * i + 1]->gmem_offset;
+         }
       }
    }
 }
@@ -793,15 +982,19 @@ tu_render_pass_bandwidth_config(struct tu_render_pass *pass)
    for (uint32_t i = 0; i < pass->attachment_count; i++) {
       const struct tu_render_pass_attachment *att = &pass->attachments[i];
 
+      /* approximate tu_load_gmem_attachment */
       if (att->load)
          pass->gmem_bandwidth_per_pixel += att->cpp;
 
+      /* approximate tu_store_gmem_attachment */
       if (att->store)
          pass->gmem_bandwidth_per_pixel += att->cpp;
 
+      /* approximate tu_clear_sysmem_attachment */
       if (att->clear_mask)
          pass->sysmem_bandwidth_per_pixel += att->cpp;
 
+      /* approximate tu6_emit_sysmem_resolves */
       if (att->will_be_resolved) {
          pass->sysmem_bandwidth_per_pixel +=
             att->cpp + att->cpp / att->samples;
@@ -824,6 +1017,7 @@ attachment_set_ops(struct tu_device *device,
          stencil_load_op = VK_ATTACHMENT_LOAD_OP_LOAD;
    }
 
+   /* load/store ops */
    att->remapped_clear_att = VK_ATTACHMENT_UNUSED;
    att->clear_mask =
       (load_op == VK_ATTACHMENT_LOAD_OP_CLEAR) ? VK_IMAGE_ASPECT_COLOR_BIT : 0;
@@ -835,7 +1029,7 @@ attachment_set_ops(struct tu_device *device,
    bool stencil_store = (stencil_store_op == VK_ATTACHMENT_STORE_OP_STORE);
 
    switch (att->format) {
-   case VK_FORMAT_D24_UNORM_S8_UINT:
+   case VK_FORMAT_D24_UNORM_S8_UINT: /* || stencil load/store */
       if (att->clear_mask)
          att->clear_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
       if (stencil_clear)
@@ -844,18 +1038,22 @@ attachment_set_ops(struct tu_device *device,
          att->load = true;
       if (stencil_store)
          att->store = true;
+      /* If depth or stencil is passthrough (STORE_OP_NONE), then we need to
+       * preserve the contents when storing by loading even if neither
+       * component needs to be loaded.
+       */
       if ((store_op == VK_ATTACHMENT_STORE_OP_NONE_EXT ||
            stencil_store_op == VK_ATTACHMENT_STORE_OP_NONE_EXT) &&
           att->store) {
          att->load = true;
       }
       break;
-   case VK_FORMAT_S8_UINT:
+   case VK_FORMAT_S8_UINT: /* replace load/store with stencil load/store */
       att->clear_mask = stencil_clear ? VK_IMAGE_ASPECT_COLOR_BIT : 0;
       att->load = stencil_load;
       att->store = stencil_store;
       break;
-   case VK_FORMAT_D32_SFLOAT_S8_UINT:
+   case VK_FORMAT_D32_SFLOAT_S8_UINT: /* separate stencil */
       if (att->clear_mask)
          att->clear_mask = VK_IMAGE_ASPECT_DEPTH_BIT;
       if (stencil_clear)
@@ -892,7 +1090,10 @@ tu_subpass_use_attachment(struct tu_render_pass *pass, int i, uint32_t a, const 
    update_samples(subpass, att->samples);
    att->used_views |= subpass->multiview_mask;
 
+   /* Loads and clears are emitted at the start of the subpass that needs them. */
    att->first_subpass_idx = MIN2(i, att->first_subpass_idx);
+
+   /* Stores are emitted after the last subpass using them. */
    att->last_subpass_idx = MAX2(i, att->last_subpass_idx);
 }
 
@@ -919,13 +1120,16 @@ tu_init_renderpass_attachment(struct tu_device *device,
 {
    att->format = pAttachment->format;
    att->samples = samples;
-   
+   /* for d32s8, cpp is for the depth image, and
+    * att->samples will be used as the cpp for the stencil image
+    */
    if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT)
       att->cpp = 4 * samples;
    else
       att->cpp = vk_format_get_blocksize(att->format) * samples;
-   
+   /* Initially not allocated into gmem, tu_subpass_use_attachment() will move it there. */
    att->gmem = false;
+
    att->first_subpass_idx = VK_SUBPASS_EXTERNAL;
    att->last_subpass_idx = 0;
 }
@@ -1025,7 +1229,6 @@ tu_CreateRenderPass2(VkDevice _device,
 
    uint32_t subpass_attachment_count = 0;
    struct tu_subpass_attachment *p;
-   
    for (uint32_t i = 0; i < pCreateInfo->subpassCount; i++) {
       const VkSubpassDescription2 *desc = &pCreateInfo->pSubpasses[i];
       const VkSubpassDescriptionDepthStencilResolve *ds_resolve =
@@ -1035,7 +1238,6 @@ tu_CreateRenderPass2(VkDevice _device,
                               MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_INFO_EXT);
       bool msrtss_enabled = msrtss &&
          msrtss->multisampledRenderToSingleSampledEnable;
-      
       pass->subpasses[i].resolve_count =
          ((desc->pResolveAttachments || msrtss_enabled) ? desc->colorAttachmentCount : 0) +
          ((is_depth_stencil_resolve_enabled(ds_resolve) || msrtss_enabled) ? 1 : 0);
@@ -1081,7 +1283,6 @@ tu_CreateRenderPass2(VkDevice _device,
 
    p = pass->subpass_attachments;
    uint32_t msrtss_att_idx = pCreateInfo->attachmentCount;
-   
    for (uint32_t i = 0; i < pCreateInfo->subpassCount; i++) {
       const VkSubpassDescription2 *desc = &pCreateInfo->pSubpasses[i];
       const VkSubpassDescriptionDepthStencilResolve *ds_resolve =
@@ -1107,6 +1308,7 @@ tu_CreateRenderPass2(VkDevice _device,
          VK_SUBPASS_DESCRIPTION_RASTERIZATION_ORDER_ATTACHMENT_STENCIL_ACCESS_BIT_EXT;
 
       subpass->raster_order_attachment_access = raster_order_access_bits & desc->flags;
+
       subpass->multiview_mask = desc->viewMask;
 
       if (desc->inputAttachmentCount > 0) {
@@ -1118,6 +1320,10 @@ tu_CreateRenderPass2(VkDevice _device,
             subpass->input_attachments[j].attachment = a;
             if (a != VK_ATTACHMENT_UNUSED) {
                struct tu_render_pass_attachment *att = &pass->attachments[a];
+               /* Note: attachments only used as input attachments will be read
+                * directly instead of through gmem, so we don't mark input
+                * attachments as needing gmem.
+                */
                att->first_subpass_idx = MIN2(i, att->first_subpass_idx);
                att->last_subpass_idx = MAX2(i, att->last_subpass_idx);
             }
@@ -1172,6 +1378,7 @@ tu_CreateRenderPass2(VkDevice _device,
 
       if (desc->pResolveAttachments) {
          for (uint32_t j = 0; j < desc->colorAttachmentCount; j++) {
+            /* skip if MSRTSS has already created a resolve attachment */
             if (subpass->resolve_attachments[j].attachment != VK_ATTACHMENT_UNUSED)
                continue;
 
@@ -1196,7 +1403,6 @@ tu_CreateRenderPass2(VkDevice _device,
       subpass->depth_stencil_attachment.attachment = a;
       subpass->depth_used = a != VK_ATTACHMENT_UNUSED;
       subpass->stencil_used = a != VK_ATTACHMENT_UNUSED;
-      
       if (a != VK_ATTACHMENT_UNUSED) {
          if (msrtss && msrtss->multisampledRenderToSingleSampledEnable &&
              msrtss->rasterizationSamples !=
@@ -1231,9 +1437,12 @@ tu_CreateRenderPass2(VkDevice _device,
    }
 
    tu_render_pass_patch_input_gmem(pass);
+
    tu_render_pass_check_feedback_loop(pass);
+
    tu_render_pass_opt_resolve_unresolve(pass);
 
+   /* disable unused attachments */
    for (uint32_t i = 0; i < pass->attachment_count; i++) {
       struct tu_render_pass_attachment *att = &pass->attachments[i];
       if (!att->gmem) {
@@ -1287,10 +1496,13 @@ tu_setup_dynamic_attachment(struct tu_render_pass_attachment *att,
                             struct tu_image_view *view,
                             VkSampleCountFlagBits samples)
 {
-   memset(att, 0, sizeof(*att));
+   *att = {};
    att->format = view->vk.format;
    att->samples = samples;
 
+   /* for d32s8, cpp is for the depth image, and
+    * att->samples will be used as the cpp for the stencil image
+    */
    if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT)
       att->cpp = 4 * att->samples;
    else
@@ -1309,14 +1521,11 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
       vk_find_struct_const(info->pNext,
                            MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_INFO_EXT);
 
-   /* Определяем GPU для оптимизаций */
-   bool is_adreno_810_max = tu_is_adreno_810_max_perf(device->physical_device);
-
-   memset(pass, 0, sizeof(*pass));
-   memset(subpass, 0, sizeof(*subpass));
+   *pass = {};
+   *subpass = {};
 
    if (info->flags & VK_RENDERING_CUSTOM_RESOLVE_BIT_EXT) {
-      memset(resolve_subpass, 0, sizeof(*resolve_subpass));
+      *resolve_subpass = {};
       resolve_subpass->custom_resolve = true;
       resolve_subpass->samples = VK_SAMPLE_COUNT_1_BIT;
       resolve_subpass->color_count = info->colorAttachmentCount;
@@ -1327,6 +1536,7 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
       resolve_subpass->legacy_dithering_enabled = info->flags &
          VK_RENDERING_ENABLE_LEGACY_DITHERING_BIT_EXT;
 
+      /* These will be filled in below. */
       for (unsigned i = 0; i < info->colorAttachmentCount; i++) {
          resolve_subpass->color_attachments[i].attachment = VK_ATTACHMENT_UNUSED;
       }
@@ -1353,15 +1563,16 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
    subpass->legacy_dithering_enabled = info->flags &
       VK_RENDERING_ENABLE_LEGACY_DITHERING_BIT_EXT;
 
-   for (unsigned i = 0; i < ARRAY_SIZE(cmd_buffer->dynamic_input_attachments); i++) {
+   /* Because we don't know with dynamic rendering when input attachments
+    * are used relative to color attachments, we have to always assume
+    * they may be written as a color or depth/stencil attachment first. This
+    * means we can't apply the optimization in
+    * tu_render_pass_patch_input_gmem(). Initialize this for all possible
+    * attachments now so we don't have to update it later.
+    */
+   for (unsigned i = 0; i < ARRAY_SIZE(cmd_buffer->dynamic_input_attachments);
+        i++) {
       subpass->input_attachments[i].patch_input_gmem = true;
-   }
-
-   /* Prefetch для Adreno 810 */
-   if (is_adreno_810_max) {
-      __builtin_prefetch(info->pColorAttachments, 0, 3);
-      __builtin_prefetch(info->pDepthAttachment, 0, 3);
-      __builtin_prefetch(info->pStencilAttachment, 0, 3);
    }
 
    uint32_t a = 0;
@@ -1383,7 +1594,6 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
                                   (VkSampleCountFlagBits)view->image->layout->nr_samples);
       uint32_t att_idx = a++;
       bool att_is_msrtss = false;
-      
       if (msrtss && msrtss->multisampledRenderToSingleSampledEnable &&
           msrtss->rasterizationSamples !=
           (VkSampleCountFlagBits)view->image->layout->nr_samples) {
@@ -1414,9 +1624,9 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
          subpass->unresolve_attachments[i].attachment = VK_ATTACHMENT_UNUSED;
          subpass->samples = (VkSampleCountFlagBits) view->image->layout->nr_samples;
       }
-      
       subpass->color_attachments[i].attachment = att_idx;
       subpass->input_attachments[i + 1].attachment = att_idx;
+
 
       if (vk_format_is_srgb(view->vk.format))
          subpass->srgb_cntl |= 1 << i;
@@ -1480,7 +1690,6 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
          VkAttachmentStoreOp stencil_store_op =
             (info->pStencilAttachment && info->pStencilAttachment->imageView) ?
                info->pStencilAttachment->storeOp : VK_ATTACHMENT_STORE_OP_NONE_EXT;
-         
          if (msrtss && msrtss->multisampledRenderToSingleSampledEnable &&
              msrtss->rasterizationSamples !=
              (VkSampleCountFlagBits)view->image->layout->nr_samples) {
@@ -1488,7 +1697,6 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
                stencil_load_op == VK_ATTACHMENT_LOAD_OP_LOAD;
             bool store = store_op == VK_ATTACHMENT_STORE_OP_STORE ||
                stencil_store_op == VK_ATTACHMENT_STORE_OP_STORE;
-            
             if (att->format == VK_FORMAT_D24_UNORM_S8_UINT &&
                 (store_op == VK_ATTACHMENT_STORE_OP_NONE_EXT ||
                  stencil_store_op == VK_ATTACHMENT_STORE_OP_NONE_EXT) &&
@@ -1496,12 +1704,12 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
                load = true;
 
             if (load) {
-               unsigned idx = subpass->unresolve_count++;
-               subpass->unresolve_attachments[idx].attachment = att_idx;
+               unsigned i = subpass->unresolve_count++;
+               subpass->unresolve_attachments[i].attachment = att_idx;
             }
             if (store) {
-               unsigned idx = subpass->resolve_count++;
-               subpass->resolve_attachments[idx].attachment = att_idx;
+               unsigned i = subpass->resolve_count++;
+               subpass->resolve_attachments[i].attachment = att_idx;
                att->will_be_resolved = true;
                subpass->resolve_depth_stencil = true;
             } else {
@@ -1539,8 +1747,8 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
                   resolve_subpass->depth_stencil_attachment.attachment = a++;
                   att->will_be_resolved = false;
                } else {
-                  unsigned idx = subpass->resolve_count++;
-                  subpass->resolve_attachments[idx].attachment = a++;
+                  unsigned i = subpass->resolve_count++;
+                  subpass->resolve_attachments[i].attachment = a++;
                   att->will_be_resolved = true;
                   subpass->resolve_depth_stencil = true;
                }
@@ -1557,6 +1765,9 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
       subpass->input_attachments[0].attachment = VK_ATTACHMENT_UNUSED;
    }
 
+   /* We have to set this early for tu_render_pass_disable_fdm() to work. We
+    * then set it again after the FDM attachment is added.
+    */
    pass->user_attachment_count = a;
 
    const VkRenderingFragmentDensityMapAttachmentInfoEXT *fdm_info =
@@ -1612,7 +1823,9 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
 
    pass->user_attachment_count = a;
 
-   /* Setup MSRTSS attachments */
+   /* Setup MSRTSS attachments, which come after user attachments. They
+    * replace the color and depth/stencil attachments.
+    */
    if (msrtss && msrtss->multisampledRenderToSingleSampledEnable) {
       for (uint32_t i = 0; i < info->colorAttachmentCount; i++) {
          const VkRenderingAttachmentInfo *att_info = &info->pColorAttachments[i];
@@ -1698,9 +1911,6 @@ tu_setup_dynamic_inheritance(struct tu_cmd_buffer *cmd_buffer,
       vk_find_struct_const(info->pNext, CUSTOM_RESOLVE_CREATE_INFO_EXT);
    bool custom_resolve = crc_info && crc_info->customResolve;
 
-   memset(pass, 0, sizeof(*pass));
-   memset(subpass, 0, sizeof(*subpass));
-
    pass->subpass_count = 1;
    pass->attachments = cmd_buffer->dynamic_rp_attachments;
    pass->fragment_density_map.attachment = VK_ATTACHMENT_UNUSED;
@@ -1733,11 +1943,13 @@ tu_setup_dynamic_inheritance(struct tu_cmd_buffer *cmd_buffer,
          continue;
       }
 
-      memset(att, 0, sizeof(*att));
       att->format = format;
       att->samples = subpass->samples;
       subpass->color_attachments[i].attachment = a++;
 
+      /* conservatively assume that the attachment may be conditionally
+       * loaded/stored.
+       */
       att->cond_load_allowed = att->cond_store_allowed = true;
    }
 
@@ -1747,11 +1959,9 @@ tu_setup_dynamic_inheritance(struct tu_cmd_buffer *cmd_buffer,
    VkFormat stencil_format =
       custom_resolve ? crc_info->stencilAttachmentFormat :
       info->stencilAttachmentFormat;
-   
    if (depth_format != VK_FORMAT_UNDEFINED ||
        stencil_format != VK_FORMAT_UNDEFINED) {
       struct tu_render_pass_attachment *att = &pass->attachments[a];
-      memset(att, 0, sizeof(*att));
       att->format = depth_format != VK_FORMAT_UNDEFINED ?
          depth_format : stencil_format;
       att->samples = subpass->samples;
