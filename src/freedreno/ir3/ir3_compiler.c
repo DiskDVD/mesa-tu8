@@ -182,36 +182,6 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
 
    if (compiler->gen >= 6) {
       compiler->samgq_workaround = true;
-      
-      /* A810: Увеличиваем регистровый пул и константную память */
-      if (compiler->gen >= 8) {
-         /* Для Adreno 810 (gen8) - агрессивные настройки */
-         compiler->max_const_pipeline = 768;      /* Было 512, теперь 768 */
-         compiler->max_const_frag = 768;          /* Было 512, теперь 768 */
-         compiler->max_const_geom = 640;          /* Было 512, теперь 640 */
-         compiler->max_const_compute = 1536;       /* Было 1024, теперь 1536 */
-         compiler->max_const_safe = 256;           /* Было 100, теперь 256 */
-         compiler->reg_size_vec4 = 96;             /* Увеличиваем регистры */
-      } else if (compiler->gen == 7) {
-         compiler->max_const_pipeline = 640;
-         compiler->max_const_frag = 640;
-         compiler->max_const_geom = 576;
-         compiler->max_const_compute = 1024;
-         compiler->max_const_safe = 192;
-      } else {
-         /* A6xx базовые настройки */
-         compiler->max_const_pipeline = 512;
-         compiler->max_const_frag = 512;
-         compiler->max_const_geom = 512;
-         compiler->max_const_compute = 512;
-         compiler->max_const_safe = 100;
-      }
-
-      /* A810: увеличиваем размер локальной памяти compute */
-      if (compiler->gen >= 8) {
-         compiler->compute_lb_size = 32768;  /* 32KB вместо стандартных 16KB */
-      }
-
       /* a6xx split the pipeline state into geometry and fragment state, in
        * order to let the VS run ahead of the FS. As a result there are now
        * separate const files for the the fragment shader and everything
@@ -228,6 +198,28 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
        *
        * TODO: The shared limit seems to be different on different models.
        */
+      compiler->max_const_pipeline = 512;
+      compiler->max_const_frag = 512;
+      compiler->max_const_geom = 512;
+      compiler->max_const_safe = 100;
+
+      /* A810: Увеличиваем размер константной памяти для compute-шейдеров */
+      if (compiler->gen >= 7) {
+         compiler->max_const_compute = 1024;  /* A810: было 512, теперь 1024 */
+      } else {
+         compiler->max_const_compute = 256;
+      }
+
+      if (dev_info->props.is_a702) {
+         /* No GS/tess, 128 per stage otherwise: */
+         compiler->max_const_compute = 128;
+         compiler->max_const_pipeline = 256;
+         compiler->max_const_frag = 128;
+         compiler->max_const_geom = 128;
+         compiler->max_const_safe = 128;
+      }
+
+      /* TODO: implement clip+cull distances on earlier gen's */
       compiler->has_clip_cull = true;
 
       compiler->has_preamble = true;
@@ -257,21 +249,6 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
          compiler->delay_slots.non_alu = 5;
          compiler->delay_slots.cat3_src2_read = 1;
       }
-
-      /* A810: оптимизации для архитектуры Gen8 */
-      if (compiler->gen >= 8) {
-         /* Увеличиваем количество предикатов для лучшего параллелизма */
-         compiler->num_predicates = 8;  /* Было 4, теперь 8 */
-         
-         /* A810 имеет улучшенный планировщик, уменьшаем задержки */
-         compiler->delay_slots.alu_to_alu = 1;  /* Было 2, теперь 1 */
-         compiler->delay_slots.non_alu = 4;     /* Было 5, теперь 4 */
-         compiler->delay_slots.cat3_src2_read = 0;  /* Было 1, теперь 0 */
-         
-         /* Включаем агрессивное предсказание ветвлений */
-         compiler->branchstack_size = 1024;  /* Было 512, теперь 1024 */
-         compiler->max_branchstack = 128;    /* Было 64, теперь 128 */
-      }
    } else {
       compiler->max_const_pipeline = 512;
       compiler->max_const_geom = 512;
@@ -288,13 +265,9 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
       compiler->compute_lb_size = dev_info->compute_lb_size;
    } else {
       /* A810: Увеличиваем размер локального хранилища compute-шейдеров */
-      if (compiler->gen >= 8) {
-         compiler->compute_lb_size = 32768;  /* 32KB для A810 */
-      } else {
-         compiler->compute_lb_size =
-            compiler->max_const_compute * 16 /* bytes/vec4 */ *
-            compiler->info->wave_granularity + compiler->info->cs_shared_mem_size;
-      }
+      compiler->compute_lb_size =
+         compiler->max_const_compute * 16 /* bytes/vec4 */ *
+         compiler->info->wave_granularity + compiler->info->cs_shared_mem_size;
    }
 
    /* This is just a guess for a4xx. */
@@ -336,12 +309,6 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
       compiler->const_upload_unit = 8;
    }
 
-   /* A810: оптимизация загрузки констант через преамбулу */
-   if (compiler->gen >= 8) {
-      /* Увеличиваем размер кэша констант */
-      compiler->const_upload_unit = 16;  /* Было 4, теперь 16 */
-   }
-
    compiler->bool_type = (compiler->gen >= 5) ? TYPE_U16 : TYPE_U32;
    compiler->has_shared_regfile = compiler->gen >= 5;
    compiler->has_bitwise_triops = compiler->gen >= 5;
@@ -370,11 +337,6 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
       if (dev_info->props.has_dp4acc && dev_info->props.has_compliant_dp4acc) {
          compiler->nir_options.has_sdot_4x8 =
             compiler->nir_options.has_sdot_4x8_sat = true;
-      }
-
-      /* A810: увеличиваем лимит развертывания циклов */
-      if (compiler->gen >= 8) {
-         compiler->nir_options.max_unroll_iterations = 64;  /* Было 32 */
       }
    } else if (compiler->gen >= 3 && compiler->gen <= 5) {
       compiler->nir_options.vertex_id_zero_based = true;
