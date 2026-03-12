@@ -37,10 +37,23 @@ struct tu_cmd_cache_state {
     uint64_t last_vertex_buffer_hash;
     uint32_t last_index_buffer_hash;
     uint32_t last_render_pass_hash;
-    bool valid;
     uint32_t last_src_flags;
     uint32_t last_dst_flags;
     uint32_t barrier_counter;
+    bool valid;
+};
+
+/* Расширенное состояние кэша */
+struct tu_cache_state_ext {
+    bool optimized;
+    struct tu_cmd_cache_state cmd_cache;
+};
+
+/* Статистика батчинга */
+struct tu_batch_stats {
+    uint32_t render_commands;
+    uint32_t compute_commands;
+    uint32_t transfer_commands;
 };
 
 enum tu_cmd_buffer_status {
@@ -232,7 +245,7 @@ static void
 tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
 {
    /* Используем оптимизированную версию для A810 */
-   if (cmd->device->physical_device->info->chip == 8) {
+   if (cmd->device->physical_device->info->chip >= 8) {
       tu6_lazy_init_vsc_optimized(cmd);
    } else {
       struct tu_device *dev = cmd->device;
@@ -369,14 +382,14 @@ tu6_emit_flushes_optimized(struct tu_cmd_buffer *cmd_buffer,
 
    /* Пропускаем избыточные барьеры */
    if (cmd_cache->valid && 
-       cmd_cache->last_src_flags == flushes &&
+       cmd_cache->last_src_flags == (uint32_t)flushes &&
        cmd_cache->last_dst_flags == 0) {
       cmd_cache->barrier_counter++;
       if (cmd_cache->barrier_counter < 10) /* Кэшируем до 10 одинаковых барьеров подряд */
          return;
    }
 
-   cmd_cache->last_src_flags = flushes;
+   cmd_cache->last_src_flags = (uint32_t)flushes;
    cmd_cache->last_dst_flags = 0;
    cmd_cache->barrier_counter = 0;
 
@@ -439,12 +452,6 @@ tu6_emit_flushes(struct tu_cmd_buffer *cmd_buffer,
                  struct tu_cs *cs,
                  struct tu_cache_state *cache)
 {
-   /* Используем оптимизированную версию для A810 */
-   if (CHIP == A8XX && cmd_buffer->state.cache.optimized) {
-      tu6_emit_flushes_optimized<CHIP>(cmd_buffer, cs, cache, &cmd_buffer->state.cmd_cache);
-      return;
-   }
-
    BITMASK_ENUM(tu_cmd_flush_bits) flushes = cache->flush_bits;
    cache->flush_bits = 0;
 
@@ -2527,12 +2534,6 @@ tu6_init_hw(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 
    cmd->state.cache.pending_flush_bits &=
       ~(TU_CMD_FLAG_WAIT_FOR_IDLE | TU_CMD_FLAG_CACHE_INVALIDATE);
-
-   /* Инициализируем кэш состояний для A810 */
-   if (CHIP >= A8XX) {
-      memset(&cmd->state.cmd_cache, 0, sizeof(cmd->state.cmd_cache));
-      cmd->state.cache.optimized = true;
-   }
 
    tu6_init_static_regs<CHIP>(cmd->device, cs);
 
