@@ -7,9 +7,8 @@
  * Copyright © 2015 Intel Corporation
  *
  * Стабильная версия для Adreno 810
- * - Убраны агрессивные оптимизации
- * - Добавлены проверки ошибок
- * - Улучшена обработка Device Lost
+ * - Исправлены ошибки компиляции
+ * - Добавлены недостающие функции
  */
 
 #include "tu_queue.h"
@@ -26,13 +25,6 @@
 /* Только базовые оптимизации для стабильности */
 #define TU_A810_MAX_VIS_STREAMS 32      /* Стандартное значение */
 #define TU_A810_VIS_STREAM_SIZE (128 * 1024) /* 128KB на поток */
-
-/* Структура для отслеживания состояния */
-struct tu_queue_state {
-    uint32_t submit_count;
-    uint32_t device_lost_count;
-    bool last_submit_success;
-};
 
 static int
 tu_get_submitqueue_priority(const struct tu_physical_device *pdevice,
@@ -185,6 +177,140 @@ get_vis_stream_patchpoint_cs(struct tu_cmd_buffer *cmd,
    return VK_SUCCESS;
 }
 
+/* Оригинальная функция для старых чипов */
+static VkResult
+resolve_vis_stream_patchpoints_original(struct tu_queue *queue,
+                                       void *submit,
+                                       struct util_dynarray *dump_cmds,
+                                       struct tu_cmd_buffer **cmd_buffers,
+                                       uint32_t cmdbuf_count)
+{
+   struct tu_device *dev = queue->device;
+
+   uint32_t max_size = 0;
+   uint32_t rp_count = 0;
+   for (unsigned i = 0; i < cmdbuf_count; i++) {
+      max_size = MAX2(max_size, cmd_buffers[i]->vsc_size);
+      rp_count += cmd_buffers[i]->state.tile_render_pass_count;
+   }
+
+   if (max_size == 0)
+      return VK_SUCCESS;
+
+   struct tu_bo *bo = NULL;
+   VkResult result = VK_SUCCESS;
+
+   uint32_t min_vis_stream_count =
+      (TU_DEBUG(NO_CONCURRENT_BINNING) || dev->physical_device->info->chip < 7) ?
+      1 : MIN2(MAX2(rp_count, 1), TU_MAX_VIS_STREAMS);
+   uint32_t vis_stream_count;
+
+   mtx_lock(&dev->vis_stream_mtx);
+
+   if (!dev->vis_stream_bo || max_size > dev->vis_stream_size ||
+       min_vis_stream_count > dev->vis_stream_count) {
+      dev->vis_stream_count = MAX2(dev->vis_stream_count,
+                                   min_vis_stream_count);
+      dev->vis_stream_size = MAX2(dev->vis_stream_size, max_size);
+      if (dev->vis_stream_bo)
+         tu_bo_finish(dev, dev->vis_stream_bo);
+      result = tu_bo_init_new(dev, &dev->vk.base, &dev->vis_stream_bo,
+                              dev->vis_stream_size * dev->vis_stream_count, 
+                              TU_BO_ALLOC_INTERNAL_RESOURCE,
+                              "visibility stream");
+   }
+
+   bo = dev->vis_stream_bo;
+   vis_stream_count = dev->vis_stream_count;
+
+   mtx_unlock(&dev->vis_stream_mtx);
+
+   if (!bo)
+      return result;
+
+   for (unsigned i = 0; i < cmdbuf_count; i++) {
+      bool has_bo = false;
+      util_dynarray_foreach (&cmd_buffers[i]->vis_stream_bos,
+                             struct tu_bo *, cmd_bo) {
+         if (*cmd_bo == bo) {
+            has_bo = true;
+            break;
+         }
+      }
+
+      if (!has_bo) {
+         util_dynarray_append(&cmd_buffers[i]->vis_stream_bos,
+                              tu_bo_get_ref(bo));
+      }
+   }
+
+   unsigned render_pass_idx = queue->render_pass_idx;
+
+   for (unsigned i = 0; i < cmdbuf_count; i++) {
+      struct tu_cs cs, sub_cs;
+      uint64_t fence_iova = 0;
+      if (cmd_buffers[i]->usage_flags &
+          VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
+         result = get_vis_stream_patchpoint_cs(cmd_buffers[i],
+                                               &cs, &sub_cs, &fence_iova);
+         if (result != VK_SUCCESS)
+            return result;
+      }
+
+      util_dynarray_foreach (&cmd_buffers[i]->vis_stream_patchpoints,
+                             struct tu_vis_stream_patchpoint,
+                             patchpoint) {
+         unsigned vis_stream_idx =
+            (render_pass_idx + patchpoint->render_pass_idx) %
+            vis_stream_count;
+         uint64_t final_iova =
+            bo->iova + vis_stream_idx * max_size + patchpoint->offset;
+
+         if (cmd_buffers[i]->usage_flags &
+             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
+            tu_cs_emit_pkt7(&sub_cs, CP_MEM_WRITE, 4);
+            tu_cs_emit_qw(&sub_cs, patchpoint->iova);
+            tu_cs_emit_qw(&sub_cs, final_iova);
+         } else {
+            patchpoint->data[0] = final_iova;
+            patchpoint->data[1] = final_iova >> 32;
+         }
+      }
+
+      struct tu_vis_stream_patchpoint *count_patchpoint =
+         &cmd_buffers[i]->vis_stream_count_patchpoint;
+      if (count_patchpoint->data) {
+         if (cmd_buffers[i]->usage_flags &
+             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
+            tu_cs_emit_pkt7(&sub_cs, CP_MEM_WRITE, 3);
+            tu_cs_emit_qw(&sub_cs, count_patchpoint->iova);
+            tu_cs_emit(&sub_cs, vis_stream_count);
+         } else {
+            count_patchpoint->data[0] = vis_stream_count;
+         }
+      }
+
+      if (cmd_buffers[i]->usage_flags &
+          VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
+         tu_cs_emit_pkt7(&sub_cs, CP_WAIT_MEM_WRITES, 0);
+         tu_cs_emit_pkt7(&sub_cs, CP_WAIT_FOR_ME, 0);
+
+         tu_cs_emit_pkt7(&sub_cs, CP_MEM_WRITE, 3);
+         tu_cs_emit_qw(&sub_cs, fence_iova);
+         tu_cs_emit(&sub_cs, 1);
+
+         struct tu_cs_entry entry = tu_cs_end_sub_stream(&cs, &sub_cs);
+         submit_add_entries(queue->device, submit, dump_cmds, &entry, 1);
+      }
+
+      render_pass_idx += cmd_buffers[i]->state.tile_render_pass_count;
+   }
+
+   queue->render_pass_idx = render_pass_idx;
+
+   return VK_SUCCESS;
+}
+
 /* Стабильная версия для A810 */
 static VkResult
 resolve_vis_stream_patchpoints_stable(struct tu_queue *queue,
@@ -220,12 +346,10 @@ resolve_vis_stream_patchpoints_stable(struct tu_queue *queue,
    if (!dev->vis_stream_bo || max_size > dev->vis_stream_size ||
        min_vis_stream_count > dev->vis_stream_count) {
       
-      /* Обновляем размеры */
       dev->vis_stream_count = MAX2(dev->vis_stream_count,
                                    min_vis_stream_count);
       dev->vis_stream_size = MAX2(dev->vis_stream_size, vis_stream_size);
       
-      /* Создаем новый BO */
       if (dev->vis_stream_bo)
          tu_bo_finish(dev, dev->vis_stream_bo);
       
@@ -248,7 +372,6 @@ resolve_vis_stream_patchpoints_stable(struct tu_queue *queue,
    if (!bo)
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
-   /* Attach a reference to the BO to each command buffer */
    for (unsigned i = 0; i < cmdbuf_count; i++) {
       bool has_bo = false;
       util_dynarray_foreach (&cmd_buffers[i]->vis_stream_bos,
@@ -317,7 +440,6 @@ resolve_vis_stream_patchpoints_stable(struct tu_queue *queue,
          tu_cs_emit_pkt7(&sub_cs, CP_WAIT_MEM_WRITES, 0);
          tu_cs_emit_pkt7(&sub_cs, CP_WAIT_FOR_ME, 0);
 
-         /* Signal that this CS is done */
          tu_cs_emit_pkt7(&sub_cs, CP_MEM_WRITE, 3);
          tu_cs_emit_qw(&sub_cs, fence_iova);
          tu_cs_emit(&sub_cs, 1);
@@ -496,8 +618,8 @@ queue_submit(struct vk_queue *_queue, struct vk_queue_submit *vk_submit)
       result = resolve_vis_stream_patchpoints_stable(queue, submit, &dump_cmds,
                                                      cmd_buffers, cmdbuf_count);
    } else {
-      result = resolve_vis_stream_patchpoints_legacy(queue, submit, &dump_cmds,
-                                                     cmd_buffers, cmdbuf_count);
+      result = resolve_vis_stream_patchpoints_original(queue, submit, &dump_cmds,
+                                                       cmd_buffers, cmdbuf_count);
    }
    
    if (result != VK_SUCCESS)
@@ -601,14 +723,7 @@ queue_submit(struct vk_queue *_queue, struct vk_queue_submit *vk_submit)
                       u_trace_submission_data);
 
    if (result != VK_SUCCESS) {
-      /* Логируем ошибку для диагностики */
       mesa_loge("Queue submission failed with error: %d", result);
-      
-      /* Если устройство потеряно, пробуем восстановить */
-      if (result == VK_ERROR_DEVICE_LOST) {
-         queue->device->device_lost = true;
-      }
-      
       pthread_mutex_unlock(&device->submit_mutex);
       goto out;
    }
