@@ -4,18 +4,26 @@
  */
 
 /**
- * Безопасная оптимизация для Adreno 810
- * - Только выравнивание (не требует новых флагов)
- * - Только существующие поля структур
- * - Никаких новых флагов
+ * Suballocator for space within BOs.
+ *
+ * BOs are allocated at PAGE_SIZE (typically 4k) granularity, so small
+ * allocations are a waste to have in their own BO.  Moreover, on DRM we track a
+ * list of all BOs currently allocated and submit the whole list for validation
+ * (busy tracking and implicit sync) on every submit, and that validation is a
+ * non-trivial cost.  So, being able to pack multiple allocations into a BO can
+ * be a significant performance win.
+ *
+ * The allocator tracks a current BO it is linearly allocating from, and up to
+ * one extra BO returned to the pool when all of its previous suballocations
+ * have been freed. This means that fragmentation can be an issue for
+ * default_size > PAGE_SIZE and small allocations.  Also, excessive BO
+ * reallocation may happen for workloads where default size < working set size.
  */
 
 #include "tu_suballoc.h"
-#include "util/u_math.h"
 
-/* Размер кэш-линии для Adreno 810 */
-#define ADRENO_CACHE_LINE_SIZE 64
-
+/* Initializes a BO sub-allocator using refcounts on BOs.
+ */
 void
 tu_bo_suballocator_init(struct tu_suballocator *suballoc,
                         struct tu_device *dev,
@@ -24,12 +32,7 @@ tu_bo_suballocator_init(struct tu_suballocator *suballoc,
                         const char *name)
 {
    suballoc->dev = dev;
-   
-   /* Snapdragon 6 Gen 4: просто увеличиваем размер по умолчанию */
-   /* 2MB пул лучше для GTA V / Stray */
-   suballoc->default_size = MAX2(default_size, 2 * 1024 * 1024);
-   
-   /* НЕ добавляем никаких флагов - оставляем как есть */
+   suballoc->default_size = default_size;
    suballoc->flags = flags;
    suballoc->bo = NULL;
    suballoc->cached_bo = NULL;
@@ -45,31 +48,20 @@ tu_bo_suballocator_finish(struct tu_suballocator *suballoc)
       tu_bo_finish(suballoc->dev, suballoc->cached_bo);
 }
 
-static inline uint32_t
-adreno_align_size(uint32_t size)
-{
-   /* Adreno 810: выравнивание по 64 байт */
-   return align(size, ADRENO_CACHE_LINE_SIZE);
-}
-
 VkResult
 tu_suballoc_bo_alloc(struct tu_suballoc_bo *suballoc_bo,
                      struct tu_suballocator *suballoc,
                      uint32_t size, uint32_t alignment)
 {
-   /* Применяем выравнивание Adreno */
-   uint32_t aligned_size = adreno_align_size(size);
-   uint32_t aligned_align = MAX2(alignment, ADRENO_CACHE_LINE_SIZE);
-   
    struct tu_bo *bo = suballoc->bo;
    if (bo) {
-      uint32_t offset = align(suballoc->next_offset, aligned_align);
-      if (offset + aligned_size <= bo->size) {
+      uint32_t offset = align(suballoc->next_offset, alignment);
+      if (offset + size <= bo->size) {
          suballoc_bo->bo = tu_bo_get_ref(bo);
          suballoc_bo->iova = bo->iova + offset;
-         suballoc_bo->size = aligned_size; /* Используем выровненный размер */
+         suballoc_bo->size = size;
 
-         suballoc->next_offset = offset + aligned_size;
+         suballoc->next_offset = offset + size;
          return VK_SUCCESS;
       } else {
          tu_bo_finish(suballoc->dev, bo);
@@ -77,14 +69,7 @@ tu_suballoc_bo_alloc(struct tu_suballoc_bo *suballoc_bo,
       }
    }
 
-   /* Для GTA V/Stray: если запрос больше 256KB, увеличиваем размер BO */
-   uint32_t alloc_size;
-   if (aligned_size > 256 * 1024) {
-      /* Для больших аллокаций выделяем с запасом */
-      alloc_size = MAX2(aligned_size * 2, suballoc->default_size);
-   } else {
-      alloc_size = MAX2(aligned_size, suballoc->default_size);
-   }
+   uint32_t alloc_size = MAX2(size, suballoc->default_size);
 
    /* Reuse a recycled suballoc BO if we have one and it's big enough, otherwise free it. */
    if (suballoc->cached_bo) {
@@ -112,8 +97,8 @@ tu_suballoc_bo_alloc(struct tu_suballoc_bo *suballoc_bo,
 
    suballoc_bo->bo = tu_bo_get_ref(suballoc->bo);
    suballoc_bo->iova = suballoc_bo->bo->iova;
-   suballoc_bo->size = aligned_size; /* Сохраняем реальный запрошенный размер */
-   suballoc->next_offset = aligned_size;
+   suballoc_bo->size = size;
+   suballoc->next_offset = size;
 
    return VK_SUCCESS;
 }
@@ -139,6 +124,5 @@ tu_suballoc_bo_free(struct tu_suballocator *suballoc, struct tu_suballoc_bo *bo)
 void *
 tu_suballoc_bo_map(struct tu_suballoc_bo *bo)
 {
-   /* Вычисляем смещение правильно для выровненных адресов */
    return (char *)bo->bo->map + (bo->iova - bo->bo->iova);
 }
