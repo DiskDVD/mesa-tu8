@@ -35,25 +35,28 @@
 #include "tu_pass.h"
 #include "tu_rmv.h"
 
-/* ADRENO810_OPT: Определения для Adreno 810 - исправлено */
-#define ADRENO_810_FAMILY 8  /* Adreno 8xx family */
-#define ADRENO_810_GEN 1     /* Generation within family */
+/* ADRENO810_OPT: Определения для Adreno 810 */
 #define ADRENO_810_WAVE_SIZE 64
 #define ADRENO_810_MAX_INSTR_LEN 16384
 #define ADRENO_810_MAX_CONSTLEN 256
 #define ADRENO_810_OPT_LEVEL 2
 
-/* Функция для проверки Adreno 810 */
+/* Функция для проверки Adreno 810 по косвенным признакам */
 static inline bool
 tu_is_adreno_810(const struct tu_device *dev)
 {
    if (!dev || !dev->physical_device || !dev->physical_device->info)
       return false;
    const struct fd_dev_info *info = dev->physical_device->info;
-   /* Adreno 810 имеет chip_id в определенном диапазоне */
-   return (info->chip >= 800 && info->chip < 900) || 
-          (info->chip == 0x44050000) || /* Из скриншотов */
-          (info->chip == 0x44050001);
+   
+   /* Проверяем по характерным для Adreno 810 параметрам */
+   /* Из скриншотов: tile_align_w = 64, tile_align_h = 32, num_ccu = 6, num_slices = 3 */
+   if (info->tile_align_w == 64 && info->tile_align_h == 32 &&
+       info->num_ccu == 6 && info->num_slices == 3) {
+      return true;
+   }
+   
+   return false;
 }
 
 static inline bool
@@ -180,61 +183,6 @@ tu6_emit_load_state(struct tu_device *device,
          continue;
 
       struct tu_descriptor_set_layout *set_layout = layout->set[i].layout;
-      
-      /* ADRENO810_OPT: Объединяем загрузки для часто используемых сетов */
-      if (is_adreno_810 && set_layout->binding_count > 0 && set_layout->binding_count <= 4) {
-         /* Используем раздельные загрузки для каждого типа */
-         bool has_textures = false, has_samplers = false, has_ubos = false, has_uavs = false;
-         
-         for (unsigned j = 0; j < set_layout->binding_count; j++) {
-            switch (set_layout->binding[j].type) {
-            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-               has_textures = true;
-               break;
-            case VK_DESCRIPTOR_TYPE_SAMPLER:
-               has_samplers = true;
-               break;
-            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
-            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
-               has_ubos = true;
-               break;
-            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-            case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-               has_uavs = true;
-               break;
-            default:
-               break;
-            }
-         }
-         
-         /* Загружаем по типам */
-         if (has_textures) {
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_CONSTANTS, SB6_VS_TEX, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_CONSTANTS, SB6_HS_TEX, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_CONSTANTS, SB6_DS_TEX, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_CONSTANTS, SB6_GS_TEX, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_CONSTANTS, SB6_FS_TEX, i, 0, 1);
-         }
-         if (has_samplers) {
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_SHADER, SB6_VS_TEX, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_SHADER, SB6_HS_TEX, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_SHADER, SB6_DS_TEX, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_SHADER, SB6_GS_TEX, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_SHADER, SB6_FS_TEX, i, 0, 1);
-         }
-         if (has_ubos) {
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_UBO, SB6_VS_SHADER, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_UBO, SB6_HS_SHADER, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_UBO, SB6_DS_SHADER, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_UBO, SB6_GS_SHADER, i, 0, 1);
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_UBO, SB6_FS_SHADER, i, 0, 1);
-         }
-         if (has_uavs) {
-            emit_load_state(&cs, CP_LOAD_STATE6, ST6_UAV, SB6_UAV, i, 0, 1);
-         }
-         continue;
-      }
       
       for (unsigned j = 0; j < set_layout->binding_count; j++) {
          struct tu_descriptor_set_binding_layout *binding = &set_layout->binding[j];
@@ -484,21 +432,12 @@ template <chip CHIP>
 void
 tu6_emit_xs_config(struct tu_crb &crb, struct tu_shader_stages stages)
 {
-   bool is_adreno_810 = tu_is_adreno_810_from_cs(crb.cs);
-   
-   /* ADRENO810_OPT: Увеличенный shared memory для часто используемых шейдеров */
-   uint32_t shared_consts_mask = 0;
-   
    if (stages.cs) {
       crb.add(SP_CS_CONST_CONFIG(CHIP,
          .constlen = stages.cs->constlen,
          .enabled = true,
          .read_imm_shared_consts = push_shared_consts(stages.cs),
       ));
-      
-      if (is_adreno_810 && stages.cs->constlen > 0)
-         shared_consts_mask |= 1 << 5;
-         
       crb.add(A6XX_SP_CS_CONFIG(.dword = sp_xs_config(stages.cs)));
    } else {
       crb.add(SP_VS_CONST_CONFIG(CHIP,
@@ -506,56 +445,32 @@ tu6_emit_xs_config(struct tu_crb &crb, struct tu_shader_stages stages)
          .enabled = stages.vs,
          .read_imm_shared_consts = push_shared_consts(stages.vs),
       ));
-      
-      if (is_adreno_810 && stages.vs && stages.vs->constlen > 0)
-         shared_consts_mask |= 1 << 0;
-         
       crb.add(SP_HS_CONST_CONFIG(CHIP,
          .constlen = COND(stages.hs, stages.hs->constlen),
          .enabled = stages.hs,
          .read_imm_shared_consts = push_shared_consts(stages.hs),
       ));
-      
-      if (is_adreno_810 && stages.hs && stages.hs->constlen > 0)
-         shared_consts_mask |= 1 << 1;
-         
       crb.add(SP_DS_CONST_CONFIG(CHIP,
          .constlen = COND(stages.ds, stages.ds->constlen),
          .enabled = stages.ds,
          .read_imm_shared_consts = push_shared_consts(stages.ds),
       ));
-      
-      if (is_adreno_810 && stages.ds && stages.ds->constlen > 0)
-         shared_consts_mask |= 1 << 2;
-         
       crb.add(SP_GS_CONST_CONFIG(CHIP,
          .constlen = COND(stages.gs, stages.gs->constlen),
          .enabled = stages.gs,
          .read_imm_shared_consts = push_shared_consts(stages.gs),
       ));
-      
-      if (is_adreno_810 && stages.gs && stages.gs->constlen > 0)
-         shared_consts_mask |= 1 << 3;
-         
       crb.add(SP_PS_CONST_CONFIG(CHIP,
          .constlen = COND(stages.fs, stages.fs->constlen),
          .enabled = stages.fs,
          .read_imm_shared_consts = push_shared_consts(stages.fs),
       ));
-      
-      if (is_adreno_810 && stages.fs && stages.fs->constlen > 0)
-         shared_consts_mask |= 1 << 4;
 
       crb.add(A6XX_SP_VS_CONFIG(.dword = sp_xs_config(stages.vs)));
       crb.add(A6XX_SP_HS_CONFIG(.dword = sp_xs_config(stages.hs)));
       crb.add(A6XX_SP_DS_CONFIG(.dword = sp_xs_config(stages.ds)));
       crb.add(A6XX_SP_GS_CONFIG(.dword = sp_xs_config(stages.gs)));
       crb.add(A6XX_SP_PS_CONFIG(.dword = sp_xs_config(stages.fs)));
-   }
-   
-   /* ADRENO810_OPT: Включаем shared constants если нужно */
-   if (is_adreno_810 && shared_consts_mask) {
-      crb.add(HLSQ_SHARED_CONSTS(CHIP, .enable = true));
    }
 }
 TU_GENX(tu6_emit_xs_config);
@@ -664,10 +579,6 @@ tu6_setup_streamout(struct tu_cs *cs,
       return;
    }
 
-   /* ADRENO810_OPT: Предварительная оптимизация выходов */
-   uint32_t optimized_outputs[IR3_MAX_SO_OUTPUTS] = {0};
-   uint32_t opt_count = 0;
-   
    for (unsigned i = 0; i < info->num_outputs; i++) {
       const struct ir3_stream_output *out = &info->output[i];
       gl_varying_slot slot = (gl_varying_slot) out->location;
@@ -683,11 +594,6 @@ tu6_setup_streamout(struct tu_cs *cs,
       /* Skip it, if it's an output that was never assigned a register. */
       if (idx >= l->cnt)
          continue;
-         
-      /* ADRENO810_OPT: Кэшируем найденные индексы */
-      if (is_adreno_810 && opt_count < ARRAY_SIZE(optimized_outputs)) {
-         optimized_outputs[opt_count++] = idx;
-      }
 
       for (unsigned j = 0; j < out->num_components; j++) {
          unsigned c   = j + out->start_component;
@@ -1124,9 +1030,6 @@ tu6_emit_vpc(struct tu_cs *cs,
 
    tu_crb crb = cs->crb(sp_out_count + sp_vpc_dst_count + 12);
    uint32_t *regs;
-
-   /* ADRENO810_OPT: Оптимизация под конкретный шейдер */
-   bool optimize_vpc = is_adreno_810 && (gs || hs) && linkage.cnt <= 16;
 
    switch (last_shader->type) {
    case MESA_SHADER_VERTEX:
@@ -3966,7 +3869,7 @@ tu6_rb_depth_cntl_size(struct tu_device *dev,
    bool is_adreno_810 = tu_is_adreno_810(dev);
    
    /* ADRENO810_OPT: Увеличенный размер для depth bounds */
-   if (is_adreno_810 && ds->depth.bounds_test_enable) {
+   if (is_adreno_810 && ds->depth.bounds_test.enable) {
       return 9;
    }
    return 7;
@@ -3992,7 +3895,7 @@ tu6_emit_rb_depth_cntl(struct tu_cs *cs,
        *  dEQP-VK.pipeline.extended_dynamic_state.two_draws_dynamic.depth_bounds_test_disable
        *  dEQP-VK.dynamic_state.ds_state.depth_bounds_1
        */
-      if (ds->depth.bounds_test_enable &&
+      if (ds->depth.bounds_test.enable &&
           !ds->depth.test_enable &&
           cs->device->physical_device->info->props.depth_bounds_require_depth_test_quirk) {
          depth_test = true;
@@ -4001,7 +3904,7 @@ tu6_emit_rb_depth_cntl(struct tu_cs *cs,
       
       /* ADRENO810_OPT: Аппаратный fast path для depth */
       bool depth_fast_path = is_adreno_810 && depth_test &&
-         zfunc == FUNC_LESS && !ds->depth.bounds_test_enable;
+         zfunc == FUNC_LESS && !ds->depth.bounds_test.enable;
 
       tu_cs_emit_regs(cs, A6XX_RB_DEPTH_CNTL(
          .z_test_enable = depth_test,
@@ -4011,8 +3914,8 @@ tu6_emit_rb_depth_cntl(struct tu_cs *cs,
          .z_clamp_enable = rs->depth_clamp_enable || CHIP >= A7XX,
          .z_read_enable =
             (ds->depth.test_enable && (zfunc != FUNC_NEVER && zfunc != FUNC_ALWAYS)) ||
-            ds->depth.bounds_test_enable,
-         .z_bounds_enable = ds->depth.bounds_test_enable,
+            ds->depth.bounds_test.enable,
+         .z_bounds_enable = ds->depth.bounds_test.enable,
          .o_depth_01_clamp_en = CHIP >= A8XX,
          /* ADRENO810_OPT: Дополнительные оптимизации */
          .early_z_disable = !depth_fast_path,
@@ -4177,7 +4080,6 @@ tu6_emit_fragment_shading_rate(struct tu_cs *cs,
                                  .attachment_fsr_enable = enable_att_fsr,
                                  .primitive_fsr_enable = enable_prim_fsr));
    
-   /* ADRENO810_OPT: Используем стандартную структуру, без vrs_rate_x/y */
    tu_cs_emit_regs(cs, GRAS_VRS_CONFIG(CHIP,
                 .pipeline_fsr_enable = enable_draw_fsr,
                 .frag_size_x = util_logbase2(frag_width),
@@ -5270,8 +5172,6 @@ tu_compute_pipeline_create(VkDevice device,
                                      pCreateInfo->pNext,
                                      stage_info->pNext);
    tu_shader_key_robustness(&key, &rs);
-
-   /* ADRENO810_OPT: Убираем force_local_size и prefered_local_size_*, так как их нет в структуре */
 
    void *pipeline_mem_ctx = ralloc_context(NULL);
 
