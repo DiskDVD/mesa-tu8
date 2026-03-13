@@ -3906,20 +3906,17 @@ tu6_emit_rb_depth_cntl(struct tu_cs *cs,
       bool depth_fast_path = is_adreno_810 && depth_test &&
          zfunc == FUNC_LESS && !ds->depth.bounds_test.enable;
 
+      /* Используем стандартную структуру без дополнительных полей */
       tu_cs_emit_regs(cs, A6XX_RB_DEPTH_CNTL(
          .z_test_enable = depth_test,
          .z_write_enable = ds->depth.test_enable && ds->depth.write_enable,
          .zfunc = zfunc,
-         /* To support VK_EXT_depth_clamp_zero_one on a7xx+ */
          .z_clamp_enable = rs->depth_clamp_enable || CHIP >= A7XX,
          .z_read_enable =
             (ds->depth.test_enable && (zfunc != FUNC_NEVER && zfunc != FUNC_ALWAYS)) ||
             ds->depth.bounds_test.enable,
          .z_bounds_enable = ds->depth.bounds_test.enable,
-         .o_depth_01_clamp_en = CHIP >= A8XX,
-         /* ADRENO810_OPT: Дополнительные оптимизации */
-         .early_z_disable = !depth_fast_path,
-         .late_z_disable = !depth_fast_path && ds->depth.write_enable));
+         .o_depth_01_clamp_en = CHIP >= A8XX));
       tu_cs_emit_regs(cs, GRAS_SU_DEPTH_CNTL(CHIP, depth_test));
       tu_cs_emit_regs(cs,
                       A6XX_RB_DEPTH_BOUND_MIN(ds->depth.bounds_test.min),
@@ -5161,8 +5158,6 @@ tu_compute_pipeline_create(VkDevice device,
       vk_find_struct_const(stage_info,
                            PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO);
    
-   /* ADRENO810_OPT: Убираем поля, которых нет в структуре */
-   /* Просто используем стандартную функцию, без дополнительных полей */
    tu_shader_key_subgroup_size(&key, allow_varying_subgroup_size,
                                require_full_subgroups, subgroup_info,
                                dev);
