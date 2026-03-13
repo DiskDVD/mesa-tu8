@@ -43,7 +43,7 @@ __calc_gmem_cache_offsets(const struct fd_dev_info *info, unsigned offset,
    unsigned num_ccu = info->num_ccu;
 
    /* Adreno 810: защита от отрицательных смещений */
-   if (info->gpu_id == 810) {
+   if (info->chip == 8 && info->props.gmem_size == 512 * 1024) {
       /* Проверяем каждый шаг на переполнение */
       if (offset < num_ccu * config->vpc_bv_pos_buf_size) {
          config->vpc_bv_pos_buf_size = offset / num_ccu;
@@ -103,7 +103,7 @@ fd6_calc_gmem_cache_offsets(const struct fd_dev_info *info, unsigned gmemsize_by
    /* TODO we could unify gen7/gen8 setup.. gen7 is a subset.. */
    if (info->chip == 8) {
       /* Adreno 810: специальная обработка для 512KB GMEM */
-      if (info->gpu_id == 810) {
+      if (info->props.gmem_size == 512 * 1024) {
          /* Для GMEM режима - максимум памяти под тайлы */
          gmem->depth_cache_fraction = 0;
          gmem->depth_cache_size     = 16 * 1024;     /* 16KB на depth cache */
