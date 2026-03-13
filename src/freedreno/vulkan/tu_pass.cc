@@ -754,12 +754,22 @@ tu_gmem_alloc(struct tu_gmem_alloc *allocs,
    return alloc;
 }
 
+/**
+ * Расчет конфигурации GMEM для рендер-пасса
+ * Адаптировано для A810 с 512KB GMEM
+ */
 static void
 tu_render_pass_gmem_config(struct tu_render_pass *pass,
                            const struct tu_physical_device *phys_dev)
 {
    if (pass->attachment_count == 0)
       return;
+
+   /* A810: принудительно устанавливаем размер GMEM */
+   uint32_t a810_gmem_size = 0;
+   if (phys_dev->dev_id.gpu_id == 810) {
+      a810_gmem_size = 512 * 1024; /* 512KB */
+   }
 
    for (enum tu_gmem_layout layout = (enum tu_gmem_layout) 0;
         layout < TU_GMEM_LAYOUT_COUNT;
@@ -768,6 +778,12 @@ tu_render_pass_gmem_config(struct tu_render_pass *pass,
       uint32_t block_align_shift = 3;
       uint32_t tile_align_w = phys_dev->info->tile_align_w;
       uint32_t gmem_align = (1 << block_align_shift) * tile_align_w * phys_dev->info->tile_align_h;
+
+      /* A810: уменьшаем выравнивание для маленьких тайлов */
+      if (phys_dev->dev_id.gpu_id == 810) {
+         /* Для A810 используем выравнивание 64 байта */
+         gmem_align = 64;
+      }
 
       /* gmem allocations to make, possibly shared between attachments. Each
        * attachment may have 2 allocations, to handle separate stencil.
@@ -823,26 +839,56 @@ tu_render_pass_gmem_config(struct tu_render_pass *pass,
          return;
       }
 
-      /* TODO: this algorithm isn't optimal
-       * for example, two attachments with cpp = {1, 4}
-       * result:  nblocks = {12, 52}, pixels = 196608
-       * optimal: nblocks = {13, 51}, pixels = 208896
-       */
-      uint32_t gmem_size = layout == TU_GMEM_LAYOUT_FULL
-                              ? phys_dev->usable_gmem_size_gmem
-                              : phys_dev->config_gmem.color_ccu_offset;
+      /* Определяем доступный размер GMEM */
+      uint32_t gmem_size;
+      if (phys_dev->dev_id.gpu_id == 810) {
+         /* A810: используем фиксированный 512KB */
+         gmem_size = a810_gmem_size;
+      } else {
+         /* Другие GPU: стандартная логика */
+         gmem_size = layout == TU_GMEM_LAYOUT_FULL
+                        ? phys_dev->usable_gmem_size_gmem
+                        : phys_dev->config_gmem.color_ccu_offset;
+      }
+
       uint32_t gmem_blocks = gmem_size / gmem_align;
       uint32_t offset = 0, pixels = ~0u, i;
+      
+      /* A810: принудительно уменьшаем количество блоков, если attachments не влезают */
+      if (phys_dev->dev_id.gpu_id == 810) {
+         /* Проверяем, влезают ли все attachments */
+         uint32_t min_needed = 0;
+         for (i = 0; i < num_gmem_alloc; i++) {
+            min_needed += gmem_alloc[i].cpp;
+         }
+         
+         /* Если минимально необходимое больше доступного - layout невозможен */
+         if (min_needed > gmem_blocks) {
+            pass->gmem_pixels[layout] = 0;
+            continue;
+         }
+      }
+
       for (i = 0; i < num_gmem_alloc; i++) {
          struct tu_gmem_alloc *alloc = &gmem_alloc[i];
 
          uint32_t align = MAX2(1, alloc->cpp >> block_align_shift);
-         uint32_t nblocks = MAX2((gmem_blocks * alloc->cpp / cpp_total) & ~(align - 1), align);
+         
+         /* A810: более консервативное выделение */
+         uint32_t nblocks;
+         if (phys_dev->dev_id.gpu_id == 810) {
+            /* Для A810 выделяем пропорционально, но с защитой от переполнения */
+            nblocks = (gmem_blocks * alloc->cpp) / cpp_total;
+            nblocks = MAX2(nblocks, align);
+            nblocks = MIN2(nblocks, gmem_blocks);
+         } else {
+            nblocks = MAX2((gmem_blocks * alloc->cpp / cpp_total) & ~(align - 1), align);
+         }
 
          if (nblocks > gmem_blocks) {
             /* gmem layout impossible */
             pass->gmem_pixels[layout] = 0;
-            continue;
+            break;
          }
 
          gmem_blocks -= nblocks;
@@ -850,6 +896,11 @@ tu_render_pass_gmem_config(struct tu_render_pass *pass,
          alloc->gmem_offset = offset;
          offset += nblocks * gmem_align;
          pixels = MIN2(pixels, nblocks * gmem_align / alloc->cpp);
+      }
+
+      if (i < num_gmem_alloc) {
+         /* Layout failed - пропускаем */
+         continue;
       }
 
       pass->gmem_pixels[layout] = pixels;
