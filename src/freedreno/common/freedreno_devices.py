@@ -1636,8 +1636,8 @@ a8xx_810 = GPUProps(
         
         # GMEM - МИНИМАЛЬНЫЕ ОВЕРХЕДЫ для 512KB
         gmem_vpc_attr_buf_size = 16384,         # 16KB (было 48KB)
-        gmem_vpc_pos_buf_size = 0,               # 0KB - отключаем (было 24KB)
-        gmem_vpc_bv_pos_buf_size = 0,            # 0KB - отключаем (было 32KB)
+        gmem_vpc_pos_buf_size = 4096,               # 0KB - отключаем (было 24KB)
+        gmem_vpc_bv_pos_buf_size = 4096,            # 0KB - отключаем (было 32KB)
         
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
         gmem_per_ccu_color_cache_size = 8192,    # 8KB (было 16KB)
