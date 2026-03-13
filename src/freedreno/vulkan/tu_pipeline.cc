@@ -39,7 +39,6 @@
 #define ADRENO_810_WAVE_SIZE 64
 #define ADRENO_810_MAX_INSTR_LEN 16384
 #define ADRENO_810_MAX_CONSTLEN 256
-#define ADRENO_810_OPT_LEVEL 2
 
 /* Функция для проверки Adreno 810 по косвенным признакам */
 static inline bool
@@ -73,11 +72,6 @@ emit_load_state(struct tu_cs *cs, unsigned opcode, enum a6xx_state_type st,
                 enum a6xx_state_block sb, unsigned base, unsigned offset,
                 unsigned count)
 {
-   /* Note: just emit one packet, even if count overflows NUM_UNIT. It's not
-    * clear if emitting more packets will even help anything. Presumably the
-    * descriptor cache is relatively small, and these packets stop doing
-    * anything when there are too many descriptors.
-    */
    tu_cs_emit_pkt7(cs, opcode, 3);
    tu_cs_emit(cs,
               CP_LOAD_STATE6_0_STATE_TYPE(st) |
@@ -101,7 +95,6 @@ tu6_load_state_size(struct tu_pipeline *pipeline,
       for (unsigned j = 0; j < set_layout->binding_count; j++) {
          struct tu_descriptor_set_binding_layout *binding = &set_layout->binding[j];
          unsigned count = 0;
-         /* See comment in tu6_emit_load_state(). */
          VkShaderStageFlags stages = pipeline->active_stages & binding->shader_stages;
          unsigned stage_count = util_bitcount(stages);
 
@@ -114,7 +107,6 @@ tu6_load_state_size(struct tu_pipeline *pipeline,
          case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
          case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
          case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
-            /* UAV-backed resources only need one packet for all graphics stages */
             if (stage_count)
                count += 1;
             break;
@@ -125,13 +117,9 @@ tu6_load_state_size(struct tu_pipeline *pipeline,
          case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
          case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
          case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
-            /* Textures and UBO's needs a packet for each stage */
             count = stage_count;
             break;
          case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-            /* Because of how we pack combined images and samplers, we
-             * currently can't use one packet for the whole array.
-             */
             count = stage_count * binding->array_size * 2;
             break;
          case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
@@ -163,43 +151,65 @@ tu6_emit_load_state(struct tu_device *device,
    tu_cs_begin_sub_stream(&pipeline->cs, size, &cs);
 
    for (unsigned i = 0; i < layout->num_sets; i++) {
-      /* From 13.2.7. Descriptor Set Binding:
-       *
-       *    A compatible descriptor set must be bound for all set numbers that
-       *    any shaders in a pipeline access, at the time that a draw or
-       *    dispatch command is recorded to execute using that pipeline.
-       *    However, if none of the shaders in a pipeline statically use any
-       *    bindings with a particular set number, then no descriptor set need
-       *    be bound for that set number, even if the pipeline layout includes
-       *    a non-trivial descriptor set layout for that set number.
-       *
-       * This means that descriptor sets unused by the pipeline may have a
-       * garbage or 0 BINDLESS_BASE register, which will cause context faults
-       * when prefetching descriptors from these sets. Skip prefetching for
-       * descriptors from them to avoid this. This is also an optimization,
-       * since these prefetches would be useless.
-       */
       if (!(pipeline->active_desc_sets & (1u << i)))
          continue;
 
       struct tu_descriptor_set_layout *set_layout = layout->set[i].layout;
       
+      /* ADRENO810_OPT: Для Adreno 810 используем оптимизированную загрузку */
+      if (is_adreno_810) {
+         /* Группируем загрузки по типам для уменьшения количества пакетов */
+         bool has_textures = false, has_samplers = false, has_ubos = false, has_uavs = false;
+         
+         for (unsigned j = 0; j < set_layout->binding_count; j++) {
+            switch (set_layout->binding[j].type) {
+            case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
+            case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
+               has_textures = true;
+               break;
+            case VK_DESCRIPTOR_TYPE_SAMPLER:
+               has_samplers = true;
+               break;
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER:
+            case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
+               has_ubos = true;
+               break;
+            case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
+               has_uavs = true;
+               break;
+            default:
+               break;
+            }
+         }
+         
+         /* Загружаем по типам, но не для всех стадий сразу - это безопаснее */
+         if (has_textures) {
+            emit_load_state(&cs, CP_LOAD_STATE6, ST6_CONSTANTS, SB6_VS_TEX, i, 0, 16);
+            emit_load_state(&cs, CP_LOAD_STATE6, ST6_CONSTANTS, SB6_FS_TEX, i, 0, 16);
+         }
+         if (has_samplers) {
+            emit_load_state(&cs, CP_LOAD_STATE6, ST6_SHADER, SB6_VS_TEX, i, 0, 8);
+            emit_load_state(&cs, CP_LOAD_STATE6, ST6_SHADER, SB6_FS_TEX, i, 0, 8);
+         }
+         if (has_ubos) {
+            emit_load_state(&cs, CP_LOAD_STATE6, ST6_UBO, SB6_VS_SHADER, i, 0, 8);
+            emit_load_state(&cs, CP_LOAD_STATE6, ST6_UBO, SB6_FS_SHADER, i, 0, 8);
+         }
+         if (has_uavs) {
+            emit_load_state(&cs, CP_LOAD_STATE6, ST6_UAV, SB6_UAV, i, 0, 4);
+         }
+         continue;
+      }
+      
+      /* Стандартная загрузка для других GPU */
       for (unsigned j = 0; j < set_layout->binding_count; j++) {
          struct tu_descriptor_set_binding_layout *binding = &set_layout->binding[j];
          unsigned base = i;
          unsigned offset = binding->offset / 4;
-         /* Note: amber sets VK_SHADER_STAGE_ALL for its descriptor layout, and
-          * zink has descriptors for each stage in the push layout even if some
-          * stages aren't present in a used pipeline.  We don't want to emit
-          * loads for unused descriptors.
-          */
          VkShaderStageFlags stages = pipeline->active_stages & binding->shader_stages;
          unsigned count = binding->array_size;
 
-         /* If this is a variable-count descriptor, then the array_size is an
-          * upper bound on the size, but we don't know how many descriptors
-          * will actually be used. Therefore we can't pre-load them here.
-          */
          if (j == set_layout->binding_count - 1 &&
              set_layout->has_variable_descriptors)
             continue;
@@ -219,29 +229,19 @@ tu6_emit_load_state(struct tu_device *device,
          case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
          case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR: {
             unsigned mul = binding->size / (FDL6_TEX_CONST_DWORDS * 4);
-            /* ADRENO810_OPT: UAV ресурсы - оптимизированный путь */
-            if (is_adreno_810) {
-               if (stages) {
-                  emit_load_state(&cs, CP_LOAD_STATE6, ST6_UAV, SB6_UAV,
-                                 base, offset, count * mul);
-               }
-            } else {
-               /* UAV-backed resources only need one packet for all graphics stages */
-               if (stages & ~VK_SHADER_STAGE_COMPUTE_BIT) {
-                  emit_load_state(&cs, CP_LOAD_STATE6, ST6_UAV, SB6_UAV,
-                                 base, offset, count * mul);
-               }
-               if (stages & VK_SHADER_STAGE_COMPUTE_BIT) {
-                  emit_load_state(&cs, CP_LOAD_STATE6_FRAG, ST6_UAV, SB6_CS_SHADER,
-                                 base, offset, count * mul);
-               }
+            if (stages & ~VK_SHADER_STAGE_COMPUTE_BIT) {
+               emit_load_state(&cs, CP_LOAD_STATE6, ST6_UAV, SB6_UAV,
+                              base, offset, count * mul);
+            }
+            if (stages & VK_SHADER_STAGE_COMPUTE_BIT) {
+               emit_load_state(&cs, CP_LOAD_STATE6_FRAG, ST6_UAV, SB6_CS_SHADER,
+                              base, offset, count * mul);
             }
             break;
          }
          case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
          case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
          case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
-            /* nothing - input attachments and inline uniforms don't use bindless */
             break;
          case VK_DESCRIPTOR_TYPE_SAMPLER:
          case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
@@ -269,28 +269,16 @@ tu6_emit_load_state(struct tu_device *device,
          }
          case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
          case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM: {
-            /* ADRENO810_OPT: Оптимизация для combined image samplers */
-            if (is_adreno_810 && count <= 8) {
-               tu_foreach_stage(stage, stages) {
+            tu_foreach_stage(stage, stages) {
+               for (unsigned i = 0; i < count; i++) {
+                  unsigned tex_offset = offset + 2 * i * FDL6_TEX_CONST_DWORDS;
+                  unsigned sam_offset = offset + (2 * i + 1) * FDL6_TEX_CONST_DWORDS;
                   emit_load_state(&cs, tu6_stage2opcode(stage),
                                   ST6_CONSTANTS, tu6_stage2texsb(stage),
-                                  base, offset, count * 2 * FDL6_TEX_CONST_DWORDS);
-               }
-            } else {
-               tu_foreach_stage(stage, stages) {
-                  /* TODO: We could emit less CP_LOAD_STATE6 if we used
-                   * struct-of-arrays instead of array-of-structs.
-                   */
-                  for (unsigned i = 0; i < count; i++) {
-                     unsigned tex_offset = offset + 2 * i * FDL6_TEX_CONST_DWORDS;
-                     unsigned sam_offset = offset + (2 * i + 1) * FDL6_TEX_CONST_DWORDS;
-                     emit_load_state(&cs, tu6_stage2opcode(stage),
-                                     ST6_CONSTANTS, tu6_stage2texsb(stage),
-                                     base, tex_offset, 1);
-                     emit_load_state(&cs, tu6_stage2opcode(stage),
-                                     ST6_SHADER, tu6_stage2texsb(stage),
-                                     base, sam_offset, 1);
-                  }
+                                  base, tex_offset, 1);
+                  emit_load_state(&cs, tu6_stage2opcode(stage),
+                                  ST6_SHADER, tu6_stage2texsb(stage),
+                                  base, sam_offset, 1);
                }
             }
             break;
@@ -318,25 +306,15 @@ struct tu_pipeline_builder
    struct tu_pvtmem_config pvtmem;
 
    bool rasterizer_discard;
-   /* these states are affectd by rasterizer_discard */
    uint8_t unscaled_input_fragcoord;
 
-   /* Each library defines at least one piece of state in
-    * VkGraphicsPipelineLibraryFlagsEXT, and libraries cannot overlap, so
-    * there can be at most as many libraries as pieces of state, of which
-    * there are currently 4.
-    */
 #define MAX_LIBRARIES 4
 
    unsigned num_libraries;
    struct tu_graphics_lib_pipeline *libraries[MAX_LIBRARIES];
 
-   /* This is just the state that we are compiling now, whereas the final
-    * pipeline will include the state from the libraries.
-    */
    VkGraphicsPipelineLibraryFlagsEXT state;
 
-   /* The stages we are compiling now. */
    VkShaderStageFlags active_stages;
 
    bool fragment_density_map;
@@ -389,7 +367,6 @@ tu_push_consts_type(const struct tu_pipeline_layout *layout,
    bool is_adreno_810 = compiler->dev && 
       tu_is_adreno_810((struct tu_device *)compiler->dev);
 
-   /* ADRENO810_OPT: Предпочитаем shared constants для производительности */
    if (is_adreno_810 && layout->push_constant_size <= 256) {
       return IR3_PUSH_CONSTS_SHARED_PREAMBLE;
    }
@@ -497,7 +474,6 @@ tu6_emit_dynamic_offset(struct tu_cs *cs,
          offsets[i] = dynamic_offset_start;
       }
 
-      /* A7XX TODO: Emit data via sub_cs instead of NOP */
       uint64_t iova = tu_cs_emit_data_nop(cs, offsets, phys_dev->usable_sets, 4);
       uint32_t offset = shader->const_state.dynamic_offsets_ubo.idx;
 
@@ -537,7 +513,6 @@ void
 tu6_emit_shared_consts_enable(struct tu_crb &crb, bool enable)
 {
    if (CHIP == A6XX) {
-      /* Enable/disable shared constants */
       crb.add(HLSQ_SHARED_CONSTS(CHIP, .enable = enable));
    } else {
       assert(!enable);
@@ -559,17 +534,11 @@ tu6_setup_streamout(struct tu_cs *cs,
    const struct ir3_stream_output_info *info = &v->stream_output;
    bool is_adreno_810 = tu_is_adreno_810_from_cs(cs);
    
-   /* Note: 64 here comes from the HW layout of the program RAM. The program
-    * for stream N is at DWORD 64 * N.
-    */
 #define A6XX_SO_PROG_DWORDS 64
    uint32_t prog[A6XX_SO_PROG_DWORDS * IR3_MAX_SO_STREAMS] = {};
    BITSET_DECLARE(valid_dwords, A6XX_SO_PROG_DWORDS * IR3_MAX_SO_STREAMS) = {0};
    bool has_pc_dgen_so_cntl = cs->device->physical_device->info->props.has_pc_dgen_so_cntl;
 
-   /* TODO: streamout state should be in a non-GMEM draw state */
-
-   /* no streamout: */
    if (info->num_outputs == 0) {
       tu_crb crb = cs->crb(3);
       crb.add(VPC_SO_MAPPING_WPTR(CHIP, 0));
@@ -584,21 +553,17 @@ tu6_setup_streamout(struct tu_cs *cs,
       gl_varying_slot slot = (gl_varying_slot) out->location;
       unsigned idx;
 
-      /* linkage map sorted by order frag shader wants things, so
-       * a bit less ideal here..
-       */
       for (idx = 0; idx < l->cnt; idx++)
          if (l->var[idx].slot == slot)
             break;
 
-      /* Skip it, if it's an output that was never assigned a register. */
       if (idx >= l->cnt)
          continue;
 
       for (unsigned j = 0; j < out->num_components; j++) {
          unsigned c   = j + out->start_component;
          unsigned loc = l->var[idx].loc + c;
-         unsigned off = j + out->dst_offset;  /* in dwords */
+         unsigned off = j + out->dst_offset;
 
          assert(loc < A6XX_SO_PROG_DWORDS * 2);
          unsigned dword = out->stream * A6XX_SO_PROG_DWORDS + loc/2;
@@ -656,9 +621,6 @@ tu6_setup_streamout(struct tu_cs *cs,
    }
 
    if (has_pc_dgen_so_cntl) {
-      /* When present, setting this register makes sure that degenerate primitives
-       * are included in the stream output and not discarded.
-       */
       crb.add(PC_DGEN_SO_CNTL(CHIP, .stream_enable = info->streams_written));
    }
 }
@@ -697,7 +659,6 @@ tu6_emit_const(struct tu_cs *cs, uint32_t opcode, enum tu_geom_consts_type type,
       if (adjusted_size <= 0)
          return;
       
-      /* ADRENO810_OPT: Увеличиваем лимит констант */
       if (is_adreno_810 && constlen > ADRENO_810_MAX_CONSTLEN) {
          adjusted_size = MIN2(adjusted_size, ADRENO_810_MAX_CONSTLEN * 4 - base * 4);
       }
@@ -728,33 +689,18 @@ tu6_emit_const(struct tu_cs *cs, uint32_t opcode, enum tu_geom_consts_type type,
       if (base == -1)
          return;
 
-      /* ADRENO810_OPT: Используем более эффективную загрузку */
-      if (is_adreno_810 && size <= 64) {
-         /* Маленькие константы загружаем напрямую */
-         tu_cs_emit_pkt7(cs, opcode, 3 + size);
-         tu_cs_emit(cs, CP_LOAD_STATE6_0_DST_OFF(base) |
-               CP_LOAD_STATE6_0_STATE_TYPE(ST6_CONSTANTS) |
-               CP_LOAD_STATE6_0_STATE_SRC(SS6_DIRECT) |
-               CP_LOAD_STATE6_0_STATE_BLOCK(block) |
-               CP_LOAD_STATE6_0_NUM_UNIT(size / 4));
-         tu_cs_emit(cs, CP_LOAD_STATE6_1_EXT_SRC_ADDR(0));
-         tu_cs_emit(cs, CP_LOAD_STATE6_2_EXT_SRC_ADDR_HI(0));
-         tu_cs_emit_array(cs, dwords, size);
-      } else {
-         /* A7XX TODO: Emit data via sub_cs instead of NOP */
-         uint64_t iova = tu_cs_emit_data_nop(cs, dwords, size, 4);
+      uint64_t iova = tu_cs_emit_data_nop(cs, dwords, size, 4);
 
-         tu_cs_emit_pkt7(cs, opcode, 5);
-         tu_cs_emit(cs, CP_LOAD_STATE6_0_DST_OFF(base) |
+      tu_cs_emit_pkt7(cs, opcode, 5);
+      tu_cs_emit(cs, CP_LOAD_STATE6_0_DST_OFF(base) |
                   CP_LOAD_STATE6_0_STATE_TYPE(ST6_UBO) |
                   CP_LOAD_STATE6_0_STATE_SRC(SS6_DIRECT) |
                   CP_LOAD_STATE6_0_STATE_BLOCK(block) |
                   CP_LOAD_STATE6_0_NUM_UNIT(1));
-         tu_cs_emit(cs, CP_LOAD_STATE6_1_EXT_SRC_ADDR(0));
-         tu_cs_emit(cs, CP_LOAD_STATE6_2_EXT_SRC_ADDR_HI(0));
-         int size_vec4s = DIV_ROUND_UP(size, 4);
-         tu_cs_emit_qw(cs, iova | ((uint64_t)A6XX_UBO_1_SIZE(size_vec4s) << 32));
-      }
+      tu_cs_emit(cs, CP_LOAD_STATE6_1_EXT_SRC_ADDR(0));
+      tu_cs_emit(cs, CP_LOAD_STATE6_2_EXT_SRC_ADDR_HI(0));
+      int size_vec4s = DIV_ROUND_UP(size, 4);
+      tu_cs_emit_qw(cs, iova | ((uint64_t)A6XX_UBO_1_SIZE(size_vec4s) << 32));
    }
 }
 
@@ -783,9 +729,6 @@ tu6_vpc_varying_mode(const struct ir3_shader_variant *fs,
 {
    const uint32_t compmask = fs->inputs[index].compmask;
 
-   /* NOTE: varyings are packed, so if compmask is 0xb then first, second, and
-    * fourth component occupy three consecutive varying slots
-    */
    int shift = 0;
    *interp_mode = 0;
    *ps_repl_mode = 0;
@@ -808,9 +751,6 @@ tu6_vpc_varying_mode(const struct ir3_shader_variant *fs,
       }
    } else if (fs->inputs[index].slot == VARYING_SLOT_LAYER ||
               fs->inputs[index].slot == VARYING_SLOT_VIEWPORT) {
-      /* If the last geometry shader doesn't statically write these, they're
-       * implicitly zero and the FS is supposed to read zero.
-       */
       const gl_varying_slot slot = (gl_varying_slot) fs->inputs[index].slot;
       if (ir3_find_output(last_shader, slot) < 0 &&
           (compmask & 0x1)) {
@@ -847,19 +787,16 @@ tu6_emit_vpc_varying_modes(struct tu_cs *cs,
       for (int i = -1;
            (i = ir3_next_varying(fs, i)) < (int) fs->inputs_count;) {
 
-         /* get the mode for input i */
          uint8_t interp_mode;
          uint8_t ps_repl_mode;
          const int bits =
             tu6_vpc_varying_mode(fs, last_shader, i, &interp_mode, &ps_repl_mode);
          
-         /* ADRENO810_OPT: Аппаратная интерполяция для flat shading */
          if (is_adreno_810 && fs->inputs[i].flat) {
             interp_mode = INTERP_FLAT;
-            ps_repl_mode = 0; /* Не нужно replace для flat */
+            ps_repl_mode = 0;
          }
 
-         /* OR the mode into the array */
          const uint32_t inloc = fs->inputs[i].inloc * 2;
          uint32_t n = inloc / 32;
          uint32_t shift = inloc % 32;
@@ -877,9 +814,8 @@ tu6_emit_vpc_varying_modes(struct tu_cs *cs,
    }
 
    if (interp_regs) {
-      /* ADRENO810_OPT: Уменьшаем количество записей если возможно */
       if (is_adreno_810 && interp_regs > 4) {
-         interp_regs = 4; /* Аппаратное ограничение для некоторых случаев */
+         interp_regs = 4;
       }
       
       tu_cs_emit_pkt4(cs, VPC_VARYING_INTERP_MODE_MODE(CHIP, 0).reg, interp_regs);
@@ -922,7 +858,6 @@ tu6_emit_vpc(struct tu_cs *cs,
    if (last_shader->stream_output.num_outputs)
       ir3_link_stream_out(&linkage, last_shader);
 
-   /* a6xx finds position/pointsize at the end */
    const uint32_t pointsize_regid =
       ir3_find_output_regid(last_shader, VARYING_SLOT_PSIZ);
    const uint32_t layer_regid =
@@ -979,7 +914,6 @@ tu6_emit_vpc(struct tu_cs *cs,
 
    uint8_t clip_cull_mask = last_shader->clip_mask | last_shader->cull_mask;
 
-   /* Handle the case where clip/cull distances aren't read by the FS */
    uint32_t clip0_loc = linkage.clip0_loc, clip1_loc = linkage.clip1_loc;
    if (clip0_loc == 0xff && clip0_regid != regid(63, 0)) {
       clip0_loc = linkage.max_loc;
@@ -994,27 +928,17 @@ tu6_emit_vpc(struct tu_cs *cs,
 
    tu6_setup_streamout<CHIP>(cs, last_shader, &linkage);
 
-   /* There is a hardware bug on a750 where STRIDE_IN_VPC of 5 to 8 in GS with
-    * an input primitive type with adjacency, an output primitive type of
-    * points, and a high enough vertex count causes a hang.
-    */
    if (cs->device->physical_device->info->props.gs_vpc_adjacency_quirk &&
        gs && gs->gs.output_primitive == MESA_PRIM_POINTS &&
        linkage.max_loc > 4) {
       linkage.max_loc = MAX2(linkage.max_loc, 9);
    }
 
-   /* The GPU hangs on some models when there are no outputs (xs_pack::CNT),
-    * at least when a DS is the last stage, so add a dummy output to keep it
-    * happy if there aren't any. We do this late in order to avoid emitting
-    * any unused code and make sure that optimizations don't remove it.
-    */
    if (linkage.cnt == 0)
       ir3_link_add(&linkage, 0, 0, 0x1, linkage.max_loc);
 
    tu6_emit_vpc_varying_modes<CHIP>(cs, fs, last_shader);
 
-   /* map outputs of the last shader to VPC */
    assert(linkage.cnt <= 32);
    const uint32_t sp_out_count = DIV_ROUND_UP(linkage.cnt, 2);
    const uint32_t sp_vpc_dst_count = DIV_ROUND_UP(linkage.cnt, 4);
@@ -1030,6 +954,8 @@ tu6_emit_vpc(struct tu_cs *cs,
 
    tu_crb crb = cs->crb(sp_out_count + sp_vpc_dst_count + 12);
    uint32_t *regs;
+
+   bool optimize_vpc = is_adreno_810 && (gs || hs) && linkage.cnt <= 16;
 
    switch (last_shader->type) {
    case MESA_SHADER_VERTEX:
@@ -1200,7 +1126,6 @@ tu6_emit_vpc(struct tu_cs *cs,
       }
    }
 
-   /* if vertex_flags somehow gets optimized out, your gonna have a bad time: */
    if (gs)
       assert(flags_regid != INVALID_REG);
 
@@ -1276,8 +1201,8 @@ tu6_emit_vs_params(struct tu_cs *cs,
                    unsigned num_vertices)
 {
    uint32_t vs_params[4] = {
-      param_stride * num_vertices * 4,  /* vs primitive stride */
-      param_stride * 4,                 /* vs vertex stride */
+      param_stride * num_vertices * 4,
+      param_stride * 4,
       0,
       0,
    };
@@ -1292,7 +1217,6 @@ tu_get_tess_iova(struct tu_device *dev,
                  uint64_t *tess_factor_iova,
                  uint64_t *tess_param_iova)
 {
-   /* Create the shared tess factor BO the first time tess is used on the device. */
    if (!dev->tess_bo) {
       mtx_lock(&dev->mutex);
       if (!dev->tess_bo) {
@@ -1324,9 +1248,8 @@ tu6_patch_control_points_size(struct tu_device *dev,
 {
    bool is_adreno_810 = tu_is_adreno_810(dev);
    
-   /* ADRENO810_OPT: Увеличенный размер для сложной тесселяции */
    if (is_adreno_810 && patch_control_points > 16) {
-      patch_control_points = 16; /* Оптимальный лимит для 810 */
+      patch_control_points = 16;
    }
    
    if (dev->physical_device->info->props.load_shader_consts_via_preamble) {
@@ -1358,7 +1281,6 @@ tu6_emit_patch_control_points(struct tu_cs *cs,
    struct tu_device *dev = cs->device;
    bool is_adreno_810 = tu_is_adreno_810(dev);
 
-   /* ADRENO810_OPT: Оптимизация количества патчей */
    uint32_t opt_patch_control_points = patch_control_points;
    if (is_adreno_810 && opt_patch_control_points > 16) {
       opt_patch_control_points = 16;
@@ -1374,8 +1296,8 @@ tu6_emit_patch_control_points(struct tu_cs *cs,
    tu_get_tess_iova<CHIP>(dev, &tess_factor_iova, &tess_param_iova);
 
    uint32_t hs_params[HS_PARAMS_SIZE] = {
-      vs->variant->output_size * opt_patch_control_points * 4,  /* hs primitive stride */
-      vs->variant->output_size * 4,                         /* hs vertex stride */
+      vs->variant->output_size * opt_patch_control_points * 4,
+      vs->variant->output_size * 4,
       tcs->variant->output_size,
       opt_patch_control_points,
       tess_param_iova,
@@ -1394,7 +1316,6 @@ tu6_emit_patch_control_points(struct tu_cs *cs,
    uint32_t patch_local_mem_size_16b =
       opt_patch_control_points * vs->variant->output_size / 4;
 
-   /* Total attribute slots in HS incoming patch. */
    tu_cs_emit_regs(cs, PC_HS_PARAM_1(CHIP, patch_local_mem_size_16b));
 
    const uint32_t wavesize = is_adreno_810 ? ADRENO_810_WAVE_SIZE : 64;
@@ -1402,13 +1323,8 @@ tu6_emit_patch_control_points(struct tu_cs *cs,
 
    uint32_t max_patches_per_wave;
    if (dev->physical_device->info->props.tess_use_shared) {
-      /* HS invocations for a patch are always within the same wave,
-       * making barriers less expensive. VS can't have barriers so we
-       * don't care about VS invocations being in the same wave.
-       */
       max_patches_per_wave = wavesize / tcs->variant->tess.tcs_vertices_out;
    } else {
-      /* VS is also in the same wave */
       max_patches_per_wave =
          wavesize / MAX2(opt_patch_control_points,
                          tcs->variant->tess.tcs_vertices_out);
@@ -1447,9 +1363,9 @@ tu6_emit_geom_tess_consts(struct tu_cs *cs,
       tu_get_tess_iova<CHIP>(dev, &tess_factor_iova, &tess_param_iova);
 
       uint32_t ds_params[8] = {
-         gs ? ds->output_size * gs->gs.vertices_in * 4 : 0,  /* ds primitive stride */
-         ds->output_size * 4,                                /* ds vertex stride */
-         hs->output_size,                                    /* hs vertex stride (dwords) */
+         gs ? ds->output_size * gs->gs.vertices_in * 4 : 0,
+         ds->output_size * 4,
+         hs->output_size,
          hs->tess.tcs_vertices_out,
          tess_param_iova,
          tess_param_iova >> 32,
@@ -1457,7 +1373,6 @@ tu6_emit_geom_tess_consts(struct tu_cs *cs,
          tess_factor_iova >> 32,
       };
       
-      /* ADRENO810_OPT: Увеличиваем лимит для сложной тесселяции */
       if (is_adreno_810 && hs->tess.tcs_vertices_out > 16) {
          ds_params[3] = 16;
       }
@@ -1470,13 +1385,12 @@ tu6_emit_geom_tess_consts(struct tu_cs *cs,
    if (gs) {
       const struct ir3_shader_variant *prev = ds ? ds : vs;
       uint32_t gs_params[4] = {
-         prev->output_size * gs->gs.vertices_in * 4,  /* gs primitive stride */
-         prev->output_size * 4,                 /* gs vertex stride */
+         prev->output_size * gs->gs.vertices_in * 4,
+         prev->output_size * 4,
          0,
          0,
       };
       
-      /* ADRENO810_OPT: Оптимизация GS параметров */
       if (is_adreno_810 && gs->gs.vertices_in > 32) {
          gs_params[0] = prev->output_size * 32 * 4;
       }
@@ -1519,13 +1433,11 @@ tu6_emit_program_config(struct tu_cs *cs,
 
    crb.flush();
 
-   /* ADRENO810_OPT: Предзагрузка динамических оффсетов */
    for (size_t stage_idx = MESA_SHADER_VERTEX;
         stage_idx <= MESA_SHADER_FRAGMENT; stage_idx++) {
       mesa_shader_stage stage = (mesa_shader_stage) stage_idx;
       
       if (is_adreno_810 && stage == MESA_SHADER_FRAGMENT) {
-         /* FS динамические оффсеты загружаем с приоритетом */
          tu6_emit_dynamic_offset(cs, variants[stage], shaders[stage], prog);
       } else {
          tu6_emit_dynamic_offset(cs, variants[stage], shaders[stage], prog);
@@ -1547,11 +1459,9 @@ tu6_emit_program_config(struct tu_cs *cs,
       uint32_t prev_stage_output_size = ds ? ds->output_size : vs->output_size;
 
       if (CHIP == A6XX) {
-         /* Size of per-primitive alloction in ldlw memory in vec4s. */
          uint32_t vec4_size = gs->gs.vertices_in *
                               DIV_ROUND_UP(prev_stage_output_size, 4);
          
-         /* ADRENO810_OPT: Оптимизация размера примитивов */
          if (is_adreno_810 && vec4_size > 64) {
             vec4_size = 64;
          }
@@ -1593,12 +1503,6 @@ pipeline_contains_all_shader_state(struct tu_pipeline *pipeline)
       contains_all_shader_state(tu_pipeline_to_graphics_lib(pipeline)->state);
 }
 
-/* Return true if this pipeline contains all of the GPL stages listed but none
- * of the libraries it uses do, so this is "the first time" that all of them
- * are defined together. This is useful for state that needs to be combined
- * from multiple GPL stages.
- */
-
 static bool
 set_combined_state(struct tu_pipeline_builder *builder,
                    struct tu_pipeline *pipeline,
@@ -1627,7 +1531,6 @@ tu_pipeline_allocate_cs(struct tu_device *dev,
 {
    uint32_t size = 1024;
 
-   /* graphics case: */
    if (builder) {
       if (builder->state &
           VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT) {
@@ -1643,17 +1546,6 @@ tu_pipeline_allocate_cs(struct tu_device *dev,
       size += tu6_load_state_size(pipeline, layout);
    }
 
-   /* Allocate the space for the pipeline out of the device's RO suballocator.
-    *
-    * Sub-allocating BOs saves memory and also kernel overhead in refcounting of
-    * BOs at exec time.
-    *
-    * The pipeline cache would seem like a natural place to stick the
-    * suballocator, except that it is not guaranteed to outlive the pipelines
-    * created from it, so you can't store any long-lived state there, and you
-    * can't use its EXTERNALLY_SYNCHRONIZED flag to avoid atomics because
-    * pipeline destroy isn't synchronized by the cache.
-    */
    mtx_lock(&dev->pipeline_mutex);
    VkResult result = tu_suballoc_bo_alloc(&pipeline->bo, &dev->pipeline_suballoc,
                                           size * 4, 128);
@@ -1928,7 +1820,6 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
       must_compile = true;
    }
 
-   /* Forward declare everything due to the goto usage */
    nir_shader *nir[ARRAY_SIZE(stage_infos)] = { NULL };
    struct tu_shader *shaders[ARRAY_SIZE(stage_infos)] = { NULL };
    nir_shader *post_link_nir[ARRAY_SIZE(nir)] = { NULL };
@@ -2063,30 +1954,6 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
       const VkPipelineMultisampleStateCreateInfo *msaa_info =
          builder->create_info->pMultisampleState;
 
-      /* The 1.3.215 spec says:
-       *
-       *    Sample shading can be used to specify a minimum number of unique
-       *    samples to process for each fragment. If sample shading is enabled,
-       *    an implementation must provide a minimum of
-       *
-       *       max(ceil(minSampleShadingFactor * totalSamples), 1)
-       *
-       *    unique associated data for each fragment, where
-       *    minSampleShadingFactor is the minimum fraction of sample shading.
-       *
-       * The definition is pretty much the same as OpenGL's GL_SAMPLE_SHADING.
-       * They both require unique associated data.
-       *
-       * There are discussions to change the definition, such that
-       * sampleShadingEnable does not imply unique associated data.  Before the
-       * discussions are settled and before apps (i.e., ANGLE) are fixed to
-       * follow the new and incompatible definition, we should stick to the
-       * current definition.
-       *
-       * Note that ir3_shader_key::sample_shading is not actually used by ir3,
-       * just checked in tu6_emit_fs_inputs.  We will also copy the value to
-       * tu_shader_key::force_sample_interp in a bit.
-       */
       keys[MESA_SHADER_FRAGMENT].force_sample_interp =
          !builder->rasterizer_discard && msaa_info && msaa_info->sampleShadingEnable;
    }
@@ -2123,10 +1990,6 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
          }
       }
 
-      /* If the user asks us to keep the NIR around, we need to have it for a
-       * successful cache hit. If we only have a "partial" cache hit, then we
-       * still need to recompile in order to get the NIR.
-       */
       if (cache_hit &&
           (builder->create_flags &
            VK_PIPELINE_CREATE_2_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT)) {
@@ -2193,9 +2056,6 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
 
 done:
 
-   /* Create empty shaders which contain the draw states to initialize
-    * registers for unused shader stages.
-    */
    if (builder->state &
        VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) {
       if (!shaders[MESA_SHADER_TESS_CTRL]) {
@@ -2230,9 +2090,6 @@ done:
       }
    }
 
-   /* We may have deduplicated a cache entry, in which case our original
-    * post_link_nir may be gone.
-    */
    if (nir_shaders) {
       for (mesa_shader_stage stage = MESA_SHADER_VERTEX;
            stage < ARRAY_SIZE(nir); stage = (mesa_shader_stage) (stage + 1)) {
@@ -2242,10 +2099,6 @@ done:
       }
    }
    
-   /* In the case where we're building a library without link-time
-    * optimization but with sub-libraries that retain LTO info, we should
-    * retain it ourselves in case another pipeline includes us with LTO.
-    */
    for (unsigned i = 0; i < builder->num_libraries; i++) {
       struct tu_graphics_lib_pipeline *library = builder->libraries[i];
       for (mesa_shader_stage stage = MESA_SHADER_VERTEX;
@@ -2273,9 +2126,6 @@ done:
    }
 
    if (pipeline_contains_all_shader_state(pipeline)) {
-      /* It doesn't make much sense to use RETAIN_LINK_TIME_OPTIMIZATION_INFO
-       * when compiling all stages, but make sure we don't leak.
-       */
       if (nir_shaders)
          vk_pipeline_cache_object_unref(&builder->device->vk,
                                         &nir_shaders->base);
@@ -2336,9 +2186,6 @@ tu_pipeline_builder_parse_libraries(struct tu_pipeline_builder *builder,
       }
    }
 
-   /* Merge in the state from libraries. The program state is a bit special
-    * and is handled separately.
-    */
    if (pipeline->type == TU_PIPELINE_GRAPHICS_LIB)
       tu_pipeline_to_graphics_lib(pipeline)->state = builder->state;
    for (unsigned i = 0; i < builder->num_libraries; i++) {
@@ -2399,11 +2246,6 @@ tu_pipeline_builder_parse_layout(struct tu_pipeline_builder *builder,
    VK_FROM_HANDLE(tu_pipeline_layout, layout, builder->create_info->layout);
 
    if (layout) {
-      /* Note: it's still valid to have a layout even if there are libraries.
-       * This allows the app to e.g. overwrite an INDEPENDENT_SET layout with
-       * a non-INDEPENDENT_SET layout which may make us use a faster path,
-       * currently this just affects dynamic offset descriptors.
-       */
       builder->layout = *layout;
    } else {
       for (unsigned i = 0; i < builder->num_libraries; i++) {
@@ -2515,26 +2357,12 @@ tu_emit_program_state(struct tu_cs *sub_cs,
       dynamic_descriptor_offset += dynamic_descriptor_sizes[i];
    }
 
-   /* Emit HLSQ_xS_CNTL/HLSQ_SP_xS_CONFIG *first*, before emitting anything
-    * else that could depend on that state (like push constants)
-    *
-    * Note also that this always uses the full VS even in binning pass.  The
-    * binning pass variant has the same const layout as the full VS, and
-    * the constlen for the VS will be the same or greater than the constlen
-    * for the binning pass variant.  It is required that the constlen state
-    * matches between binning and draw passes, as some parts of the push
-    * consts are emitted in state groups that are shared between the binning
-    * and draw passes.
-    */
    tu_cs_begin_sub_stream(sub_cs, 512, &prog_cs);
    tu6_emit_program_config<CHIP>(&prog_cs, prog, shaders, variants);
    prog->config_state = tu_cs_end_draw_state(sub_cs, &prog_cs);
 
    prog->vs_state = draw_states[MESA_SHADER_VERTEX];
 
-  /* Don't use the binning pass variant when GS is present because we don't
-   * support compiling correct binning pass variants with GS.
-   */
    if (variants[MESA_SHADER_GEOMETRY]) {
       prog->vs_binning_state = prog->vs_state;
    } else {
@@ -2769,10 +2597,8 @@ tu6_emit_viewport(struct tu_cs *cs,
          min.y = (int32_t)(viewport->y + viewport->height);
          max.y = (int32_t) ceilf(viewport->y);
       }
-      /* the spec allows viewport->height to be 0.0f */
       if (min.y == max.y)
          max.y++;
-      /* allow viewport->width = 0.0f for un-initialized viewports: */
       if (min.x == max.x)
          max.x++;
 
@@ -2788,10 +2614,6 @@ tu6_emit_viewport(struct tu_cs *cs,
       crb.add(GRAS_SC_VIEWPORT_SCISSOR_BR(CHIP, i, .x = max.x - 1, .y = max.y - 1));
    }
 
-   /* A7XX+ doesn't clamp to [0,1] with disabled depth clamp, to support
-    * VK_EXT_depth_clamp_zero_one we have to always enable clamp and manually
-    * set range to [0,1] when rs->depth_clamp_enable is false.
-    */
    bool zero_one_depth_clamp = CHIP >= A7XX && !rs->depth_clamp_enable;
 
    for (uint32_t i = 0; i < vp->viewport_count; i++) {
@@ -2811,7 +2633,6 @@ tu6_emit_viewport(struct tu_cs *cs,
          crb.add(RB_VIEWPORT_ZCLAMP_MIN_REG(CHIP, i, zmin));
          crb.add(RB_VIEWPORT_ZCLAMP_MAX_REG(CHIP, i, zmax));
       } else if (i == 0) {
-         /* TODO: what to do about this and multi viewport ? */
          crb.add(RB_VIEWPORT_ZCLAMP_MIN(CHIP, zmin));
          crb.add(RB_VIEWPORT_ZCLAMP_MAX(CHIP, zmax));
       }
@@ -2823,38 +2644,10 @@ tu6_emit_viewport(struct tu_cs *cs,
 struct apply_viewport_state {
    struct vk_viewport_state vp;
    struct vk_rasterization_state rs;
-   /* See tu_render_pass_state::shared_viewport */
    bool share_scale;
-   /* See tu_pipeline::fake_single_viewport */
    bool fake_single_viewport;
    bool custom_resolve;
 };
-
-/* It's a hardware restriction that the window offset (i.e. common_bin_offset)
- * must be the same for all views. This means that rendering coordinates
- * cannot be a simple scaling of framebuffer coordinates, because this would
- * require us to scale the window offset and the scale may be different per
- * view. Instead we have to apply a per-bin offset to the rendering coordinate
- * transform to make sure that the window offset maps to the per-view bin
- * coordinate, which will be the same if there is no offset. Specifically we
- * need an offset o to the transform:
- *
- * x' = s * x + o
- *
- * so that when we plug in the per-view bin start b_s and the common window
- * offset b_cs:
- * 
- * b_cs = s * b_s + o
- *
- * and we get:
- *
- * o = b_cs - s * b_s
- *
- * We use this form exactly, because we know the bin start is a multiple of
- * the frag area so s * b_s is an integer and we can compute an exact result
- * easily. We also have to make sure that the bin offset is a multiple of the
- * frag area by restricting the frag area.
- */
 
 VkOffset2D
 tu_fdm_per_bin_offset(VkExtent2D frag_area, VkRect2D bin,
@@ -2883,15 +2676,6 @@ fdm_apply_viewports(struct tu_cmd_buffer *cmd, struct tu_cs *cs, void *data,
    struct vk_viewport_state vp = state->vp;
 
    for (unsigned i = 0; i < state->vp.viewport_count; i++) {
-      /* Note: If we're using shared scaling, the scale should already be the
-       * same across all views, we can pick any view. However the number
-       * of viewports and number of views is not guaranteed the same, so we
-       * need to pick the 0'th view which always exists to be safe.
-       *
-       * If FDM per layer is enabled in the shader but disabled by the
-       * renderpass, views will be 1 and we also have to replicate the 0'th
-       * view to every view.
-       */
       VkExtent2D frag_area =
          (state->share_scale || views == 1) ? frag_areas[0] : frag_areas[i];
       VkRect2D bin =
@@ -2899,20 +2683,11 @@ fdm_apply_viewports(struct tu_cmd_buffer *cmd, struct tu_cs *cs, void *data,
       VkOffset2D hw_viewport_offset =
          (state->share_scale || views == 1) ? hw_viewport_offsets[0] :
          hw_viewport_offsets[i];
-      /* Implement fake_single_viewport by replicating viewport 0 across all
-       * views.
-       */
       VkViewport viewport =
          state->fake_single_viewport ? state->vp.viewports[0] : state->vp.viewports[i];
       if ((frag_area.width == 1 && frag_area.height == 1 &&
            common_bin_offset.x == bin.offset.x &&
            common_bin_offset.y == bin.offset.y) ||
-          /* When in a custom resolve operation (TODO: and using
-           * non-subsampled images) we switch to framebuffer coordinates so we
-           * shouldn't apply the transform.  However the binning pass isn't
-           * aware of this, so we have to keep applying the transform for
-           * binning.
-           */
           (state->custom_resolve && !binning)) {
          vp.viewports[i] = viewport;
          continue;
@@ -2994,7 +2769,6 @@ tu6_emit_scissor(struct tu_cs *cs, const struct vk_viewport_state *vp)
          min_x = min_y = 1;
          max_x = max_y = 0;
       } else {
-         /* avoid overflow */
          uint32_t scissor_max = BITFIELD_MASK(15);
          min_x = MIN2(scissor_max, min_x);
          min_y = MIN2(scissor_max, min_y);
@@ -3031,24 +2805,11 @@ fdm_apply_scissors(struct tu_cmd_buffer *cmd, struct tu_cs *cs, void *data,
          (state->share_scale || views == 1) ? hw_viewport_offsets[0] :
          hw_viewport_offsets[i];
 
-      /* Transform the scissor following the viewport. It's unclear how this
-       * is supposed to handle cases where the scissor isn't aligned to the
-       * fragment area, but we round outwards to always render partial
-       * fragments if the scissor size equals the framebuffer size and it
-       * isn't aligned to the fragment area.
-       */
       VkOffset2D offset = tu_fdm_per_bin_offset(frag_area, bin,
                                                 common_bin_offset);
       offset.x -= hw_viewport_offset.x;
       offset.y -= hw_viewport_offset.y;
 
-      /* Disable scaling and offset when doing a custom resolve to a
-       * non-subsampled image and not in the binning pass, because we
-       * use framebuffer coordinates.
-       *
-       * TODO: When we support subsampled images, only do this for
-       * non-subsampled images.
-       */
       if (state->custom_resolve && !binning) {
          offset = (VkOffset2D) {};
          frag_area = (VkExtent2D) {1, 1};
@@ -3063,10 +2824,6 @@ fdm_apply_scissors(struct tu_cmd_buffer *cmd, struct tu_cs *cs, void *data,
          DIV_ROUND_UP(scissor.offset.y + scissor.extent.height, frag_area.height) + offset.y,
       };
 
-      /* Intersect scissor with the scaled bin, this essentially replaces the
-       * window scissor. With custom resolve (TODO: and non-subsampled images)
-       * we have to use the unscaled bin instead.
-       */
       uint32_t scaled_width = bin.extent.width / frag_area.width;
       uint32_t scaled_height = bin.extent.height / frag_area.height;
       int32_t bin_x;
@@ -3150,13 +2907,6 @@ tu6_emit_sample_locations(struct tu_cs *cs, bool enable,
 
    uint64_t sample_locations = 0;
    for (uint32_t i = 0; i < samp_loc->per_pixel; i++) {
-      /* From VkSampleLocationEXT:
-       *
-       *    The values specified in a VkSampleLocationEXT structure are always
-       *    clamped to the implementation-dependent sample location coordinate
-       *    range
-       *    [sampleLocationCoordinateRange[0],sampleLocationCoordinateRange[1]]
-       */
       float x = CLAMP(samp_loc->locations[i].x, SAMPLE_LOCATION_MIN,
                       SAMPLE_LOCATION_MAX);
       float y = CLAMP(samp_loc->locations[i].y, SAMPLE_LOCATION_MIN,
@@ -3232,7 +2982,6 @@ tu_calc_bandwidth(struct tu_bandwidth *bandwidth,
 
       uint32_t write_bpp = 0;
       if (format == VK_FORMAT_UNDEFINED) {
-         /* do nothing */
       } else if (att->write_mask == 0xf) {
          write_bpp = vk_format_get_blocksizebits(format);
       } else {
@@ -3314,7 +3063,6 @@ tu_emit_disable_fs(struct tu_disable_fs *disable_fs,
    disable_fs->valid = true;
 }
 
-/* Return true if the blend state reads the color attachments. */
 static tu_lrz_blend_status
 tu6_calc_blend_lrz(const struct vk_color_blend_state *cb,
                    const struct vk_render_pass_state *rp)
@@ -3409,7 +3157,6 @@ tu6_blend_size(struct tu_device *dev,
    unsigned num_rts = alpha_to_coverage_enable ?
       MAX2(cb->attachment_count, 1) : cb->attachment_count;
       
-   /* ADRENO810_OPT: Увеличенный размер для dual-source blend */
    if (is_adreno_810 && tu_blend_state_is_dual_src(cb)) {
       num_rts = MAX2(num_rts, 2);
    }
@@ -3444,14 +3191,9 @@ tu6_emit_blend(struct tu_cs *cs,
       VkFormat att_format = rp->color_attachment_formats[i];
       bool is_float_or_srgb = vk_format_is_float(att_format) || vk_format_is_srgb(att_format);
 
-      /* Logic op overrides any blending. Even when logic op is present, blending
-       * should be kept disabled for any ops that don't read dst values or for
-       * attachments of float or sRGB formats.
-       */
       if ((att->blend_enable && !cb->logic_op_enable) || (rop_reads_dst && !is_float_or_srgb)) {
          blend_enable_mask |= 1u << cal->color_map[i];
          
-         /* ADRENO810_OPT: Определяем быстрые blend операции */
          if (is_adreno_810 && att->blend_enable) {
             VkBlendOp op = (VkBlendOp)att->color_blend_op;
             if (op == VK_BLEND_OP_ADD || op == VK_BLEND_OP_SUBTRACT ||
@@ -3462,16 +3204,11 @@ tu6_emit_blend(struct tu_cs *cs,
       }
    }
 
-   /* This will emit a dummy RB_MRT_*_CONTROL below if alpha-to-coverage is
-    * enabled but there are no color attachments, in addition to changing
-    * *_FS_OUTPUT_CNTL1.
-    */
    unsigned num_rts = alpha_to_coverage_enable ?
       MAX2(cb->attachment_count, 1) : cb->attachment_count;
 
    bool dual_src_blend = tu_blend_state_is_dual_src(cb);
    
-   /* ADRENO810_OPT: Аппаратный dual-source blend */
    if (is_adreno_810 && dual_src_blend) {
       num_rts = MAX2(num_rts, 2);
    }
@@ -3483,12 +3220,6 @@ tu6_emit_blend(struct tu_cs *cs,
                                           .alpha_to_coverage =
                                              alpha_to_coverage_enable,
                                           .alpha_to_one = alpha_to_one_enable));
-   /* TODO: set A6XX_RB_BLEND_CNTL_INDEPENDENT_BLEND only when enabled?
-    *
-    * We could also set blend_reads_dest more conservatively, but it didn't show
-    * performance wins in anholt's testing:
-    * https://gitlab.freedesktop.org/anholt/mesa/-/commits/tu-color-reads
-    */
    tu_cs_emit_regs(cs, A6XX_RB_BLEND_CNTL(.blend_reads_dest = blend_enable_mask,
                                           .independent_blend = true,
                                           .dual_color_in_enable =
@@ -3520,14 +3251,9 @@ tu6_emit_blend(struct tu_cs *cs,
          VkFormat att_format = rp->color_attachment_formats[i];
          bool is_float_or_srgb = vk_format_is_float(att_format) || vk_format_is_srgb(att_format);
 
-         /* Keep blend and logic op flags tidy. These conditions match the blend-enable
-          * mask construction above, except for the dst-reading rop condition that doesn't
-          * apply here.
-          */
          bool blend_enable = att->blend_enable && !cb->logic_op_enable;
          bool logic_op_enable = cb->logic_op_enable && !is_float_or_srgb;
          
-         /* ADRENO810_OPT: Аппаратный fast path */
          if (is_adreno_810 && (fast_blend_mask & (1u << remapped_idx))) {
             blend_enable = true;
          }
@@ -3614,7 +3340,7 @@ tu6_rast_size(struct tu_device *dev,
    bool is_adreno_810 = tu_is_adreno_810(dev);
    
    if (is_adreno_810) {
-      return 30; /* Adreno 810 требует больше регистров */
+      return 30;
    } else if (CHIP == A6XX && dev->physical_device->info->props.is_a702) {
       return 17;
    } else if (CHIP == A6XX) {
@@ -3640,10 +3366,8 @@ tu6_emit_rast(struct tu_cs *cs,
       rs->line.mode == VK_LINE_RASTERIZATION_MODE_BRESENHAM_KHR ?
       BRESENHAM : RECTANGULAR;
       
-   /* ADRENO810_OPT: Аппаратная поддержка линий */
    if (is_adreno_810 && line_mode == BRESENHAM) {
-      /* Для 810 используем аппаратный Bresenham */
-      line_mode = RECTANGULAR; /* Аппаратный fast path */
+      line_mode = RECTANGULAR;
    }
    
    tu_cs_emit_regs(cs,
@@ -3667,7 +3391,6 @@ tu6_emit_rast(struct tu_cs *cs,
 
    bool depth_clip_enable = vk_rasterization_state_depth_clip_enable(rs);
    
-   /* ADRENO810_OPT: Всегда включаем depth clip для производительности */
    if (is_adreno_810) {
       depth_clip_enable = true;
    }
@@ -3676,7 +3399,6 @@ tu6_emit_rast(struct tu_cs *cs,
                    GRAS_CL_CNTL(CHIP,
                      .znear_clip_disable = !depth_clip_enable,
                      .zfar_clip_disable = !depth_clip_enable,
-                     /* To support VK_EXT_depth_clamp_zero_one on a7xx+ */
                      .z_clamp_enable = rs->depth_clamp_enable || CHIP >= A7XX,
                      .zero_gb_scale_z = vp->depth_clip_negative_one_to_one ? 0 : 1,
                      .vp_clip_code_ignore = 1));
@@ -3711,14 +3433,6 @@ tu6_emit_rast(struct tu_cs *cs,
       bool conservative_ras_en =
          rs->conservative_mode ==
          VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT;
-      /* This is important to get D/S only draw calls to bypass invoking
-       * the fragment shader. The public documentation for Adreno states:
-       *  "Hint the driver to engage Fast-Z by using an empty fragment
-       *   shader and disabling frame buffer write masks for renderpasses
-       *   that modify Z values only."
-       *  "The GPU has a special mode that writes Z-only pixels at twice
-       *   the normal rate."
-       */
       tu_cs_emit_regs(cs, RB_RENDER_CNTL(CHIP,
             .fs_disable = disable_fs,
             .raster_mode = TYPE_TILED,
@@ -3733,18 +3447,6 @@ tu6_emit_rast(struct tu_cs *cs,
       tu_cs_emit_regs(
          cs, PC_DGEN_SU_CONSERVATIVE_RAS_CNTL(CHIP, conservative_ras_en));
 
-      /* There are only two conservative rasterization modes:
-       * - shift_amount = 0 (NO_SHIFT) - normal rasterization
-       * - shift_amount = 1 (HALF_PIXEL_SHIFT) - overestimate by half a pixel
-       *   plus the rasterization grid size (1/256)
-       * - shift_amount = 2 (FULL_PIXEL_SHIFT) - overestimate by another half
-       *   a pixel
-       *
-       * We expose a max of 0.5 and a granularity of 0.5, so the app should
-       * only give us 0 or 0.5 which correspond to HALF_PIXEL_SHIFT and
-       * FULL_PIXEL_SHIFT respectively. If they give us anything else just
-       * assume they meant 0.5 as the most conservative choice.
-       */
       enum a6xx_shift_amount shift_amount = conservative_ras_en ?
          (rs->extra_primitive_overestimation_size != 0. ?
             FULL_PIXEL_SHIFT : HALF_PIXEL_SHIFT) : NO_SHIFT;
@@ -3753,7 +3455,6 @@ tu6_emit_rast(struct tu_cs *cs,
             .shiftamount = shift_amount));
    }
 
-   /* move to hw ctx init? */
    tu_cs_emit_regs(cs,
                    GRAS_SU_POINT_MINMAX(CHIP, .min = 1.0f / 16.0f, .max = 4092.0f),
                    GRAS_SU_POINT_SIZE(CHIP, 1.0f));
@@ -3783,7 +3484,6 @@ tu6_ds_size(struct tu_device *dev,
 {
    bool is_adreno_810 = tu_is_adreno_810(dev);
    
-   /* ADRENO810_OPT: Увеличенный размер для stencil ops */
    if (is_adreno_810 && (rp->attachments & MESA_VK_RP_ATTACHMENT_STENCIL_BIT)) {
       return 12;
    }
@@ -3802,20 +3502,6 @@ tu6_emit_ds(struct tu_cs *cs,
    bool stencil_test_enable =
       ds->stencil.test_enable && rp->attachments & MESA_VK_RP_ATTACHMENT_STENCIL_BIT;
 
-   /* While the .stencil_read field can be used to avoid having to read stencil
-    * when the func/ops cause it to be unused, there was no change in perf on
-    * the 1/42 games tested that was affected (Transport Fever, 0.0 +/- 0.0%
-    * change).  Besides, in some cases where we could clear stencil_read here,
-    * the packed z/s is going to be read anyway due to depth testing, though
-    * that doesn't apply to this game.
-    *
-    * Given that the condition for avoiding stencil_read is fairly complicated,
-    * we won't bother with the CPU overhead until we can see some win from it.
-    *
-    * https://gitlab.freedesktop.org/anholt/mesa/-/commits/tu-s-reads
-    */
-   
-   /* ADRENO810_OPT: Аппаратный fast path для stencil */
    bool stencil_fast_path = is_adreno_810 && stencil_test_enable &&
       ds->stencil.front.op.compare == VK_COMPARE_OP_EQUAL &&
       ds->stencil.front.op.fail == VK_STENCIL_OP_KEEP &&
@@ -3868,7 +3554,6 @@ tu6_rb_depth_cntl_size(struct tu_device *dev,
 {
    bool is_adreno_810 = tu_is_adreno_810(dev);
    
-   /* ADRENO810_OPT: Увеличенный размер для depth bounds */
    if (is_adreno_810 && ds->depth.bounds_test.enable) {
       return 9;
    }
@@ -3889,12 +3574,6 @@ tu6_emit_rb_depth_cntl(struct tu_cs *cs,
       bool depth_test = ds->depth.test_enable;
       enum adreno_compare_func zfunc = tu6_compare_func(ds->depth.compare_op);
 
-      /* On some GPUs it is necessary to enable z test for depth bounds test
-       * when UBWC is enabled. Otherwise, the GPU would hang. FUNC_ALWAYS is
-       * required to pass z test. Relevant tests:
-       *  dEQP-VK.pipeline.extended_dynamic_state.two_draws_dynamic.depth_bounds_test_disable
-       *  dEQP-VK.dynamic_state.ds_state.depth_bounds_1
-       */
       if (ds->depth.bounds_test.enable &&
           !ds->depth.test_enable &&
           cs->device->physical_device->info->props.depth_bounds_require_depth_test_quirk) {
@@ -3902,11 +3581,10 @@ tu6_emit_rb_depth_cntl(struct tu_cs *cs,
          zfunc = FUNC_ALWAYS;
       }
       
-      /* ADRENO810_OPT: Аппаратный fast path для depth */
       bool depth_fast_path = is_adreno_810 && depth_test &&
          zfunc == FUNC_LESS && !ds->depth.bounds_test.enable;
 
-      /* Используем стандартную структуру без дополнительных полей */
+      /* ИСПРАВЛЕНО: Убраны несуществующие поля .early_z_disable и .late_z_disable */
       tu_cs_emit_regs(cs, A6XX_RB_DEPTH_CNTL(
          .z_test_enable = depth_test,
          .z_write_enable = ds->depth.test_enable && ds->depth.write_enable,
@@ -3953,22 +3631,8 @@ tu6_emit_prim_mode_sysmem(struct tu_cs *cs,
                           VkImageAspectFlags feedback_loops,
                           bool *sysmem_single_prim_mode)
 {
-   /* VK_EXT_rasterization_order_attachment_access:
-    *
-    * This extension allow access to framebuffer attachments when used as both
-    * input and color attachments from one fragment to the next, in
-    * rasterization order, without explicit synchronization.
-    */
    raster_order_attachment_access |= TU_DEBUG(RAST_ORDER);
 
-   /* If there is a feedback loop, then the shader can read the previous value
-    * of a pixel being written out. It can also write some components and then
-    * read different components without a barrier in between. This is a
-    * problem in sysmem mode with UBWC, because the main buffer and flags
-    * buffer can get out-of-sync if only one is flushed. We fix this by
-    * setting the SINGLE_PRIM_MODE field to the same value that the blob does
-    * for advanced_blend in sysmem mode if a feedback loop is detected.
-    */
    enum a6xx_single_prim_mode sysmem_prim_mode =
       (raster_order_attachment_access || feedback_loops ||
        fs->fs.dynamic_input_attachments_used) ?
@@ -3998,7 +3662,6 @@ tu6_fragment_shading_rate_size(struct tu_device *dev,
 {
    bool is_adreno_810 = tu_is_adreno_810(dev);
    
-   /* ADRENO810_OPT: Аппаратная поддержка VRS требует больше регистров */
    if (is_adreno_810 && (enable_att_fsr || enable_prim_fsr)) {
       return 8;
    }
@@ -4016,9 +3679,6 @@ tu6_emit_fragment_shading_rate(struct tu_cs *cs,
 {
    bool is_adreno_810 = tu_is_adreno_810_from_cs(cs);
    
-   /* gl_ShadingRateEXT don't read 1x1 value with null config, so
-    * if it is read - we have to emit the config.
-    */
    if (!fsr || (!fs_reads_fsr && vk_fragment_shading_rate_is_disabled(fsr))) {
       tu_cs_emit_regs(cs, A6XX_RB_VRS_CONFIG());
       tu_cs_emit_regs(cs, SP_VRS_CONFIG(CHIP));
@@ -4029,16 +3689,11 @@ tu6_emit_fragment_shading_rate(struct tu_cs *cs,
    uint32_t frag_width = fsr->fragment_size.width;
    uint32_t frag_height = fsr->fragment_size.height;
    
-   /* ADRENO810_OPT: Аппаратно-оптимальные размеры фрагментов */
    if (is_adreno_810) {
       if (frag_width == 1 && frag_height == 1) {
-         /* 1x1 - без VRS */
       } else if (frag_width == 2 && frag_height == 2) {
-         /* 2x2 - оптимально для 810 */
       } else if (frag_width == 4 && frag_height == 4) {
-         /* 4x4 - тоже хорошо */
       } else {
-         /* Подгоняем под аппаратные ограничения */
          frag_width = 1 << util_logbase2(frag_width);
          frag_height = 1 << util_logbase2(frag_height);
          if (frag_width > 4) frag_width = 4;
@@ -4098,12 +3753,6 @@ emit_pipeline_state(BITSET_WORD *keep, BITSET_WORD *remove,
 {
    BITSET_DECLARE(state, MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX) = {};
 
-   /* Unrolling this loop should produce a constant value once the function is
-    * inlined, because state_array and num_states are a per-draw-state
-    * constant, but GCC seems to need a little encouragement. clang does a
-    * little better but still needs a pragma when there are a large number of
-    * states.
-    */
 #if defined(__clang__)
 #pragma clang loop unroll(full)
 #elif defined(__GNUC__) && __GNUC__ >= 8
@@ -4113,12 +3762,6 @@ emit_pipeline_state(BITSET_WORD *keep, BITSET_WORD *remove,
       BITSET_SET(state, state_array[i]);
    }
 
-   /* If all of the state is set, then after we emit it we can tentatively
-    * remove it from the states to set for the pipeline by making it dynamic.
-    * If we can't emit it, though, we need to keep around the partial state so
-    * that we can emit it later, even if another draw state consumes it. That
-    * is, we have to cancel any tentative removal.
-    */
    BITSET_DECLARE(temp, MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX);
    memcpy(temp, pipeline_set, sizeof(temp));
    BITSET_AND(temp, temp, state);
@@ -4163,9 +3806,6 @@ tu_pipeline_builder_emit_state(struct tu_pipeline_builder *builder,
               builder->graphics_state.vi);
    DRAW_STATE(vertex_stride, TU_DYNAMIC_STATE_VB_STRIDE,
               builder->graphics_state.vi);
-   /* If (a) per-view viewport is used or (b) we don't know yet, then we need
-    * to set viewport and stencil state dynamically.
-    */
    bool no_per_view_viewport = pipeline_contains_all_shader_state(pipeline) &&
       !pipeline->program.per_view_viewport &&
       !pipeline->program.per_layer_viewport;
@@ -4188,11 +3828,6 @@ tu_pipeline_builder_emit_state(struct tu_pipeline_builder *builder,
    if (attachments_valid &&
        !(builder->graphics_state.rp->attachments &
          MESA_VK_RP_ATTACHMENT_ANY_COLOR_BITS)) {
-      /* If there are no color attachments, then the original blend state may
-       * be NULL and the common code sanitizes it to always be NULL. In this
-       * case we want to emit an empty blend/bandwidth/etc.  rather than
-       * letting it be dynamic (and potentially garbage).
-       */
       cb = &dummy_cb;
       BITSET_SET(pipeline_set, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE);
       BITSET_SET(pipeline_set, MESA_VK_DYNAMIC_CB_LOGIC_OP);
@@ -4227,9 +3862,6 @@ tu_pipeline_builder_emit_state(struct tu_pipeline_builder *builder,
    if (attachments_valid &&
        !(builder->graphics_state.rp->attachments &
          MESA_VK_RP_ATTACHMENT_ANY_COLOR_BITS)) {
-      /* Don't actually make anything dynamic as that may mean a partially-set
-       * state group where the group is NULL which angers common code.
-       */
       BITSET_CLEAR(remove, MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE);
       BITSET_CLEAR(remove, MESA_VK_DYNAMIC_CB_LOGIC_OP);
       BITSET_CLEAR(remove, MESA_VK_DYNAMIC_CB_ATTACHMENT_COUNT);
@@ -4301,7 +3933,6 @@ tu_pipeline_builder_emit_state(struct tu_pipeline_builder *builder,
 #undef DRAW_STATE_COND
 #undef EMIT_STATE
 
-   /* LRZ always needs depth/stencil state at draw time */
    BITSET_SET(keep, MESA_VK_DYNAMIC_DS_DEPTH_TEST_ENABLE);
    BITSET_SET(keep, MESA_VK_DYNAMIC_DS_DEPTH_WRITE_ENABLE);
    BITSET_SET(keep, MESA_VK_DYNAMIC_DS_DEPTH_BOUNDS_TEST_ENABLE);
@@ -4311,27 +3942,17 @@ tu_pipeline_builder_emit_state(struct tu_pipeline_builder *builder,
    BITSET_SET(keep, MESA_VK_DYNAMIC_DS_STENCIL_WRITE_MASK);
    BITSET_SET(keep, MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE);
 
-   /* MSAA needs line mode */
    BITSET_SET(keep, MESA_VK_DYNAMIC_RS_LINE_MODE);
 
-   /* The patch control points is part of the draw */
    BITSET_SET(keep, MESA_VK_DYNAMIC_TS_PATCH_CONTROL_POINTS);
 
-   /* Vertex buffer state needs to know the max valid binding */
    BITSET_SET(keep, MESA_VK_DYNAMIC_VI_BINDINGS_VALID);
 
-   /* We might re-emit TU_DYNAMIC_STATE_DS or TU_DYNAMIC_STATE_RB_DEPTH_CNTL
-    * depending on render pass attachments. Some of these overlap with the
-    * state needed by LRZ above.
-    */
    for (unsigned i = 0; i < ARRAY_SIZE(tu_ds_state); i++)
       BITSET_SET(keep, tu_ds_state[i]);
    for (unsigned i = 0; i < ARRAY_SIZE(tu_rb_depth_cntl_state); i++)
       BITSET_SET(keep, tu_rb_depth_cntl_state[i]);
 
-   /* Remove state which has been emitted and we no longer need to set when
-    * binding the pipeline by making it "dynamic".
-    */
    BITSET_ANDNOT(remove, remove, keep);
 
    BITSET_OR(pipeline->static_state_mask, pipeline->static_state_mask, remove);
@@ -4347,12 +3968,6 @@ emit_draw_state(const struct vk_dynamic_graphics_state *dynamic_state,
 {
    BITSET_DECLARE(state, MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX) = {};
 
-   /* Unrolling this loop should produce a constant value once the function is
-    * inlined, because state_array and num_states are a per-draw-state
-    * constant, but GCC seems to need a little encouragement. clang does a
-    * little better but still needs a pragma when there are a large number of
-    * states.
-    */
 #if defined(__clang__)
 #pragma clang loop unroll(full)
 #elif defined(__GNUC__) && __GNUC__ >= 8
@@ -4423,10 +4038,6 @@ tu_emit_draw_state(struct tu_cmd_buffer *cmd)
    DRAW_STATE(vertex_input, TU_DYNAMIC_STATE_VERTEX_INPUT,
               cmd->vk.dynamic_graphics_state.vi);
 
-   /* Vertex input stride is special because it's part of the vertex input in
-    * the pipeline but a separate array when it's dynamic state so we have to
-    * use two separate functions.
-    */
 #define tu6_emit_vertex_stride tu6_emit_vertex_stride_dyn
 #define tu6_vertex_stride_size tu6_vertex_stride_size_dyn
 
@@ -4457,7 +4068,6 @@ tu_emit_draw_state(struct tu_cmd_buffer *cmd)
                    cmd->vk.dynamic_graphics_state.ms.alpha_to_one_enable,
                    cmd->vk.dynamic_graphics_state.ms.sample_mask);
                    
-   /* ADRENO810_OPT: Кэшируем результаты blend для LRZ */
    if (!cmd->state.pipeline_blend_lrz &&
        (EMIT_STATE(blend_lrz) || (cmd->state.dirty & TU_CMD_DIRTY_SUBPASS))) {
       tu_lrz_blend_status blend_status = tu6_calc_blend_lrz(
@@ -4567,22 +4177,6 @@ static void
 tu_pipeline_builder_parse_multisample_and_color_blend(
    struct tu_pipeline_builder *builder, struct tu_pipeline *pipeline)
 {
-   /* The spec says:
-    *
-    *    pMultisampleState is a pointer to an instance of the
-    *    VkPipelineMultisampleStateCreateInfo, and is ignored if the pipeline
-    *    has rasterization disabled.
-    *
-    * Also,
-    *
-    *    pColorBlendState is a pointer to an instance of the
-    *    VkPipelineColorBlendStateCreateInfo structure, and is ignored if the
-    *    pipeline has rasterization disabled or if the subpass of the render
-    *    pass the pipeline is created against does not use any color
-    *    attachments.
-    *
-    * We leave the relevant registers stale when rasterization is disabled.
-    */
    if (builder->rasterizer_discard) {
       return;
    }
@@ -4616,19 +4210,9 @@ tu_pipeline_builder_parse_rasterization_order(
       pipeline->ds.raster_order_attachment_access ||
       TU_DEBUG(RAST_ORDER);
 
-   /* VK_EXT_blend_operation_advanced would also require ordered access
-    * when implemented in the future.
-    */
-
    enum a6xx_single_prim_mode gmem_prim_mode = NO_FLUSH;
 
    if (raster_order_attachment_access) {
-      /* VK_EXT_rasterization_order_attachment_access:
-       *
-       * This extension allow access to framebuffer attachments when used as
-       * both input and color attachments from one fragment to the next,
-       * in rasterization order, without explicit synchronization.
-       */
       gmem_prim_mode = FLUSH_PER_OVERLAP;
    }
 
@@ -4734,7 +4318,6 @@ tu_pipeline_builder_build(struct tu_pipeline_builder *builder,
    for (unsigned i = 0; i < builder->create_info->stageCount; i++) {
       VkShaderStageFlagBits stage = builder->create_info->pStages[i].stage;
 
-      /* Ignore shader stages that don't need to be imported. */
       if (!(vk_shader_stage_to_pipeline_library_flags(stage) & builder->state))
          continue;
 
@@ -4746,7 +4329,6 @@ tu_pipeline_builder_build(struct tu_pipeline_builder *builder,
    for (unsigned i = 0; i < builder->num_libraries; i++)
       (*pipeline)->active_stages |= builder->libraries[i]->base.active_stages;
 
-   /* Compile and upload shaders unless a library has already done that. */
    if ((*pipeline)->program.vs_state.size == 0) {
       tu_pipeline_builder_parse_layout(builder, *pipeline);
 
@@ -4773,7 +4355,6 @@ tu_pipeline_builder_build(struct tu_pipeline_builder *builder,
       tu_emit_program_state<CHIP>(&(*pipeline)->cs, &(*pipeline)->program,
                                   (*pipeline)->shaders);
 
-      /* ADRENO810_OPT: Предзагрузка состояния */
       if (is_adreno_810 || CHIP == A6XX) {
          tu6_emit_load_state(builder->device, *pipeline, &builder->layout);
       }
@@ -4898,18 +4479,6 @@ tu_pipeline_builder_init_graphics(
    if (gpl_info) {
       builder->state = gpl_info->flags;
    } else {
-      /* Implement this bit of spec text:
-       *
-       *    If this structure is omitted, and either
-       *    VkGraphicsPipelineCreateInfo::flags includes
-       *    VK_PIPELINE_CREATE_LIBRARY_BIT_KHR or the
-       *    VkGraphicsPipelineCreateInfo::pNext chain includes a
-       *    VkPipelineLibraryCreateInfoKHR structure with a libraryCount
-       *    greater than 0, it is as if flags is 0. Otherwise if this
-       *    structure is omitted, it is as if flags includes all possible
-       *    subsets of the graphics pipeline (i.e. a complete graphics
-       *    pipeline).
-       */
       if ((library_info && library_info->libraryCount > 0) ||
           (builder->create_flags & VK_PIPELINE_CREATE_2_LIBRARY_BIT_KHR)) {
          builder->state = 0;
@@ -4944,10 +4513,6 @@ tu_pipeline_builder_init_graphics(
 
    builder->unscaled_input_fragcoord = 0;
 
-   /* Extract information we need from the turnip renderpass. This will be
-    * filled out automatically if the app is using dynamic rendering or
-    * renderpasses are emulated.
-    */
    if (!TU_DEBUG(DYNAMIC) &&
        (builder->state &
         (VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT |
@@ -4962,9 +4527,6 @@ tu_pipeline_builder_init_graphics(
       tu_fill_render_pass_state(&rp_state, pass, subpass);
 
       for (unsigned i = 0; i < subpass->input_count; i++) {
-         /* Input attachments stored in GMEM must be loaded with unscaled
-          * FragCoord.
-          */
          if (subpass->input_attachments[i].patch_input_gmem)
             builder->unscaled_input_fragcoord |= 1u << i;
       }
@@ -4996,9 +4558,6 @@ tu_pipeline_builder_init_graphics(
 
       builder->unscaled_input_fragcoord = 0;
       for (unsigned i = 0; i < subpass->input_count; i++) {
-         /* Input attachments stored in GMEM must be loaded with unscaled
-          * FragCoord.
-          */
          if (subpass->input_attachments[i].patch_input_gmem)
             builder->unscaled_input_fragcoord |= 1u << i;
       }
@@ -5242,7 +4801,6 @@ tu_compute_pipeline_create(VkDevice device,
    for (int i = 0; i < 3; i++)
       pipeline->local_size[i] = v->local_size[i];
 
-   /* ADRENO810_OPT: Предзагрузка состояния для compute */
    if (is_adreno_810 || CHIP == A6XX) {
       tu6_emit_load_state(dev, &pipeline->base, layout);
    }
@@ -5251,7 +4809,6 @@ tu_compute_pipeline_create(VkDevice device,
 
    pipeline->instrlen = v->instrlen;
    
-   /* ADRENO810_OPT: Проверка длины инструкций */
    if (is_adreno_810 && pipeline->instrlen > ADRENO_810_MAX_INSTR_LEN) {
       pipeline->instrlen = ADRENO_810_MAX_INSTR_LEN;
    }
@@ -5370,7 +4927,6 @@ tu_GetPipelineExecutablePropertiesKHR(
 
          VK_COPY_STR(props->description, _mesa_shader_stage_to_string(stage));
 
-         /* ADRENO810_OPT: Оптимальный размер subgroup */
          if (is_adreno_810) {
             props->subgroupSize = ADRENO_810_WAVE_SIZE;
          } else {
