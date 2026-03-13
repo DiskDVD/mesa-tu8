@@ -1622,35 +1622,37 @@ a8xx_829 = GPUProps(
 )
 
 # Оптимизированные параметры для Adreno 810
-# Меняем ТОЛЬКО GMEM, sysmem оставляем как есть!
+# VPC буферы оставлены как в стабильной версии 0.6 (без изменений!)
 a8xx_810 = GPUProps(
-        # sysmem - БЕЗ ИЗМЕНЕНИЙ (работает и так)
-        sysmem_vpc_attr_buf_size = 131072,      # 128KB
-        sysmem_vpc_pos_buf_size = 65536,        # 64KB
-        sysmem_vpc_bv_pos_buf_size = 32768,     # 32KB
+        # VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ (не меняем!)
+        sysmem_vpc_attr_buf_size = 131072,      # 128KB - стабильно
+        sysmem_vpc_pos_buf_size = 65536,        # 64KB - стабильно
+        sysmem_vpc_bv_pos_buf_size = 32768,     # 32KB - стабильно
         
+        # Эти значения - максимальный размер depth/color cache для текущей конфигурации A8XX Gen2 sysmem
+        # Большие значения могут вызвать integer underflow в расчетах freedreno gmem
         sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
         sysmem_per_ccu_color_cache_size = 32 * 1024,
         sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
         sysmem_per_ccu_depth_cache_size = 32 * 1024,
         
-        # GMEM - МИНИМАЛЬНЫЕ ОВЕРХЕДЫ для 512KB
-        gmem_vpc_attr_buf_size = 16384,         # 16KB (было 48KB)
-        gmem_vpc_pos_buf_size = 4096,               # 0KB - отключаем (было 24KB)
-        gmem_vpc_bv_pos_buf_size = 4096,            # 0KB - отключаем (было 32KB)
+        # GMEM VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ
+        gmem_vpc_attr_buf_size = 49152,         # 48KB - стабильно
+        gmem_vpc_pos_buf_size = 24576,          # 24KB - стабильно
+        gmem_vpc_bv_pos_buf_size = 32768,       # 32KB - стабильно
         
+        # GMEM кэши - без изменений
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
-        gmem_per_ccu_color_cache_size = 8192,    # 8KB (было 16KB)
+        gmem_per_ccu_color_cache_size = 16 * 1024,
+        gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
+        gmem_per_ccu_depth_cache_size = 64 * 1024,
         
-        gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.QUARTER.value,
-        gmem_per_ccu_depth_cache_size = 16384,   # 16KB (было 64KB)
-        
+        gmem_size = 512 * 1024,  # 512kb GMEM, 4MB????       
         # A810 не поддерживает ray tracing
-        gmem_size = 512 * 1024,
         has_ray_intersection = False,
         has_sw_fuse = False,
         
-        # GMEM включен
+        # GMEM включен для максимальной производительности
         disable_gmem = False,
 )
 
