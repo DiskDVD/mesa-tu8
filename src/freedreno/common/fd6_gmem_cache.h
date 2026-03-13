@@ -43,7 +43,7 @@ __calc_gmem_cache_offsets(const struct fd_dev_info *info, unsigned offset,
    unsigned num_ccu = info->num_ccu;
 
    /* Adreno 810: защита от отрицательных смещений */
-   if (info->chip == 8 && info->gpu_id == 810) {
+   if (info->gpu_id == 810) {
       /* Проверяем каждый шаг на переполнение */
       if (offset < num_ccu * config->vpc_bv_pos_buf_size) {
          config->vpc_bv_pos_buf_size = offset / num_ccu;
