@@ -1646,7 +1646,7 @@ a8xx_810 = GPUProps(
         gmem_per_ccu_depth_cache_size = 16384,   # 16KB (было 64KB)
         
         # A810 не поддерживает ray tracing
-        gmem_size = 512 * 1024
+        gmem_size = 512 * 1024,
         has_ray_intersection = False,
         has_sw_fuse = False,
         
