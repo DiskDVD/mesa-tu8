@@ -15,6 +15,10 @@
  * the dynamic descriptors. The dynamic descriptors are stored in the CPU-side
  * datastructure for each tu_descriptor_set, and then combined into one big
  * descriptor set at CmdBindDescriptors time/draw time.
+ *
+ * Оптимизировано для Adreno 810:
+ * - Выравнивание всех структур по кэш-линии (64 байт)
+ * - Увеличенный пул дескрипторов (2 МБ для производительности)
  */
 
 #include "tu_descriptor_set.h"
@@ -34,10 +38,33 @@
 #include "tu_rmv.h"
 #include "bvh/tu_build_interface.h"
 
+/* Нужно для определения чипа Adreno 810 */
+#include "freedreno_dev_info.h"
+
+/* Adreno 810: размер кэш-линии */
+#define ADRENO_CACHE_LINE_SIZE 64
+
+/* Безопасный размер пула дескрипторов: 2 МБ */
+#define ADRENO_DESCRIPTOR_POOL_SIZE (2 * 1024 * 1024)
+
+/* GMEM размер для Adreno 810 (из ваших релизов) */
+#define ADRENO_GMEM_SIZE (512 * 1024)
+
 static inline uint8_t *
 pool_base(struct tu_descriptor_pool *pool)
 {
    return pool->host_bo ?: (uint8_t *) pool->bo->map;
+}
+
+/* Оптимизация: выравнивание по кэш-линии ТОЛЬКО для A810 */
+static inline uint32_t
+adreno_align_size(struct tu_device *dev, uint32_t size)
+{
+   /* Проверяем, что это Adreno 810 (chip ID = 810) */
+   if (dev->physical_device->info->chip == 810) {
+      return ALIGN_POT(size, ADRENO_CACHE_LINE_SIZE);
+   }
+   return size;
 }
 
 static uint32_t
@@ -45,6 +72,8 @@ descriptor_size(struct tu_device *dev,
                 const VkDescriptorSetLayoutBinding *binding,
                 VkDescriptorType type)
 {
+   uint32_t base_size;
+   
    switch (type) {
    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
       /* We make offsets and sizes all 16 dwords, to match how the hardware
@@ -54,23 +83,29 @@ descriptor_size(struct tu_device *dev,
        * descriptors which are less than 16 dwords. However combined images
        * and samplers are actually two descriptors, so they have size 2.
        */
-      return FDL6_TEX_CONST_DWORDS * 4 * 2;
+      base_size = FDL6_TEX_CONST_DWORDS * 4 * 2;
+      break;
    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
       /* isam.v allows using a single 16-bit descriptor for both 16-bit and
        * 32-bit loads. If not available but 16-bit storage is still supported,
        * two separate descriptors are required.
        */
-      return FDL6_TEX_CONST_DWORDS * 4 * (1 +
+      base_size = FDL6_TEX_CONST_DWORDS * 4 * (1 +
          COND(dev->physical_device->info->props.storage_16bit &&
               !dev->physical_device->info->props.has_isam_v, 1) +
          COND(dev->physical_device->info->props.storage_8bit, 1));
+      break;
    case VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK:
-      return binding->descriptorCount;
+      base_size = binding->descriptorCount;
+      break;
    case VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR:
    default:
-      return FDL6_TEX_CONST_DWORDS * 4;
+      base_size = FDL6_TEX_CONST_DWORDS * 4;
    }
+   
+   /* Adreno 810: выравниваем все дескрипторы по кэш-линии */
+   return adreno_align_size(dev, base_size);
 }
 
 static uint32_t
@@ -84,7 +119,8 @@ mutable_descriptor_size(struct tu_device *dev,
       max_size = MAX2(max_size, size);
    }
 
-   return max_size;
+   /* Adreno 810: выравниваем по кэш-линии */
+   return adreno_align_size(dev, max_size);
 }
 
 static void
@@ -573,6 +609,11 @@ tu_descriptor_set_create(struct tu_device *device,
    unsigned mem_size = dynamic_offset + layout->dynamic_offset_size;
 
    if (pool->host_memory_base) {
+      /* Adreno 810: выравниваем указатель по кэш-линии */
+      if (device->physical_device->info->chip == 810) {
+         pool->host_memory_ptr = (uint8_t *)ALIGN_POT((uintptr_t)pool->host_memory_ptr, 64);
+      }
+      
       if (pool->host_memory_end - pool->host_memory_ptr < mem_size)
          return VK_ERROR_OUT_OF_POOL_MEMORY;
 
@@ -630,6 +671,11 @@ tu_descriptor_set_create(struct tu_device *device,
          set->offset = pool_vma_offset - TU_POOL_HEAP_OFFSET;
          current_offset = set->offset;
       } else {
+         /* Adreno 810: выравниваем оффсет в пуле */
+         if (device->physical_device->info->chip == 810) {
+            current_offset = ALIGN_POT(current_offset, 64);
+         }
+         
          if (current_offset + set->size > pool->size)
             return VK_ERROR_OUT_OF_POOL_MEMORY;
 
@@ -744,6 +790,12 @@ tu_CreateDescriptorPool(VkDevice _device,
                               pool_size->descriptorCount;
          break;
       }
+   }
+
+   /* Adreno 810: увеличиваем пул до безопасных 2 МБ для производительности */
+   if (device->physical_device->info->chip == 810 && 
+       bo_size < ADRENO_DESCRIPTOR_POOL_SIZE) {
+      bo_size = ADRENO_DESCRIPTOR_POOL_SIZE;
    }
 
    if (!(pCreateInfo->flags & VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT)) {
