@@ -42,6 +42,26 @@ __calc_gmem_cache_offsets(const struct fd_dev_info *info, unsigned offset,
 {
    unsigned num_ccu = info->num_ccu;
 
+   /* A810: защита от отрицательных смещений */
+   if (info->gpu_id == 810) {
+      /* Проверяем каждый шаг на переполнение */
+      if (offset < num_ccu * config->vpc_bv_pos_buf_size) {
+         config->vpc_bv_pos_buf_size = offset / num_ccu;
+      }
+      if (offset < num_ccu * config->vpc_attr_buf_size) {
+         config->vpc_attr_buf_size = offset / num_ccu;
+      }
+      if (offset < num_ccu * config->vpc_pos_buf_size) {
+         config->vpc_pos_buf_size = offset / num_ccu;
+      }
+      if (offset < num_ccu * config->color_cache_size) {
+         config->color_cache_size = offset / num_ccu;
+      }
+      if (offset < num_ccu * config->depth_cache_size) {
+         config->depth_cache_size = offset / num_ccu;
+      }
+   }
+
    /* This seems not to be load bearing, but keeping it for now to match blob: */
    if (info->chip >= 8 && info->num_slices > 1)
       //offset -= 0x78000;
@@ -82,21 +102,43 @@ fd6_calc_gmem_cache_offsets(const struct fd_dev_info *info, unsigned gmemsize_by
 
    /* TODO we could unify gen7/gen8 setup.. gen7 is a subset.. */
    if (info->chip == 8) {
-      gmem->depth_cache_fraction = info->props.gmem_ccu_depth_cache_fraction;
-      gmem->depth_cache_size     = info->props.gmem_per_ccu_depth_cache_size;
-      gmem->color_cache_fraction = info->props.gmem_ccu_color_cache_fraction;
-      gmem->color_cache_size     = info->props.gmem_per_ccu_color_cache_size;
-      gmem->vpc_attr_buf_size    = info->props.gmem_vpc_attr_buf_size;
-      gmem->vpc_pos_buf_size     = info->props.gmem_vpc_pos_buf_size;
-      gmem->vpc_bv_pos_buf_size  = info->props.gmem_vpc_bv_pos_buf_size;
+      /* A810: специальная обработка для 512KB GMEM */
+      if (info->gpu_id == 810) {
+         /* Для GMEM режима - максимум памяти под тайлы */
+         gmem->depth_cache_fraction = 0;
+         gmem->depth_cache_size     = 16 * 1024;     /* 16KB на depth cache */
+         gmem->color_cache_fraction = 3;             /* 1/8 */
+         gmem->color_cache_size     = 16 * 1024;     /* 16KB на color cache */
+         gmem->vpc_attr_buf_size    = 24 * 1024;     /* 24KB на атрибуты */
+         gmem->vpc_pos_buf_size     = 0;              /* Position buffer не нужен */
+         gmem->vpc_bv_pos_buf_size  = 0;              /* BV position buffer не нужен */
 
-      sysmem->depth_cache_fraction = info->props.sysmem_ccu_depth_cache_fraction;
-      sysmem->depth_cache_size     = info->props.sysmem_per_ccu_depth_cache_size;
-      sysmem->color_cache_fraction = info->props.sysmem_ccu_color_cache_fraction;
-      sysmem->color_cache_size     = info->props.sysmem_per_ccu_color_cache_size;
-      sysmem->vpc_attr_buf_size    = info->props.sysmem_vpc_attr_buf_size;
-      sysmem->vpc_pos_buf_size     = info->props.sysmem_vpc_pos_buf_size;
-      sysmem->vpc_bv_pos_buf_size  = info->props.sysmem_vpc_bv_pos_buf_size;
+         /* Для sysmem можно использовать весь GMEM как кэш */
+         sysmem->depth_cache_fraction = 0;
+         sysmem->depth_cache_size     = 256 * 1024;   /* 256KB */
+         sysmem->color_cache_fraction = 0;
+         sysmem->color_cache_size     = 256 * 1024;   /* 256KB */
+         sysmem->vpc_attr_buf_size    = info->props.sysmem_vpc_attr_buf_size;
+         sysmem->vpc_pos_buf_size     = info->props.sysmem_vpc_pos_buf_size;
+         sysmem->vpc_bv_pos_buf_size  = info->props.sysmem_vpc_bv_pos_buf_size;
+      } else {
+         /* Другие A8XX - стандартная логика из пропертей */
+         gmem->depth_cache_fraction = info->props.gmem_ccu_depth_cache_fraction;
+         gmem->depth_cache_size     = info->props.gmem_per_ccu_depth_cache_size;
+         gmem->color_cache_fraction = info->props.gmem_ccu_color_cache_fraction;
+         gmem->color_cache_size     = info->props.gmem_per_ccu_color_cache_size;
+         gmem->vpc_attr_buf_size    = info->props.gmem_vpc_attr_buf_size;
+         gmem->vpc_pos_buf_size     = info->props.gmem_vpc_pos_buf_size;
+         gmem->vpc_bv_pos_buf_size  = info->props.gmem_vpc_bv_pos_buf_size;
+
+         sysmem->depth_cache_fraction = info->props.sysmem_ccu_depth_cache_fraction;
+         sysmem->depth_cache_size     = info->props.sysmem_per_ccu_depth_cache_size;
+         sysmem->color_cache_fraction = info->props.sysmem_ccu_color_cache_fraction;
+         sysmem->color_cache_size     = info->props.sysmem_per_ccu_color_cache_size;
+         sysmem->vpc_attr_buf_size    = info->props.sysmem_vpc_attr_buf_size;
+         sysmem->vpc_pos_buf_size     = info->props.sysmem_vpc_pos_buf_size;
+         sysmem->vpc_bv_pos_buf_size  = info->props.sysmem_vpc_bv_pos_buf_size;
+      }
 
       __calc_gmem_cache_offsets(info, gmemsize_bytes, sysmem);
       return __calc_gmem_cache_offsets(info, gmemsize_bytes, gmem);
