@@ -3445,26 +3445,19 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
 
    /* User flushes should always be executed on BR. */
    tu_emit_cache_flush_ccu<CHIP>(cmd, cs, TU_CMD_CCU_GMEM);
-      /* ===== ОЧИСТКА GMEM ДЛЯ A810 ===== */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      static int first_gmem_pass = 1;
-      if (first_gmem_pass) {
-         first_gmem_pass = 0;
-         
-         /* Очищаем цветовой буфер */
-         tu_cs_emit_pkt7(cs, CP_CLEAR_COLOR_BUFFER, 4);
-         tu_cs_emit_qw(cs, 0);           /* весь GMEM */
-         tu_cs_emit(cs, 0);               /* черный цвет (R=0,G=0,B=0,A=0) */
-         tu_cs_emit(cs, 0xF);              /* маска: очищаем все 4 компонента */
-         
-         /* Очищаем буфер глубины */
-         tu_cs_emit_pkt7(cs, CP_CLEAR_DEPTH_STENCIL_BUFFER, 4);
-         tu_cs_emit_qw(cs, 0);           /* весь GMEM */
-         tu_cs_emit(cs, 0xFFFFFFFF);      /* depth = 1.0 (дальняя плоскость) */
-         tu_cs_emit(cs, 0xFF);             /* stencil = 0 */
+/* ===== ОЧИСТКА GMEM ДЛЯ A810 ===== */
+if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+   static int first_gmem_pass = 1;
+   if (first_gmem_pass) {
+      first_gmem_pass = 0;
+      
+      /* Очищаем все аттачменты в GMEM */
+      for (uint32_t i = 0; i < cmd->state.pass->attachment_count; i++) {
+         tu_clear_gmem_attachment<CHIP>(cmd, cs, NULL, false, i);
       }
    }
-   /* ===== КОНЕЦ ОЧИСТКИ ===== */ 
+}
+/* ===== КОНЕЦ ОЧИСТКИ ===== */
 
    bool use_cb = false;
 
@@ -3618,7 +3611,7 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
             /* Emit vis stream on BR */
             tu_emit_vsc<CHIP>(cmd, cs);
          }
-
+         
          tu_cs_emit_pkt7(cs, CP_MEM_TO_SCRATCH_MEM, 4);
          tu_cs_emit(cs, num_vsc_pipes); /* count */
          tu_cs_emit(cs, 0); /* offset */
