@@ -21,10 +21,12 @@
 #include "tu_image.h"
 #include "tu_knl.h"
 #include "tu_tracepoints.h"
+#include <stdio.h>
 
 #include "common/freedreno_gpu_event.h"
 #include "common/freedreno_lrz.h"
 #include "common/freedreno_vrs.h"
+#define A810 GMEM SIZE (512 * 1024
 
 enum tu_cmd_buffer_status {
    TU_CMD_BUFFER_STATUS_IDLE = 0,
@@ -1337,6 +1339,37 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
       cmd->state.rp.gmem_disable_reason = "Can't fit attachments into gmem";
       return true;
    }
+    /* ========== ИСПРАВЛЕНО ДЛЯ A810 ========== */
+   /* A810: проверка на переполнение 512KB GMEM */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      uint32_t gmem_size = 512 * 1024; /* 512KB */
+      uint32_t needed = 0;
+      
+      /* Считаем, сколько памяти нужно для всех аттачментов */
+      for (unsigned i = 0; i < cmd->state.pass->attachment_count; i++) {
+         const struct tu_render_pass_attachment *att = 
+            &cmd->state.pass->attachments[i];
+         if (att->gmem) {
+            /* Используем tile0 из tiling config */
+            uint32_t tile_width = cmd->state.tiling->tile0.width;
+            uint32_t tile_height = cmd->state.tiling->tile0.height;
+            uint32_t tile_size = tile_width * tile_height;
+            needed += tile_size * att->cpp;
+         }
+      }
+            #ifdef A810_GMEM_DEBUG
+            fprintf(stderr, "A810 GMEM: needed=%u KB, %s\n", 
+           needed / 1024,
+           needed > gmem_size ? "-> SYSMEM" : "-> GMEM");
+           #endif
+      
+      /* Если не влезает - используем sysmem */
+      if (needed > gmem_size) {
+         cmd->state.rp.gmem_disable_reason = "A810: GMEM overflow";
+         return true;
+      }
+   }
+   /* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */
 
    /* Use sysmem for empty render areas */
    if (cmd->state.per_layer_render_area) {
