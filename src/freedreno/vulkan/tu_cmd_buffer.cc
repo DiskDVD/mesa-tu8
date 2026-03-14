@@ -194,16 +194,17 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 
       /* ========== ИСПРАВЛЕНИЕ ДЛЯ A810 ========== */
-   /* Для A810 начинаем с 8KB для draw буфера, prim буфер не трогаем */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      /* Увеличиваем draw буфер до 8KB если он меньше */
-      if (dev->vsc_draw_strm_pitch < 0x1000) {
-         dev->vsc_draw_strm_pitch = 0x1000; /* 8KB */
-      }
-      /* prim буфер оставляем как есть - пусть драйвер сам решает */
+if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+   /* Увеличиваем draw буфер до 16KB */
+   if (dev->vsc_draw_strm_pitch < 0x3000) {
+      dev->vsc_draw_strm_pitch = 0x3000;  // 16KB
    }
-   /* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */
-
+   /* Увеличиваем prim буфер до 16KB */
+   if (dev->vsc_prim_strm_pitch < 0x3000) {
+      dev->vsc_prim_strm_pitch = 0x3000;  // 16KB
+   }
+}
+/* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */
    if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
       dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
 
