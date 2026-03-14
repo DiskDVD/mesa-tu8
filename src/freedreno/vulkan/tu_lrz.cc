@@ -484,6 +484,7 @@ tu_lrz_cb_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 template <chip CHIP>
 void
 tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
+{
    /* ===== ОТЛАДКА LRZ ===== */
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
       fprintf(stderr, "A810 LRZ: %s, fast_clear=%d, gpu_dir_tracking=%d\n",
@@ -492,7 +493,7 @@ tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
               cmd->state.lrz.gpu_dir_tracking);
    }
    /* ===== КОНЕЦ ===== */
-{
+
    /* TODO: If lrz was never valid for the entire renderpass, we could exit
     * early here. Sometimes we know this ahead of time and null out
     * image_view, but with LOAD_OP_DONT_CARE this only happens if there were
@@ -500,6 +501,9 @@ tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
     */
    if (!cmd->state.lrz.image_view)
       return;
+
+   
+}
 
    struct tu_lrz_state *lrz = &cmd->state.lrz;
 
