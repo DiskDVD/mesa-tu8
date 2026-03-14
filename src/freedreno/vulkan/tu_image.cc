@@ -327,19 +327,21 @@ ubwc_possible(struct tu_device *device,
    if (info->props.is_a702)
       return false;
 
-   /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Принудительно включаем UBWC где возможно */
-   if (info->chip == 810 && !(flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
-       !(flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) &&
-       !vk_format_is_compressed(format) &&
-       format != VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 &&
-       format != VK_FORMAT_S8_UINT) {
-      
-      /* A810 отлично работает с UBWC, включаем для всех подходящих форматов */
-      if (type != VK_IMAGE_TYPE_3D || mip_levels <= 1) {
-         /* Проверяем поддержку storage images */
-         if (!((usage | stencil_usage) & VK_IMAGE_USAGE_STORAGE_BIT) ||
-             info->props.supports_uav_ubwc) {
-            return true;
+   /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: chip в fd_dev_info это enum, используем правильное сравнение */
+   if (info->chip == CHIP_A630 && device && device->physical_device &&
+       device->physical_device->info->gpu_id == 810) {
+      /* Для A810 включаем UBWC где возможно */
+      if (!(flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
+          !(flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) &&
+          !vk_format_is_compressed(format) &&
+          format != VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 &&
+          format != VK_FORMAT_S8_UINT) {
+         
+         if (type != VK_IMAGE_TYPE_3D || mip_levels <= 1) {
+            if (!((usage | stencil_usage) & VK_IMAGE_USAGE_STORAGE_BIT) ||
+                info->props.supports_uav_ubwc) {
+               return true;
+            }
          }
       }
    }
@@ -596,26 +598,25 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
          return vk_error(device, VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT);
       }
 
-      /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Настройка UBWC параметров */
-      if (device->physical_device->info->chip == 810 && image->ubwc_enabled) {
-         /* A810 требует правильной настройки highest_bank_bit для оптимальной производительности
-          * Значения основаны на размере RAM:
-          * - 4GB+ : highest_bank_bit = 17
-          * - 3GB   : highest_bank_bit = 16
-          * - 2GB   : highest_bank_bit = 15
+      /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Используем gpu_id для определения */
+      if (device->physical_device->info->gpu_id == 810 && image->ubwc_enabled) {
+         /* Для A810 устанавливаем оптимальные параметры UBWC
+          * Эти значения передаются через dev_info, не через layout
           */
-         uint64_t total_ram = device->physical_device->total_ram;
-         if (total_ram > 4ull * 1024 * 1024 * 1024)
-            layout->ubwc_config.highest_bank_bit = 17;
-         else if (total_ram > 3ull * 1024 * 1024 * 1024)
-            layout->ubwc_config.highest_bank_bit = 16;
-         else if (total_ram > 2ull * 1024 * 1024 * 1024)
-            layout->ubwc_config.highest_bank_bit = 15;
-         else
-            layout->ubwc_config.highest_bank_bit = 14; /* для 1GB или меньше */
+         struct fd_dev_info *dev_info = (struct fd_dev_info *)device->physical_device->info;
          
-         /* Дополнительные оптимизации для A810 */
-         layout->ubwc_config.bank_swizzle_levels = 3; /* Оптимально для A810 */
+         /* Устанавливаем оптимальные значения для A810 */
+         if (device->physical_device->total_ram > 4ull * 1024 * 1024 * 1024) {
+            dev_info->ubwc_config.highest_bank_bit = 17;
+         } else if (device->physical_device->total_ram > 3ull * 1024 * 1024 * 1024) {
+            dev_info->ubwc_config.highest_bank_bit = 16;
+         } else if (device->physical_device->total_ram > 2ull * 1024 * 1024 * 1024) {
+            dev_info->ubwc_config.highest_bank_bit = 15;
+         } else {
+            dev_info->ubwc_config.highest_bank_bit = 14;
+         }
+         
+         dev_info->ubwc_config.bank_swizzle_levels = 3;
       }
 
       if (TU_DEBUG(LAYOUT))
@@ -749,7 +750,7 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
    }
 
    /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Предпочитаем TILE6_3 для 2D текстур */
-   if (device->physical_device->info->chip == 810 &&
+   if (device->physical_device->info->gpu_id == 810 &&
        pCreateInfo->imageType == VK_IMAGE_TYPE_2D &&
        !(pCreateInfo->usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) &&
        !(pCreateInfo->usage & VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT)) {
@@ -1666,3 +1667,4 @@ tu_bind_sparse_image(struct tu_device *device, void *submit,
                          prev_bo_offset, bind_range);
    }
 }
+[file content end]
