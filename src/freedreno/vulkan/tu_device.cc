@@ -1647,29 +1647,41 @@ tu_physical_device_init(struct tu_physical_device *device,
       return vk_startup_errorf(instance, VK_ERROR_OUT_OF_HOST_MEMORY,
                                "device name alloc fail");
    }
+switch (fd_dev_gen(&device->dev_id)) {
+case 6:
+case 7:
+case 8: {
+   device->dev_info = info;
+   device->info = &device->dev_info;
 
-   switch (fd_dev_gen(&device->dev_id)) {
-   case 6:
-   case 7:
-   case 8: {
-      device->dev_info = info;
-      device->info = &device->dev_info;
+   /* A810: больше не пытаемся изменить const поле */
+   
+   device->usable_gmem_size_gmem =
+      fd6_calc_gmem_cache_offsets(&info, device->gmem_size,
+                                  &device->config_gmem,
+                                  &device->config_sysmem);
 
-      /* A810: больше не пытаемся изменить const поле */
-      
-      device->usable_gmem_size_gmem =
-         fd6_calc_gmem_cache_offsets(&info, device->gmem_size,
-                                     &device->config_gmem,
-                                     &device->config_sysmem);
-
-      if (instance->reserve_descriptor_set) {
-         device->usable_sets = device->reserved_set_idx = device->info->props.max_sets - 1;
-      } else {
-         device->usable_sets = device->info->props.max_sets;
-         device->reserved_set_idx = -1;
-      }
-      break;
+   /* A810: отладочный вывод GMEM */
+   if (device->dev_id.gpu_id == 810) {
+      mesa_logi("A810 GMEM config:");
+      mesa_logi("  GMEM size: %u KB", device->gmem_size / 1024);
+      mesa_logi("  Usable GMEM: %u KB", device->usable_gmem_size_gmem / 1024);
+      mesa_logi("  Color cache offset: 0x%x", device->config_gmem.color_ccu_offset);
+      mesa_logi("  Depth cache offset: 0x%x", device->config_gmem.depth_ccu_offset);
+      mesa_logi("  VPC attr buf size: %u", device->config_gmem.vpc_attr_buf_size);
+      mesa_logi("  VPC pos buf size: %u", device->config_gmem.vpc_pos_buf_size);
+      mesa_logi("  VPC BV pos buf size: %u", device->config_gmem.vpc_bv_pos_buf_size);
    }
+
+   if (instance->reserve_descriptor_set) {
+      device->usable_sets = device->reserved_set_idx = device->info->props.max_sets - 1;
+   } else {
+      device->usable_sets = device->info->props.max_sets;
+      device->reserved_set_idx = -1;
+   }
+   break;
+}
+
    default:
       result = vk_startup_errorf(instance, VK_ERROR_INITIALIZATION_FAILED,
                                  "device %s is unsupported", device->name);
@@ -2805,8 +2817,17 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
    }
 
    device->instance = physical_device->instance;
-   device->physical_device = physical_device;
-   device->device_idx = device->physical_device->device_count++;
+device->physical_device = physical_device;
+
+/* A810: принудительная проверка GMEM */
+if (device->physical_device->dev_id.gpu_id == 810) {
+   if (device->physical_device->gmem_size != 512 * 1024) {
+      mesa_logw("A810: GMEM size is %u KB, expected 512 KB", 
+                device->physical_device->gmem_size / 1024);
+   }
+}
+
+device->device_idx = device->physical_device->device_count++;
 
    result = tu_drm_device_init(device);
    if (result != VK_SUCCESS) {
@@ -2934,22 +2955,32 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
    }
 
    /* initial sizes, these will increase if there is overflow */
+if (device->physical_device->dev_id.gpu_id == 810) {
+   device->vsc_draw_strm_pitch = 0x2000 + VSC_PAD; /* 8KB */
+   device->vsc_prim_strm_pitch = 0x2000 + VSC_PAD; /* 8KB */
+} else {
    device->vsc_draw_strm_pitch = 0x1000 + VSC_PAD;
    device->vsc_prim_strm_pitch = 0x4000 + VSC_PAD;
+}
 
    if (device->vk.enabled_features.customBorderColors)
       global_size += TU_BORDER_COLOR_COUNT * sizeof(struct bcolor_entry);
+/* A810: увеличен размер suballocator для лучшей производительности */
+uint32_t suballoc_size = 256 * 1024;
+if (device->physical_device->dev_id.gpu_id == 810) {
+   suballoc_size = 512 * 1024; /* 512KB для A810 */
+}
 
-   /* A810: увеличен размер suballocator для лучшей производительности */
-   tu_bo_suballocator_init(
-      &device->pipeline_suballoc, device, 256 * 1024,  // было 128KB
-      (enum tu_bo_alloc_flags) (TU_BO_ALLOC_GPU_READ_ONLY |
-                                TU_BO_ALLOC_ALLOW_DUMP |
-                                TU_BO_ALLOC_INTERNAL_RESOURCE),
-      "pipeline_suballoc");
-   tu_bo_suballocator_init(&device->autotune_suballoc, device,
-                           256 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE,  // было 128KB
-                           "autotune_suballoc");
+tu_bo_suballocator_init(
+   &device->pipeline_suballoc, device, suballoc_size,
+   (enum tu_bo_alloc_flags) (TU_BO_ALLOC_GPU_READ_ONLY |
+                             TU_BO_ALLOC_ALLOW_DUMP |
+                             TU_BO_ALLOC_INTERNAL_RESOURCE),
+   "pipeline_suballoc");
+tu_bo_suballocator_init(&device->autotune_suballoc, device,
+                        suballoc_size, TU_BO_ALLOC_INTERNAL_RESOURCE,
+                        "autotune_suballoc");
+   
    if (is_kgsl(physical_device->instance)) {
       tu_bo_suballocator_init(&device->kgsl_profiling_suballoc, device,
                               128 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE,
