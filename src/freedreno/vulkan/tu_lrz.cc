@@ -480,7 +480,6 @@ tu_lrz_cb_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    tu_cs_emit_qw(cs, CP_BV_RESOURCE_0_ENCODING(BV_RES_LRZ) | fc_iova);
    tu_cs_emit(cs, 0); /* BR count */
 }
-
 template <chip CHIP>
 void
 tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
@@ -502,9 +501,6 @@ tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    if (!cmd->state.lrz.image_view)
       return;
 
-   
-}
-
    struct tu_lrz_state *lrz = &cmd->state.lrz;
 
    tu6_emit_lrz_buffer<CHIP>(cs, lrz->image_view->image);
@@ -525,7 +521,7 @@ tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
     */
    if (CHIP >= A7XX) {
       tu_cond_exec_start(cs, CP_COND_REG_EXEC_0_MODE(PRED_TEST) |
-                             CP_COND_REG_EXEC_0_PRED_BIT(TU_PREDICATE_CB_ENABLED));
+                              CP_COND_REG_EXEC_0_PRED_BIT(TU_PREDICATE_CB_ENABLED));
       tu_emit_event_write<CHIP>(cmd, cs, FD_LRZ_FLIP);
       tu_cond_exec_end(cs);
    }
@@ -577,6 +573,7 @@ tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
       }
    }
 }
+
 TU_GENX(tu_lrz_tiling_begin);
 
 template <chip CHIP>
