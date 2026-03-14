@@ -216,7 +216,7 @@ tu_lrz_init_state(struct tu_cmd_buffer *cmd,
                   const struct tu_image_view *view)
 
 {
-   return;
+  // return;
    if (!view->image->lrz_layout.lrz_total_size) {
       assert(!cmd->device->use_lrz || !vk_format_has_depth(att->format));
       return;
@@ -360,6 +360,14 @@ void
 tu_lrz_begin_renderpass(struct tu_cmd_buffer *cmd)
 {
    const struct tu_render_pass *pass = cmd->state.pass;
+   
+   /* ===== ВКЛЮЧАЕМ LRZ ДЛЯ A810 ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Форсируем включение LRZ */
+      cmd->device->use_lrz = true;
+      cmd->state.lrz.enabled = true;
+   }
+   /* ===== КОНЕЦ ===== */
 
    cmd->state.rp.lrz_disable_reason = NULL;
    cmd->state.rp.lrz_disabled_at_draw = 0;
@@ -476,6 +484,14 @@ tu_lrz_cb_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 template <chip CHIP>
 void
 tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
+   /* ===== ОТЛАДКА LRZ ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      fprintf(stderr, "A810 LRZ: %s, fast_clear=%d, gpu_dir_tracking=%d\n",
+              cmd->state.lrz.enabled ? "enabled" : "disabled",
+              cmd->state.lrz.fast_clear,
+              cmd->state.lrz.gpu_dir_tracking);
+   }
+   /* ===== КОНЕЦ ===== */
 {
    /* TODO: If lrz was never valid for the entire renderpass, we could exit
     * early here. Sometimes we know this ahead of time and null out
