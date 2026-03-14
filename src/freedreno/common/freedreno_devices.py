@@ -1666,7 +1666,7 @@ add_gpus([
         num_ccu = 2,
         num_slices = 1,
         tile_align_w = 64,
-        tile_align_h = 32,
+        tile_align_h = 64,
         tile_max_w = 192,
         tile_max_h = 192,
         num_vsc_pipes = 32,
