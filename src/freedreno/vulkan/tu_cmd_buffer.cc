@@ -193,6 +193,15 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 
+   /* Для A810 с 256x256 тайлами нужно больше места в VSC буферах */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Увеличиваем начальные значения, если они ещё не были увеличены */
+      if (dev->vsc_draw_strm_pitch < 0x2000) {
+         dev->vsc_draw_strm_pitch = 0x2000; /* 8KB */
+         dev->vsc_prim_strm_pitch = 0x2000; /* 8KB */
+      }
+   }
+
    if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
       dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
 
