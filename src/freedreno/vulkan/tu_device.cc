@@ -2882,9 +2882,13 @@ device->device_idx = device->physical_device->device_count++;
       vk_device_set_drm_fd(&device->vk, device->fd);
 
    struct tu6_global *global = NULL;
-   uint32_t global_size = sizeof(struct tu6_global);
-   struct vk_pipeline_cache_create_info pcc_info = { };
+uint32_t global_size = sizeof(struct tu6_global);
+struct vk_pipeline_cache_create_info pcc_info = { };
 
+uint32_t suballoc_size = 256 * 1024;
+if (device->physical_device->dev_id.gpu_id == 810) {
+   suballoc_size = 512 * 1024; /* 512KB для A810 */
+}
    for (unsigned i = 0; i < pCreateInfo->queueCreateInfoCount; i++) {
       const VkDeviceQueueCreateInfo *queue_create =
          &pCreateInfo->pQueueCreateInfos[i];
@@ -2963,14 +2967,10 @@ if (device->physical_device->dev_id.gpu_id == 810) {
    device->vsc_prim_strm_pitch = 0x4000 + VSC_PAD;
 }
 
-   if (device->vk.enabled_features.customBorderColors)
-      global_size += TU_BORDER_COLOR_COUNT * sizeof(struct bcolor_entry);
-/* A810: увеличен размер suballocator для лучшей производительности */
-uint32_t suballoc_size = 256 * 1024;
-if (device->physical_device->dev_id.gpu_id == 810) {
-   suballoc_size = 512 * 1024; /* 512KB для A810 */
-}
+if (device->vk.enabled_features.customBorderColors)
+   global_size += TU_BORDER_COLOR_COUNT * sizeof(struct bcolor_entry);
 
+/* A810: увеличен размер suballocator для лучшей производительности */
 tu_bo_suballocator_init(
    &device->pipeline_suballoc, device, suballoc_size,
    (enum tu_bo_alloc_flags) (TU_BO_ALLOC_GPU_READ_ONLY |
