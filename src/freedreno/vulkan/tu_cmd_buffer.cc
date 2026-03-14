@@ -26,7 +26,7 @@
 #include "common/freedreno_gpu_event.h"
 #include "common/freedreno_lrz.h"
 #include "common/freedreno_vrs.h"
-#define A810 GMEM SIZE (512 * 1024
+#define A810 GMEM SIZE (512 * 1024)
 
 enum tu_cmd_buffer_status {
    TU_CMD_BUFFER_STATUS_IDLE = 0,
