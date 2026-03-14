@@ -1667,8 +1667,8 @@ add_gpus([
         num_slices = 1,
         tile_align_w = 64,
         tile_align_h = 32,
-        tile_max_w = 384, #С 512 лучше производительность у gmem
-        tile_max_h = 384,
+        tile_max_w = 256, #С 512 лучше производительность у gmem
+        tile_max_h = 256,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
