@@ -26,7 +26,6 @@
 #include "common/freedreno_gpu_event.h"
 #include "common/freedreno_lrz.h"
 #include "common/freedreno_vrs.h"
-#include "util/perf/u_trace.h"  // для perf_debug
 #define A810 GMEM SIZE (512 * 1024)
 
 enum tu_cmd_buffer_status {
@@ -193,15 +192,6 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
 
    uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
-
-   /* Для A810 с 256x256 тайлами нужно больше места в VSC буферах */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      /* Увеличиваем начальные значения, если они ещё не были увеличены */
-      if (dev->vsc_draw_strm_pitch < 0x2000) {
-         dev->vsc_draw_strm_pitch = 0x2000; /* 8KB */
-         dev->vsc_prim_strm_pitch = 0x2000; /* 8KB */
-      }
-   }
 
    if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
       dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
@@ -1349,59 +1339,29 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
       cmd->state.rp.gmem_disable_reason = "Can't fit attachments into gmem";
       return true;
    }
-   static bool
-use_sysmem_rendering(struct tu_cmd_buffer *cmd,
-                     struct tu_renderpass_result **autotune_result)
-{
-   if (TU_DEBUG(SYSMEM)) {
-      cmd->state.rp.gmem_disable_reason = "TU_DEBUG(SYSMEM)";
-      return true;
-   }
-
-   bool no_gmem = cmd->device->physical_device->dev_info.props.disable_gmem;
-   if (no_gmem) {
-       cmd->state.rp.gmem_disable_reason = "Unsupported GPU";
-       return true;
-    }
-
-   /* can't fit attachments into gmem */
-   if (!cmd->state.tiling->possible) {
-      cmd->state.rp.gmem_disable_reason = "Can't fit attachments into gmem";
-      return true;
-   }
-
-   /* ========== A810 GMEM OVERFLOW CHECK ========== */
+    /* ========== ИСПРАВЛЕНО ДЛЯ A810 ========== */
+   /* A810: проверка на переполнение 512KB GMEM */
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
       uint32_t gmem_size = 512 * 1024; /* 512KB */
       uint32_t needed = 0;
-      uint32_t total_cpp = 0;
       
       /* Считаем, сколько памяти нужно для всех аттачментов */
       for (unsigned i = 0; i < cmd->state.pass->attachment_count; i++) {
          const struct tu_render_pass_attachment *att = 
             &cmd->state.pass->attachments[i];
          if (att->gmem) {
+            /* Используем tile0 из tiling config */
             uint32_t tile_width = cmd->state.tiling->tile0.width;
             uint32_t tile_height = cmd->state.tiling->tile0.height;
             uint32_t tile_size = tile_width * tile_height;
             needed += tile_size * att->cpp;
-            total_cpp += att->cpp;
          }
       }
-      
-#ifdef A810_GMEM_DEBUG
-      fprintf(stderr, "[A810 GMEM] Pass: %s\n", cmd->state.pass->name ? cmd->state.pass->name : "unnamed");
-      fprintf(stderr, "  Tile size: %dx%d (%d pixels)\n", 
-              cmd->state.tiling->tile0.width, 
-              cmd->state.tiling->tile0.height,
-              cmd->state.tiling->tile0.width * cmd->state.tiling->tile0.height);
-      fprintf(stderr, "  Attachments: %d, Total CPP: %u\n", 
-              cmd->state.pass->attachment_count, total_cpp);
-      fprintf(stderr, "  Needed: %u KB (%u bytes)\n", needed / 1024, needed);
-      fprintf(stderr, "  GMEM size: 512 KB\n");
-      fprintf(stderr, "  Decision: %s\n", 
-              needed > gmem_size ? "→ SYSMEM (overflow)" : "→ GMEM (fits)");
-#endif
+            #ifdef A810_GMEM_DEBUG
+            fprintf(stderr, "A810 GMEM: needed=%u KB, %s\n", 
+           needed / 1024,
+           needed > gmem_size ? "-> SYSMEM" : "-> GMEM");
+           #endif
       
       /* Если не влезает - используем sysmem */
       if (needed > gmem_size) {
@@ -1409,69 +1369,7 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
          return true;
       }
    }
-   /* ========== END A810 CHECK ========== */
-
-   /* Use sysmem for empty render areas */
-   if (cmd->state.per_layer_render_area) {
-      for (unsigned i = 0; i < tu_fdm_num_layers(cmd); i++) {
-         if (cmd->state.render_areas[i].extent.width == 0 ||
-             cmd->state.render_areas[i].extent.height == 0) {
-            cmd->state.rp.gmem_disable_reason = "Render area is empty";
-            return true;
-         }
-      }
-   } else if (cmd->state.render_areas[0].extent.width == 0 ||
-              cmd->state.render_areas[0].extent.height == 0) {
-      cmd->state.rp.gmem_disable_reason = "Render area is empty";
-      return true;
-   }
-
-   if (cmd->state.rp.has_tess) {
-      cmd->state.rp.gmem_disable_reason = "Uses tessellation shaders";
-      return true;
-   }
-
-   if (cmd->state.rp.disable_gmem) {
-      /* gmem_disable_reason is set where disable_gmem is set. */
-      return true;
-   }
-
-   const struct tu_vsc_config *vsc = tu_vsc_config(cmd, cmd->state.tiling);
-
-   /* XFB is incompatible with non-hw binning GMEM rendering, see use_hw_binning */
-   if (cmd->state.rp.xfb_used && !vsc->binning_possible) {
-      cmd->state.rp.gmem_disable_reason =
-         "XFB is incompatible with non-hw binning GMEM rendering";
-      return true;
-   }
-
-   /* QUERY_TYPE_PRIMITIVES_GENERATED is incompatible with non-hw binning
-    * GMEM rendering, see use_hw_binning.
-    */
-   if ((cmd->state.rp.has_prim_generated_query_in_rp ||
-        cmd->state.prim_generated_query_running_before_rp) &&
-       !vsc->binning_possible) {
-      cmd->state.rp.gmem_disable_reason =
-         "QUERY_TYPE_PRIMITIVES_GENERATED is incompatible with non-hw binning GMEM rendering";
-      return true;
-   }
-
-   if (TU_DEBUG(GMEM))
-      return false;
-
-   bool use_sysmem = tu_autotune_use_bypass(&cmd->device->autotune,
-                                            cmd, autotune_result);
-   if (*autotune_result) {
-      list_addtail(&(*autotune_result)->node, &cmd->renderpass_autotune_results);
-   }
-
-   if (use_sysmem) {
-      cmd->state.rp.gmem_disable_reason = "Autotune selected sysmem";
-   }
-
-   return use_sysmem;
-}
-     
+   /* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */
 
    /* Use sysmem for empty render areas */
    if (cmd->state.per_layer_render_area) {
