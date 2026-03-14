@@ -197,7 +197,7 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    /* Для A810 начинаем с 8KB для draw буфера, prim буфер не трогаем */
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
       /* Увеличиваем draw буфер до 8KB если он меньше */
-      if (dev->vsc_draw_strm_pitch < 0x3000) {
+      if (dev->vsc_draw_strm_pitch < 0x3800) {
          dev->vsc_draw_strm_pitch = 0x2000; /* 8KB */
       }
       /* prim буфер оставляем как есть - пусть драйвер сам решает */
