@@ -193,26 +193,27 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 
-   
-   
-      /* Увеличиваем начальные значения, если они ещё не были увеличены */
-      /* ========== ИСПРАВЛЕНИЕ ДЛЯ A810 ========== */
-/* Начинаем с 8KB, но позволяем увеличиваться */
-if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-   uint32_t start_pitch = 0x2000;  /* 8KB - работает без краша */
-   
-   if (dev->vsc_draw_strm_pitch < start_pitch) {
-      dev->vsc_draw_strm_pitch = start_pitch;
+   /* ========== ИСПРАВЛЕНИЕ ДЛЯ A810 ========== */
+   /* Для A810 начинаем с 8KB для draw буфера, prim буфер не трогаем */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Увеличиваем draw буфер до 8KB если он меньше */
+      if (dev->vsc_draw_strm_pitch < 0x2000) {
+         dev->vsc_draw_strm_pitch = 0x2000; /* 8KB */
+      }
+      /* prim буфер оставляем как есть - пусть драйвер сам решает */
    }
-   if (dev->vsc_prim_strm_pitch < start_pitch) {
-      dev->vsc_prim_strm_pitch = start_pitch;
-   }
-   
-   /* НЕ сбрасываем overflow - они нужны для увеличения */
-   /* global->vsc_draw_overflow = 0;  // УБРАТЬ! */
-   /* global->vsc_prim_overflow = 0;  // УБРАТЬ! */
-}
-/* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */ 
+   /* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */
+
+   /* ОРИГИНАЛЬНАЯ ЛОГИКА - НЕ УДАЛЯТЬ! */
+   if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
+      dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+
+   if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch)
+      dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+
+   cmd->vsc_prim_strm_pitch = dev->vsc_prim_strm_pitch;
+   cmd->vsc_draw_strm_pitch = dev->vsc_draw_strm_pitch;
+
    mtx_unlock(&dev->mutex);
 
    uint32_t prim_strm_size = cmd->vsc_prim_strm_pitch * num_vsc_pipes;
@@ -227,6 +228,19 @@ if (cmd->device->physical_device->dev_id.gpu_id == 810) {
    cmd->vsc_draw_strm_offset = prim_strm_size;
    cmd->vsc_draw_strm_size_offset = cmd->vsc_draw_strm_offset + draw_strm_size;
    cmd->vsc_state_offset = cmd->vsc_draw_strm_size_offset + draw_strm_size_size;
+
+   /* ========== ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА ДЛЯ A810 ========== */
+   /* Проверяем не слишком ли большие буферы получились */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      uint32_t total_vsc_size = prim_strm_size + draw_strm_size + 
+                                draw_strm_size_size + state_size;
+      if (total_vsc_size > 256 * 1024) { /* 256KB лимит */
+         mesa_logw("A810: VSC buffers large (%u KB), but letting it ride", 
+                   total_vsc_size / 1024);
+         /* Пока просто логируем, не форсируем sysmem */
+      }
+   }
+   /* ========== КОНЕЦ ПРОВЕРКИ ========== */
 }
 
 static void
