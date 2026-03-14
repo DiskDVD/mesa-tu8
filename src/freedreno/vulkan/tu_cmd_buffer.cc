@@ -200,8 +200,8 @@ if (cmd->device->physical_device->dev_id.gpu_id == 810) {
       dev->vsc_draw_strm_pitch = 0x4000;  // 16KB
    }
    /* Увеличиваем prim буфер до 16KB */
-   if (dev->vsc_prim_strm_pitch < 0x4000) {
-      dev->vsc_prim_strm_pitch = 0x4000;  // 16KB
+   if (dev->vsc_prim_strm_pitch < 0x2000) {
+      dev->vsc_prim_strm_pitch = 0x2000;  // 16KB
    }
 }
 /* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */
