@@ -194,26 +194,26 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 
    
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+   
       /* Увеличиваем начальные значения, если они ещё не были увеличены */
       /* ========== ИСПРАВЛЕНИЕ ДЛЯ A810 ========== */
-/* Для A810 с 512KB GMEM нужно минимум 16KB с первого раза */
-if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-   /* 16KB = 0x4000 - минимальный размер для A810 */
-   uint32_t min_pitch = 0x4000;
-   
-   if (dev->vsc_draw_strm_pitch < min_pitch) {
-      dev->vsc_draw_strm_pitch = min_pitch;
+   /* Для A810 с 512KB GMEM нужно минимум 16KB с первого раза */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* 16KB = 0x4000 - минимальный размер для A810 */
+      uint32_t min_pitch = 0x4000;
+      
+      if (dev->vsc_draw_strm_pitch < min_pitch) {
+         dev->vsc_draw_strm_pitch = min_pitch;
+      }
+      if (dev->vsc_prim_strm_pitch < min_pitch) {
+         dev->vsc_prim_strm_pitch = min_pitch;
+      }
+      
+      /* Сбрасываем overflow counters, чтобы они не мешали */
+      global->vsc_draw_overflow = 0;
+      global->vsc_prim_overflow = 0;
    }
-   if (dev->vsc_prim_strm_pitch < min_pitch) {
-      dev->vsc_prim_strm_pitch = min_pitch;
-   }
-   
-   /* Сбрасываем overflow counters, чтобы они не мешали */
-   global->vsc_draw_overflow = 0;
-   global->vsc_prim_overflow = 0;
-}
-/* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */
+   /* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */ 
    mtx_unlock(&dev->mutex);
 
    uint32_t prim_strm_size = cmd->vsc_prim_strm_pitch * num_vsc_pipes;
