@@ -203,7 +203,6 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    
    /* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */
 
-   /* ОРИГИНАЛЬНАЯ ЛОГИКА - НЕ УДАЛЯТЬ! */
    if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
       dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
 
