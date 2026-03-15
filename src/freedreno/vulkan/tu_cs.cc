@@ -166,11 +166,20 @@ tu_cs_add_bo(struct tu_cs *cs, uint32_t size)
 
    struct tu_bo *new_bo;
 
+   /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
    /* A810: увеличиваем выравнивание для больших буферов */
-   if (cs->device->physical_device->dev_id.gpu_id == 810 && size > 4096) {
+   if (cs->device->physical_device->dev_id.gpu_id == 810) {
       /* Для больших буферов просим выравнивание по 64KB */
-      size = align(size, 64 * 1024 / sizeof(uint32_t));
+      if (size > 4096) {
+         size = align(size, 64 * 1024 / sizeof(uint32_t));
+      }
+      
+      /* Для очень больших буферов используем 1MB выравнивание */
+      if (size > 256 * 1024) {
+         size = align(size, 1024 * 1024 / sizeof(uint32_t));
+      }
    }
+   /* ========== КОНЕЦ ОПТИМИЗАЦИИ ========== */
 
    VkResult result =
       tu_bo_init_new(cs->device, NULL, &new_bo, size * sizeof(uint32_t),
@@ -490,20 +499,28 @@ tu_cs_reserve_space(struct tu_cs *cs, uint32_t reserved_size)
       /* Double the size for the next bo. */
       new_size = tu_sanitize_ib_size(new_size << 1);
 
+      /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
       /* A810: более агрессивный рост для больших батчей */
       if (cs->device->physical_device->dev_id.gpu_id == 810) {
          /* Для A810 растем быстрее, но не слишком */
          if (new_size < 64 * 1024) {
             /* Маленькие буферы: рост x4 */
             new_size = tu_sanitize_ib_size(new_size << 2);
+         } else if (new_size < 256 * 1024) {
+            /* Средние буферы: рост x3 */
+            new_size = tu_sanitize_ib_size(new_size * 3);
          } else {
             /* Большие буферы: рост x2 как обычно */
             new_size = tu_sanitize_ib_size(new_size << 1);
          }
+         
+         /* Ограничиваем максимальный размер для A810 */
+         new_size = MIN2(new_size, 1024 * 1024); /* 1MB максимум */
       } else {
          /* Другие GPU: обычный рост */
          new_size = tu_sanitize_ib_size(new_size << 1);
       }
+      /* ========== КОНЕЦ ОПТИМИЗАЦИИ ========== */
 
       if (cs->next_bo_size < new_size)
          cs->next_bo_size = new_size;
