@@ -470,7 +470,7 @@ r2d_setup_common(struct tu_cmd_buffer *cmd,
                  bool ubwc,
                  bool scissor)
 {
-  /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+    /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
       /* A810 быстрее работает с 2D blit, форсируем его */
       blit_param = 0; /* Всегда используем 2D path */
@@ -993,7 +993,7 @@ tu6_emit_blit_consts_load(struct tu_cmd_buffer *cmd,
    assert(offset % cmd->device->compiler->const_upload_unit == 0);
    
    /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
-   static uint64_t cached_iova = 0
+   static uint64_t cached_iova = 0;
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
       /* Для A810 увеличиваем размер кэша констант */
       if (size_vec4 > 16) {
@@ -1014,7 +1014,7 @@ tu6_emit_blit_consts_load(struct tu_cmd_buffer *cmd,
             tu_cs_emit_qw(cs, cached_iova);
             return;
          }
-         memcpy(last_consts, consts, size_vec4 * 16);
+         memcpy(last_consts, consts, size_vec4 * 4* sizeof(unit32_t));
          last_size = size_vec4;
       }
    }
@@ -2349,9 +2349,7 @@ tu6_blit_image(struct tu_cmd_buffer *cmd,
          ops = &r2d_ops<CHIP>;
       }
       
-      /* Добавляем prefetch текстур */
-     // tu_cs_emit_pkt7(cs, CP_PREFETCH_TEXTURE, 1);
-   //   tu_cs_emit(cs, CP_PREFETCH_TEXTURE_0_ENABLE);
+      
    /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
    /* 2D blit can't do rotation mirroring from just coordinates */
    static const enum a6xx_rotation rotate[2][2] = {
@@ -3705,9 +3703,7 @@ resolve_sysmem(struct tu_cmd_buffer *cmd,
          ops = &r2d_ops<CHIP>; /* Форсируем 2D для несэмплированных */
       }
       
-      /* Добавляем prefetch для ускорения */
-    //  tu_cs_emit_pkt7(cs, CP_PREFETCH_BLIT, 1);
-     // tu_cs_emit(cs, CP_PREFETCH_BLIT_0_ENABLE); 
+       
 }
    /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
