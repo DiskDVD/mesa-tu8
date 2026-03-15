@@ -1643,9 +1643,9 @@ a8xx_810 = GPUProps(
         
         # GMEM кэши - без изменений
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
-        gmem_per_ccu_color_cache_size = 128 * 1024,
+        gmem_per_ccu_color_cache_size = 32 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
-        gmem_per_ccu_depth_cache_size = 128 * 1024,
+        gmem_per_ccu_depth_cache_size = 64 * 1024,
         
         gmem_size = 512 * 1024,  # 512kb GMEM, 4MB????       
         # A810 не поддерживает ray tracing
