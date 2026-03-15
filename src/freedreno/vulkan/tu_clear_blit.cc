@@ -4420,18 +4420,24 @@ clear_gmem_attachment(struct tu_cmd_buffer *cmd,
                       uint32_t gmem_offset,
                       const VkClearValue *value)
 {
-   /* ===== ИСПРАВЛЕННАЯ ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
-if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-   /* A810: безопасный размер блока для 512KB GMEM */
-   uint32_t safe_width = MIN2(256, cmd->state.framebuffer->width);
-   uint32_t safe_height = MIN2(256, cmd->state.framebuffer->height);
+      /* ===== ИСПРАВЛЕННАЯ ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* A810: безопасный размер блока для 512KB GMEM */
+      uint32_t safe_width = MIN2(256, cmd->state.framebuffer->width);
+      uint32_t safe_height = MIN2(256, cmd->state.framebuffer->height);
+      
+      tu_cs_emit_pkt4(cs, REG_A6XX_RB_RESOLVE_CNTL_1, 2);
+      tu_cs_emit(cs, A6XX_RB_RESOLVE_CNTL_1_X(0) | A6XX_RB_RESOLVE_CNTL_1_Y(0));
+      tu_cs_emit(cs, A6XX_RB_RESOLVE_CNTL_2_X(safe_width - 1) | 
+                     A6XX_RB_RESOLVE_CNTL_2_Y(safe_height - 1));
+   } else {
+      /* Для других GPU используем стандартную логику */
+      tu_cs_emit_pkt4(cs, REG_A6XX_RB_RESOLVE_CNTL_1, 2);
+      tu_cs_emit(cs, A6XX_RB_RESOLVE_CNTL_1_X(0) | A6XX_RB_RESOLVE_CNTL_1_Y(0));
+      tu_cs_emit(cs, A6XX_RB_RESOLVE_CNTL_2_X(1023) | A6XX_RB_RESOLVE_CNTL_2_Y(1023));
+   }
+   /* ===== КОНЕЦ ИСПРАВЛЕНИЯ ===== */
    
-   tu_cs_emit_pkt4(cs, REG_A6XX_RB_RESOLVE_CNTL_1, 2);
-   tu_cs_emit(cs, A6XX_RB_RESOLVE_CNTL_1_X(0) | A6XX_RB_RESOLVE_CNTL_1_Y(0));
-   tu_cs_emit(cs, A6XX_RB_RESOLVE_CNTL_2_X(safe_width - 1) | 
-                  A6XX_RB_RESOLVE_CNTL_2_Y(safe_height - 1));
-}
-/* ===== КОНЕЦ ИСПРАВЛЕНИЯ ===== */
    
    tu_cs_emit_pkt4(cs, REG_A6XX_RB_RESOLVE_SYSTEM_BUFFER_INFO, 1);
    tu_cs_emit(cs, A6XX_RB_RESOLVE_SYSTEM_BUFFER_INFO_COLOR_FORMAT(
