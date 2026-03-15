@@ -999,7 +999,7 @@ tu6_emit_blit_consts_load(struct tu_cmd_buffer *cmd,
          /* Кэшируем большие блоки */
          static uint32_t last_consts[64];
          static uint32_t last_size = 0;
-         static uint64_t last_iova = 0;
+         static uint64_t cached_iova = 0;
          
          if (last_size == size_vec4 && 
              memcmp(last_consts, consts, size_vec4 * 16) == 0) {
@@ -1010,7 +1010,7 @@ tu6_emit_blit_consts_load(struct tu_cmd_buffer *cmd,
                            CP_LOAD_STATE6_0_STATE_SRC(SS6_INDIRECT) |
                            CP_LOAD_STATE6_0_STATE_BLOCK(block) |
                            CP_LOAD_STATE6_0_NUM_UNIT(size_vec4));
-            tu_cs_emit_qw(cs, last_iova);
+            tu_cs_emit_qw(cs, cached_iova);
             return;
          }
          memcpy(last_consts, consts, size_vec4 * 16);
@@ -1029,7 +1029,7 @@ tu6_emit_blit_consts_load(struct tu_cmd_buffer *cmd,
    memcpy(mem.map, consts, size_vec4 * 4 * sizeof(uint32_t));
       /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      last_iova = mem.iova;
+      cached_iova = mem.iova;
    }
    /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
@@ -2350,9 +2350,9 @@ tu6_blit_image(struct tu_cmd_buffer *cmd,
       }
       
       /* Добавляем prefetch текстур */
-      tu_cs_emit_pkt7(cs, CP_PREFETCH_TEXTURE, 1);
-      tu_cs_emit(cs, CP_PREFETCH_TEXTURE_0_ENABLE);
-   }
+     // tu_cs_emit_pkt7(cs, CP_PREFETCH_TEXTURE, 1);
+   //   tu_cs_emit(cs, CP_PREFETCH_TEXTURE_0_ENABLE);
+ //  }
    /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
    /* 2D blit can't do rotation mirroring from just coordinates */
    static const enum a6xx_rotation rotate[2][2] = {
@@ -3707,9 +3707,8 @@ resolve_sysmem(struct tu_cmd_buffer *cmd,
       }
       
       /* Добавляем prefetch для ускорения */
-      tu_cs_emit_pkt7(cs, CP_PREFETCH_BLIT, 1);
-      tu_cs_emit(cs, CP_PREFETCH_BLIT_0_ENABLE);
-   }
+    //  tu_cs_emit_pkt7(cs, CP_PREFETCH_BLIT, 1);
+     // tu_cs_emit(cs, CP_PREFETCH_BLIT_0_ENABLE);  }
    /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
    trace_start_sysmem_resolve(&cmd->rp_trace, cs, cmd, vk_dst_format);
