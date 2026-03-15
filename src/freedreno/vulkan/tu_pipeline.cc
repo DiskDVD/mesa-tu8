@@ -1769,7 +1769,14 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    for (uint32_t i = 0; i < builder->create_info->stageCount; i++) {
       if (!(builder->active_stages & builder->create_info->pStages[i].stage))
          continue;
-         /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Кэш шейдеров ===== */
+         
+
+      mesa_shader_stage stage =
+         vk_to_mesa_shader_stage(builder->create_info->pStages[i].stage);
+      stage_infos[stage] = &builder->create_info->pStages[i];
+      must_compile = true;
+   }
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Кэш шейдеров ===== */
 if (builder->device && 
     builder->device->physical_device && 
     builder->device->physical_device->dev_id.gpu_id == 810) {
@@ -1778,22 +1785,32 @@ if (builder->device &&
    if (!builder->cache || builder->cache == builder->device->mem_cache) {
       /* Если нет внешнего кэша, используем внутренний */
       if (!builder->device->mem_cache) {
+         /* Создаем кэш через Vulkan API */
          VkPipelineCacheCreateInfo ci = {
             .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+            .pNext = NULL,
+            .flags = 0,
+            .initialDataSize = 0,
+            .pInitialData = NULL,
          };
-         /* Убираем builder->alloc - функция принимает device, info, alloc */
-         vk_pipeline_cache_create(&builder->device->vk, &ci, builder->alloc);
+         
+         VkPipelineCache cache;
+         VkResult res = tu_CreatePipelineCache(
+            tu_device_to_handle(builder->device),
+            &ci,
+            builder->alloc,
+            &cache
+         );
+         
+         if (res == VK_SUCCESS) {
+            builder->device->mem_cache = (struct vk_pipeline_cache *)
+               tu_pipeline_cache_from_handle(cache);
+         }
       }
       builder->cache = builder->device->mem_cache;
    }
 }
 /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
-
-      mesa_shader_stage stage =
-         vk_to_mesa_shader_stage(builder->create_info->pStages[i].stage);
-      stage_infos[stage] = &builder->create_info->pStages[i];
-      must_compile = true;
-   }
 
    /* Forward declare everything due to the goto usage */
    nir_shader *nir[ARRAY_SIZE(stage_infos)] = { NULL };
