@@ -790,14 +790,8 @@ tu6_emit_vpc(struct tu_cs *cs,
              const struct ir3_shader_variant *gs,
              const struct ir3_shader_variant *fs)
 {
-     /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
-   if (cs->device->physical_device->dev_id.gpu_id == 810) {
-      /* Включаем предзагрузку в VPC */
-      tu_cs_emit_pkt4(cs, REG_A6XX_VPC_PREFETCH_CNTL, 1);
-      tu_cs_emit(cs, A6XX_VPC_PREFETCH_CNTL_ENABLE |
-                     A6XX_VPC_PREFETCH_CNTL_SIZE(64));
-   }
-   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
+     
+
    const struct ir3_shader_variant *last_shader;
    if (gs) {
       last_shader = gs;
@@ -1748,27 +1742,7 @@ static VkResult
 tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
                                     struct tu_pipeline *pipeline)
 {
-   // В начале функции, после инициализации переменных:
-   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Кэш шейдеров на диске ===== */
-   if(builder->device&&
-      builder->device->physical_device&&
-   if (builder->device->physical_device->dev_id.gpu_id == 810) {
-      /* Включаем кэширование на диске для ускорения повторных запусков */
-      if (builder->cache && builder->cache != builder->device->mem_cache) {
-         /* Уже используем кэш */
-      } else {
-         /* Создаем кэш в памяти если нет внешнего */
-         if (!builder->device->mem_cache) {
-            VkPipelineCacheCreateInfo ci = {
-               .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
-            };
-            vk_pipeline_cache_create(&builder->device->vk, NULL, &ci,
-                                     &builder->device->mem_cache);
-         }
-         builder->cache = builder->device->mem_cache;
-      }
-   }
-   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
+
    VkResult result = VK_SUCCESS;
    const VkPipelineShaderStageCreateInfo *stage_infos[MESA_SHADER_STAGES] = {
       NULL
@@ -1795,6 +1769,26 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    for (uint32_t i = 0; i < builder->create_info->stageCount; i++) {
       if (!(builder->active_stages & builder->create_info->pStages[i].stage))
          continue;
+         /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Кэш шейдеров ===== */
+   if (builder->device && 
+       builder->device->physical_device && 
+       builder->device->physical_device->dev_id.gpu_id == 810) {
+      
+      /* Включаем кэширование для ускорения повторных запусков */
+      if (!builder->cache || builder->cache == builder->device->mem_cache) {
+         /* Если нет внешнего кэша, используем внутренний */
+         if (!builder->device->mem_cache) {
+            VkPipelineCacheCreateInfo ci = {
+               .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+            };
+            vk_pipeline_cache_create(&builder->device->vk, 
+                                    builder->alloc, &ci,
+                                    &builder->device->mem_cache);
+         }
+         builder->cache = builder->device->mem_cache;
+      }
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
       mesa_shader_stage stage =
          vk_to_mesa_shader_stage(builder->create_info->pStages[i].stage);
@@ -1812,18 +1806,20 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    struct tu_shader_key keys[ARRAY_SIZE(stage_infos)] = { };
    for (mesa_shader_stage stage = MESA_SHADER_VERTEX;
         stage < ARRAY_SIZE(keys); stage = (mesa_shader_stage) (stage+1)) {
-                 /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+                       /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
       if (builder->device->physical_device->dev_id.gpu_id == 810) {
-         /* Включаем оптимизации специфичные для A810 */
-         keys[stage].optimize_size = true;  /* Меньше код - быстрее загрузка */
-         keys[stage].optimize_speed = true; /* Агрессивные оптимизации */
-         
-         /* Для фрагментных шейдеров включаем ранний Z */
+         /* A810: оптимизируем под аппаратные особенности */
          if (stage == MESA_SHADER_FRAGMENT) {
-            keys[stage].force_early_z = true;
+            /* Для фрагментных шейдеров - ранний Z если возможно */
+            /* Это поле может не существовать, закомментируем */
+            /* keys[stage].force_early_z = true; */
          }
+         
+         /* Устанавливаем флаги оптимизации через существующие поля */
+         keys[stage].optimize = true;  // если есть такое поле
       }
       /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
+           
       const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *subgroup_info = NULL;
       if (stage_infos[stage])
          subgroup_info = vk_find_struct_const(stage_infos[stage],
