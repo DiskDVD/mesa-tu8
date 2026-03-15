@@ -2637,6 +2637,16 @@ static void
 tu6_emit_binning_pass(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
                       const VkOffset2D *fdm_offsets, bool use_cb)
 {
+    /* ===== CONCURRENT BINNING ДЛЯ A810 ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810 && !use_cb) {
+      /* Принудительно включаем concurrent binning */
+      tu_cs_emit_pkt7(cs, CP_THREAD_CONTROL, 1);
+      tu_cs_emit(cs, CP_THREAD_CONTROL_0_CONCURRENT_BINNING_ENABLE |
+                      CP_THREAD_CONTROL_0_SYNC_BIN |
+                      0x10); /* 16 потоков */
+   }
+   /* ===== КОНЕЦ ===== */
+   
    struct tu_physical_device *phys_dev = cmd->device->physical_device;
    const struct tu_framebuffer *fb = cmd->state.framebuffer;
    const struct tu_tiling_config *tiling = cmd->state.tiling;
