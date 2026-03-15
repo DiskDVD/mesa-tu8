@@ -2637,15 +2637,15 @@ static void
 tu6_emit_binning_pass(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
                       const VkOffset2D *fdm_offsets, bool use_cb)
 {
-    /* ===== CONCURRENT BINNING ДЛЯ A810 ===== */
+    /* ===== CONCURRENT BINNING ДЛЯ A810 ===== 
    if (cmd->device->physical_device->dev_id.gpu_id == 810 && !use_cb) {
       /* Принудительно включаем concurrent binning */
-      tu_cs_emit_pkt7(cs, CP_THREAD_CONTROL, 1);
-      tu_cs_emit(cs, CP_THREAD_CONTROL_0_CONCURRENT_BINNING_ENABLE |
-                      CP_THREAD_CONTROL_0_SYNC_BIN |
-                      0x10); /* 16 потоков */
-   }
-   /* ===== КОНЕЦ ===== */
+      //tu_cs_emit_pkt7(cs, CP_THREAD_CONTROL, 1);
+     // tu_cs_emit(cs, CP_THREAD_CONTROL_0_CONCURRENT_BINNING_ENABLE |
+                    //  CP_THREAD_CONTROL_0_SYNC_BIN |
+                  //    0x10); /* 16 потоков 
+   //  }
+   // ===== КОНЕЦ ===== */
    
    struct tu_physical_device *phys_dev = cmd->device->physical_device;
    const struct tu_framebuffer *fb = cmd->state.framebuffer;
@@ -10403,33 +10403,3 @@ tu_flush_buffer_write_cp(VkCommandBuffer commandBuffer)
    tu_flush_for_access(cache, TU_ACCESS_CP_WRITE, (enum tu_cmd_access_mask)0);
 }
 
-/* ========== МОНИТОРИНГ VSC ДЛЯ ADRENO 810 ========== */
-static void
-tu_a810_monitor_vsc(struct tu_cmd_buffer *cmd)
-{
-   if (cmd->device->physical_device->dev_id.gpu_id != 810)
-      return;
-      
-   struct tu6_global *global = cmd->device->global_bo_map;
-   
-   /* Проверяем переполнения */
-   if (global->vsc_draw_overflow > 0 || global->vsc_prim_overflow > 0) {
-      mesa_logw("A810 VSC overflow: draw=%u, prim=%u", 
-                global->vsc_draw_overflow, 
-                global->vsc_prim_overflow);
-   }
-   
-   /* Сбрасываем счетчики */
-   global->vsc_draw_overflow = 0;
-   global->vsc_prim_overflow = 0;
-}
-
-/* Вызывать эту функцию в конце каждого рендерпасса */
-void
-tu_a810_end_renderpass(struct tu_cmd_buffer *cmd)
-{
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      tu_a810_monitor_vsc(cmd);
-   }
-}
-/* ========== КОНЕЦ МОНИТОРИНГА ========== */
