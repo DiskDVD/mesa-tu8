@@ -2337,7 +2337,7 @@ tu6_blit_image(struct tu_cmd_buffer *cmd,
                VkFilter filter)
 {
    const struct blit_ops *ops = &r2d_ops<CHIP>;
-   struct tu_cs *cs = &cmd->cs;
+   struct tu_cs*cs = &cmd->cs;
    bool z_scale = false;
    uint32_t layers = info->dstOffsets[1].z - info->dstOffsets[0].z;
  /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
@@ -2352,7 +2352,6 @@ tu6_blit_image(struct tu_cmd_buffer *cmd,
       /* Добавляем prefetch текстур */
      // tu_cs_emit_pkt7(cs, CP_PREFETCH_TEXTURE, 1);
    //   tu_cs_emit(cs, CP_PREFETCH_TEXTURE_0_ENABLE);
- //  }
    /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
    /* 2D blit can't do rotation mirroring from just coordinates */
    static const enum a6xx_rotation rotate[2][2] = {
@@ -3708,7 +3707,8 @@ resolve_sysmem(struct tu_cmd_buffer *cmd,
       
       /* Добавляем prefetch для ускорения */
     //  tu_cs_emit_pkt7(cs, CP_PREFETCH_BLIT, 1);
-     // tu_cs_emit(cs, CP_PREFETCH_BLIT_0_ENABLE);  }
+     // tu_cs_emit(cs, CP_PREFETCH_BLIT_0_ENABLE); 
+}
    /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
    trace_start_sysmem_resolve(&cmd->rp_trace, cs, cmd, vk_dst_format);
