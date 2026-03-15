@@ -993,13 +993,14 @@ tu6_emit_blit_consts_load(struct tu_cmd_buffer *cmd,
    assert(offset % cmd->device->compiler->const_upload_unit == 0);
    
    /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   static uint64_t cached_iova = 0
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
       /* Для A810 увеличиваем размер кэша констант */
       if (size_vec4 > 16) {
          /* Кэшируем большие блоки */
          static uint32_t last_consts[64];
          static uint32_t last_size = 0;
-         static uint64_t cached_iova = 0;
+         
          
          if (last_size == size_vec4 && 
              memcmp(last_consts, consts, size_vec4 * 16) == 0) {
@@ -2328,7 +2329,6 @@ tu_image_view_blit(struct fdl6_view *iview,
    tu_image_view_copy_blit<CHIP>(iview, image, format, subres, layer, false);
 }
 
-template <chip CHIP>
 static void
 tu6_blit_image(struct tu_cmd_buffer *cmd,
                struct tu_image *src_image,
