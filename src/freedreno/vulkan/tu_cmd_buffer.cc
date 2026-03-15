@@ -26,11 +26,40 @@
 #include "common/freedreno_gpu_event.h"
 #include "common/freedreno_lrz.h"
 #include "common/freedreno_vrs.h"
-#define A810 GMEM SIZE (512 * 1024)           
+ /* ===== ОПРЕДЕЛЕНИЯ ДЛЯ ADRENO 810 ===== */
+#define A810_GMEM_SIZE (512 * 1024)           
 #define A810_VSC_DRAW_SIZE 0x3000              
 #define A810_VSC_PRIM_SIZE 0x3000              
 #define A810_VSC_DRAW_MAX 0x4000                
 #define A810_VSC_PRIM_MAX 0x4000 
+
+/* ===== ФУНКЦИИ МОНИТОРИНГА ДЛЯ ADRENO 810 ===== */
+static void
+tu_a810_monitor_vsc(struct tu_cmd_buffer *cmd)
+{
+   if (cmd->device->physical_device->dev_id.gpu_id != 810)
+      return;
+      
+   struct tu6_global *global = cmd->device->global_bo_map;
+   
+   if (global->vsc_draw_overflow > 0 || global->vsc_prim_overflow > 0) {
+      mesa_logw("A810 VSC overflow: draw=%u, prim=%u", 
+                global->vsc_draw_overflow, 
+                global->vsc_prim_overflow);
+   }
+   
+   global->vsc_draw_overflow = 0;
+   global->vsc_prim_overflow = 0;
+}
+
+static void
+tu_a810_end_renderpass(struct tu_cmd_buffer *cmd)
+{
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      tu_a810_monitor_vsc(cmd);
+   }
+}
+/* ===== КОНЕЦ ФУНКЦИЙ МОНИТОРИНГА ===== */
 
 enum tu_cmd_buffer_status {
    TU_CMD_BUFFER_STATUS_IDLE = 0,
@@ -10402,4 +10431,3 @@ tu_flush_buffer_write_cp(VkCommandBuffer commandBuffer)
    struct tu_cache_state *cache = &cmd->state.cache;
    tu_flush_for_access(cache, TU_ACCESS_CP_WRITE, (enum tu_cmd_access_mask)0);
 }
-
