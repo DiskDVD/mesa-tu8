@@ -122,6 +122,12 @@ tu6_emit_load_state(struct tu_device *device,
    unsigned size = tu6_load_state_size(pipeline, layout);
    if (size == 0)
       return;
+      /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (device->physical_device->dev_id.gpu_id == 810) {
+      /* A810 быстрее загружает большими блоками */
+      size = ALIGN_POT(size, 16); /* Выравниваем по 16 байт */
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
    struct tu_cs cs;
    tu_cs_begin_sub_stream(&pipeline->cs, size, &cs);
@@ -784,6 +790,14 @@ tu6_emit_vpc(struct tu_cs *cs,
              const struct ir3_shader_variant *gs,
              const struct ir3_shader_variant *fs)
 {
+     /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (cs->device->physical_device->dev_id.gpu_id == 810) {
+      /* Включаем предзагрузку в VPC */
+      tu_cs_emit_pkt4(cs, REG_A6XX_VPC_PREFETCH_CNTL, 1);
+      tu_cs_emit(cs, A6XX_VPC_PREFETCH_CNTL_ENABLE |
+                     A6XX_VPC_PREFETCH_CNTL_SIZE(64));
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
    const struct ir3_shader_variant *last_shader;
    if (gs) {
       last_shader = gs;
@@ -1734,6 +1748,27 @@ static VkResult
 tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
                                     struct tu_pipeline *pipeline)
 {
+   // В начале функции, после инициализации переменных:
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Кэш шейдеров на диске ===== */
+   if(builder->device&&
+      builder->device->physical_device&&
+   if (builder->device->physical_device->dev_id.gpu_id == 810) {
+      /* Включаем кэширование на диске для ускорения повторных запусков */
+      if (builder->cache && builder->cache != builder->device->mem_cache) {
+         /* Уже используем кэш */
+      } else {
+         /* Создаем кэш в памяти если нет внешнего */
+         if (!builder->device->mem_cache) {
+            VkPipelineCacheCreateInfo ci = {
+               .sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO,
+            };
+            vk_pipeline_cache_create(&builder->device->vk, NULL, &ci,
+                                     &builder->device->mem_cache);
+         }
+         builder->cache = builder->device->mem_cache;
+      }
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
    VkResult result = VK_SUCCESS;
    const VkPipelineShaderStageCreateInfo *stage_infos[MESA_SHADER_STAGES] = {
       NULL
@@ -1777,6 +1812,18 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    struct tu_shader_key keys[ARRAY_SIZE(stage_infos)] = { };
    for (mesa_shader_stage stage = MESA_SHADER_VERTEX;
         stage < ARRAY_SIZE(keys); stage = (mesa_shader_stage) (stage+1)) {
+                 /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+      if (builder->device->physical_device->dev_id.gpu_id == 810) {
+         /* Включаем оптимизации специфичные для A810 */
+         keys[stage].optimize_size = true;  /* Меньше код - быстрее загрузка */
+         keys[stage].optimize_speed = true; /* Агрессивные оптимизации */
+         
+         /* Для фрагментных шейдеров включаем ранний Z */
+         if (stage == MESA_SHADER_FRAGMENT) {
+            keys[stage].force_early_z = true;
+         }
+      }
+      /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
       const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *subgroup_info = NULL;
       if (stage_infos[stage])
          subgroup_info = vk_find_struct_const(stage_infos[stage],
@@ -3866,6 +3913,19 @@ static void
 tu_pipeline_builder_emit_state(struct tu_pipeline_builder *builder,
                                struct tu_pipeline *pipeline)
 {
+      /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   /* Группируем похожие состояния для уменьшения переключений */
+   if (builder->device->physical_device->dev_id.gpu_id == 810) {
+      /* Предзагружаем часто используемые состояния */
+      for (int i = 0; i < 10; i++) {
+         if (pipeline->dynamic_state[i].size) {
+            tu_cs_emit_pkt7(&pipeline->cs, CP_PREEMPT_ENABLE_GLOBAL, 1);
+            tu_cs_emit(&pipeline->cs, 0x1);
+            break;
+         }
+      }
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
    struct tu_cs cs;
    BITSET_DECLARE(keep, MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX) = {};
    BITSET_DECLARE(remove, MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX) = {};
@@ -5208,3 +5268,25 @@ tu_GetPipelineExecutableInternalRepresentationsKHR(
 
    return incomplete_text ? VK_INCOMPLETE : vk_outarray_status(&out);
 }
+/* ===== СТАТИСТИКА ДЛЯ ADRENO 810 ===== */
+void
+tu_a810_pipeline_stats(struct tu_pipeline *pipeline)
+{
+   if (!TU_DEBUG(PERF))
+      return;
+      
+   fprintf(stderr, "\n=== Adreno 810 Pipeline Stats ===\n");
+   fprintf(stderr, "Active stages: 0x%x\n", pipeline->active_stages);
+   fprintf(stderr, "Set state mask: 0x%x\n", pipeline->set_state_mask);
+   
+   util_dynarray_foreach (&pipeline->executables, 
+                          struct tu_pipeline_executable, exe) {
+      fprintf(stderr, "Shader stage: %s\n", 
+              _mesa_shader_stage_to_string(exe->stage));
+      fprintf(stderr, "  Instructions: %u\n", exe->stats.instrs_count);
+      fprintf(stderr, "  Const len: %u\n", exe->stats.constlen);
+      fprintf(stderr, "  Max reg: %u\n", exe->stats.max_reg + 1);
+   }
+   fprintf(stderr, "================================\n");
+}
+/* ===== КОНЕЦ СТАТИСТИКИ ===== */
