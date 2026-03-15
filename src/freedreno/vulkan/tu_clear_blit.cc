@@ -1013,7 +1013,7 @@ tu6_emit_blit_consts_load(struct tu_cmd_buffer *cmd,
             tu_cs_emit_qw(cs, cached_iova);
             return;
          }
-         memcpy(last_consts, consts, size_vec4 * 4 * sizeof(uint32_t));
+         memcpy(last_consts, consts, size_vec4 * 16 * sizeof(uint32_t));
          last_size = size_vec4;
       }
    }
