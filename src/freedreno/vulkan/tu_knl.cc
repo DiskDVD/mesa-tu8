@@ -339,9 +339,9 @@ tu_drm_device_finish(struct tu_device *dev)
    /* Вывод статистики при завершении для отладки */
    if (TU_DEBUG(PERF) && dev->physical_device->dev_id.gpu_id == 810) {
       mesa_logi("A810 KNL Stats:");
-      mesa_logi("  Total allocations: %llu", a810_stats.total_allocations);
-      mesa_logi("  Total mapped: %llu", a810_stats.total_mapped);
-      mesa_logi("  Fast path hits: %llu", a810_stats.fast_path_hits);
+      mesa_logi("  Total allocations: %lu", (unsigned long)a810_stats.total_allocations);
+      mesa_logi("  Total mapped: %lu", (unsigned long)a810_stats.total_mapped);
+      mesa_logi("  Fast path hits: %lu", (unsigned long)a810_stats.fast_path_hits);
    }
    
    dev->instance->knl->device_finish(dev);
