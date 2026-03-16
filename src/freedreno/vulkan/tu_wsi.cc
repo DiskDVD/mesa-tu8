@@ -1,4 +1,4 @@
-/*
+   /*
  * Copyright © 2016 Red Hat
  * SPDX-License-Identifier: MIT
  *
@@ -51,28 +51,6 @@ tu_wsi_init(struct tu_physical_device *physical_device)
    physical_device->wsi_device.supports_modifiers = true;
    physical_device->wsi_device.can_present_on_device =
       tu_wsi_can_present_on_device;
-
-   /* ===== ОПТИМИЗАЦИИ ДЛЯ ADRENO 810 ===== */
-   if (physical_device->dev_id.gpu_id == 810) {
-      /* A810: форсируем оптимальные модификаторы */
-      physical_device->wsi_device.force_modifiers = true;
-      physical_device->wsi_device.prefer_modifiers = true;
-      
-      /* A810: меньше буферов = меньше RAM */
-      physical_device->wsi_device.min_image_count = 2;
-      physical_device->wsi_device.max_image_count = 3;
-      
-      /* A810: подсказки для маленького GMEM */
-      physical_device->wsi_device.small_gmem = true;
-      physical_device->wsi_device.prefer_16bit_formats = true;
-      
-      /* A810: предпочитаем быстрые форматы */
-      physical_device->wsi_device.prefer_fast_formats = true;
-      
-      /* A810: уменьшаем таймауты для более быстрого отклика */
-      physical_device->wsi_device.present_wait_timeout = 1000000; // 1ms
-   }
-   /* ===== КОНЕЦ ОПТИМИЗАЦИЙ ===== */
 
    physical_device->vk.wsi_device = &physical_device->wsi_device;
 
