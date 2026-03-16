@@ -361,13 +361,28 @@ tu_lrz_begin_renderpass(struct tu_cmd_buffer *cmd)
 {
    const struct tu_render_pass *pass = cmd->state.pass;
    
-   /* ===== ВКЛЮЧАЕМ LRZ ДЛЯ A810 ===== */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      /* Форсируем включение LRZ */
-      cmd->device->use_lrz = true;
-      cmd->state.lrz.enabled = true;
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   /* A810: более консервативный подход к LRZ */
+   bool is_a810 = cmd->device->physical_device->dev_id.gpu_id == 810;
+   if (is_a810) {
+      /* Для A810 используем LRZ только если явно не отключено */
+      if (TU_DEBUG(NOLRZ)) {
+         cmd->device->use_lrz = false;
+         cmd->state.lrz.enabled = false;
+      } else {
+         /* Включаем LRZ, но с осторожностью */
+         cmd->device->use_lrz = true;
+         cmd->state.lrz.enabled = true;
+         
+         /* Отключаем fast-clear для A810 (может вызывать артефакты) */
+         cmd->state.lrz.fast_clear = false;
+         
+         /* Для A810 всегда используем GPU tracking если доступно */
+         cmd->state.lrz.gpu_dir_tracking = 
+            cmd->device->physical_device->info->props.has_lrz_dir_tracking;
+      }
    }
-   /* ===== КОНЕЦ ===== */
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
    cmd->state.rp.lrz_disable_reason = NULL;
    cmd->state.rp.lrz_disabled_at_draw = 0;
@@ -484,12 +499,17 @@ template <chip CHIP>
 void
 tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 {
-   /* ===== ОТЛАДКА LRZ ===== */
+   /* ===== ОТЛАДКА LRZ ДЛЯ A810 ===== */
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      fprintf(stderr, "A810 LRZ: %s, fast_clear=%d, gpu_dir_tracking=%d\n",
-              cmd->state.lrz.enabled ? "enabled" : "disabled",
-              cmd->state.lrz.fast_clear,
-              cmd->state.lrz.gpu_dir_tracking);
+      /* Только логируем, но не меняем логику */
+      static uint32_t log_counter = 0;
+      if (++log_counter % 100 == 0) {
+         mesa_logi("A810 LRZ: enabled=%d, valid=%d, fast_clear=%d, gpu_dir_tracking=%d",
+                   cmd->state.lrz.enabled,
+                   cmd->state.lrz.valid,
+                   cmd->state.lrz.fast_clear,
+                   cmd->state.lrz.gpu_dir_tracking);
+      }
    }
    /* ===== КОНЕЦ ===== */
 
