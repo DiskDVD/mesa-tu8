@@ -216,7 +216,7 @@ tu_lrz_init_state(struct tu_cmd_buffer *cmd,
                   const struct tu_image_view *view)
 
 {
-  // return;
+   return;
    if (!view->image->lrz_layout.lrz_total_size) {
       assert(!cmd->device->use_lrz || !vk_format_has_depth(att->format));
       return;
@@ -360,14 +360,6 @@ void
 tu_lrz_begin_renderpass(struct tu_cmd_buffer *cmd)
 {
    const struct tu_render_pass *pass = cmd->state.pass;
-   
-   /* ===== ВКЛЮЧАЕМ LRZ ДЛЯ A810 ===== */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      /* Форсируем включение LRZ */
-      cmd->device->use_lrz = true;
-      cmd->state.lrz.enabled = true;
-   }
-   /* ===== КОНЕЦ ===== */
 
    cmd->state.rp.lrz_disable_reason = NULL;
    cmd->state.rp.lrz_disabled_at_draw = 0;
@@ -480,19 +472,11 @@ tu_lrz_cb_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    tu_cs_emit_qw(cs, CP_BV_RESOURCE_0_ENCODING(BV_RES_LRZ) | fc_iova);
    tu_cs_emit(cs, 0); /* BR count */
 }
+
 template <chip CHIP>
 void
 tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 {
-   /* ===== ОТЛАДКА LRZ ===== */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      fprintf(stderr, "A810 LRZ: %s, fast_clear=%d, gpu_dir_tracking=%d\n",
-              cmd->state.lrz.enabled ? "enabled" : "disabled",
-              cmd->state.lrz.fast_clear,
-              cmd->state.lrz.gpu_dir_tracking);
-   }
-   /* ===== КОНЕЦ ===== */
-
    /* TODO: If lrz was never valid for the entire renderpass, we could exit
     * early here. Sometimes we know this ahead of time and null out
     * image_view, but with LOAD_OP_DONT_CARE this only happens if there were
@@ -521,7 +505,7 @@ tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
     */
    if (CHIP >= A7XX) {
       tu_cond_exec_start(cs, CP_COND_REG_EXEC_0_MODE(PRED_TEST) |
-                              CP_COND_REG_EXEC_0_PRED_BIT(TU_PREDICATE_CB_ENABLED));
+                             CP_COND_REG_EXEC_0_PRED_BIT(TU_PREDICATE_CB_ENABLED));
       tu_emit_event_write<CHIP>(cmd, cs, FD_LRZ_FLIP);
       tu_cond_exec_end(cs);
    }
@@ -573,7 +557,6 @@ tu_lrz_tiling_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
       }
    }
 }
-
 TU_GENX(tu_lrz_tiling_begin);
 
 template <chip CHIP>
