@@ -3506,7 +3506,20 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
 
    /* User flushes should always be executed on BR. */
    tu_emit_cache_flush_ccu<CHIP>(cmd, cs, TU_CMD_CCU_GMEM);
-   
+/* ===== ОЧИСТКА GMEM ДЛЯ A810 ===== */
+if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+   static int first_gmem_pass = 1;
+   if (first_gmem_pass) {
+      first_gmem_pass = 0;
+      
+      /* Очищаем все аттачменты в GMEM */
+      for (uint32_t i = 0; i < cmd->state.pass->attachment_count; i++) {
+         tu_clear_gmem_attachment<CHIP>(cmd, cs, NULL, false, i);
+      }
+   }
+}
+/* ===== КОНЕЦ ОЧИСТКИ ===== */
+
    bool use_cb = false;
 
    if (CHIP >= A7XX) {
