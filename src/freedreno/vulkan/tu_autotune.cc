@@ -2,7 +2,7 @@
  * Copyright © 2021 Igalia S.L.
  * SPDX-License-Identifier: MIT
  *
- * ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: GMEM 512KB, МАКСИМУМ FPS
+ * ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: БАЛАНС СКОРОСТИ И СТАБИЛЬНОСТИ
  */
 
 #include "tu_autotune.h"
@@ -20,14 +20,17 @@ void
 tu_autotune_free_results_locked(struct tu_device *dev, struct list_head *results);
 
 #define TU_AUTOTUNE_DEBUG_LOG 0
+/* Dump history entries on autotuner finish */
+#define TU_AUTOTUNE_LOG_AT_FINISH 0
 
 /* How many last renderpass stats are taken into account. */
 #define MAX_HISTORY_RESULTS 5
 /* For how many submissions we store renderpass stats. */
 #define MAX_HISTORY_LIFETIME 128
 
-/* Для A810 - форсируем GMEM всегда */
-#define A810_FORCE_GMEM true
+/* Для A810 - увеличенная история для точности */
+#define A810_MAX_HISTORY_RESULTS 10
+#define A810_MAX_HISTORY_LIFETIME 256
 
 /**
  * Tracks results for a given renderpass key
@@ -207,6 +210,8 @@ history_add_result(struct tu_device *dev, struct tu_renderpass_history *history,
                       struct tu_renderpass_result *result)
 {
    uint32_t max_results = MAX_HISTORY_RESULTS;
+   if (dev->physical_device->dev_id.gpu_id == 810)
+      max_results = A810_MAX_HISTORY_RESULTS;
 
    list_delinit(&result->node);
    list_add(&result->node, &history->results);
@@ -290,6 +295,10 @@ tu_autotune_on_submit(struct tu_device *dev,
 
    process_results(at, gpu_fence);
 
+   uint32_t history_lifetime = MAX_HISTORY_LIFETIME;
+   if (dev->physical_device->dev_id.gpu_id == 810)
+      history_lifetime = A810_MAX_HISTORY_LIFETIME;
+
    for (uint32_t i = 0; i < cmd_buffer_count; i++) {
       struct tu_cmd_buffer *cmdbuf = cmd_buffers[i];
       list_for_each_entry_safe(struct tu_renderpass_result, result,
@@ -330,8 +339,6 @@ tu_autotune_on_submit(struct tu_device *dev,
 
    if (TU_AUTOTUNE_DEBUG_LOG)
       mesa_logi("Total history entries: %u", at->ht->entries);
-
-   uint32_t history_lifetime = MAX_HISTORY_LIFETIME;
 
    hash_table_foreach(at->ht, entry) {
       struct tu_renderpass_history *history =
@@ -388,9 +395,19 @@ tu_autotune_init(struct tu_autotune *at, struct tu_device *dev)
 void
 tu_autotune_fini(struct tu_autotune *at, struct tu_device *dev)
 {
-   while (!list_is_empty(&at->pending_results)) {
-      const uint32_t gpu_fence = get_autotune_fence(at);
-      process_results(at, gpu_fence);
+   if (TU_AUTOTUNE_LOG_AT_FINISH) {
+      while (!list_is_empty(&at->pending_results)) {
+         const uint32_t gpu_fence = get_autotune_fence(at);
+         process_results(at, gpu_fence);
+      }
+
+      hash_table_foreach(at->ht, entry) {
+         struct tu_renderpass_history *history =
+            (struct tu_renderpass_history *) entry->data;
+
+         mesa_logi("%016" PRIx64 " \tavg_passed=%u results=%u",
+                   history->key, history->avg_samples, history->num_results);
+      }
    }
 
    tu_autotune_free_results(dev, &at->pending_results);
@@ -447,21 +464,95 @@ tu_autotune_free_results(struct tu_device *dev, struct list_head *results)
    mtx_unlock(&dev->autotune_mutex);
 }
 
+static bool
+fallback_use_bypass(const struct tu_render_pass *pass,
+                    const struct tu_framebuffer *framebuffer,
+                    const struct tu_cmd_buffer *cmd_buffer)
+{
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (cmd_buffer->device->physical_device->dev_id.gpu_id == 810) {
+      /* A810: GMEM предпочтительнее, но не любой ценой */
+      if (cmd_buffer->state.rp.drawcall_count > 8)
+         return false;  /* GMEM для сложных сцен */
+      
+      /* Для простых сцен - sysmem */
+      return true;
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
+
+   for (unsigned i = 0; i < pass->subpass_count; i++) {
+      if (pass->subpasses[i].samples != VK_SAMPLE_COUNT_1_BIT)
+         return false;
+   }
+
+   if (cmd_buffer->state.rp.drawcall_count > 5)
+      return false;
+
+   return true;
+}
+
+static uint32_t
+get_render_pass_pixel_count(const struct tu_cmd_buffer *cmd)
+{
+   if (cmd->state.per_layer_render_area) {
+      uint32_t pixels = 0;
+      for (unsigned i = 0; i < cmd->state.pass->num_views; i++) {
+         const VkExtent2D *extent = &cmd->state.render_areas[i].extent;
+         pixels += extent->width * extent->height;
+      }
+      return pixels;
+   } else {
+      const VkExtent2D *extent = &cmd->state.render_areas[0].extent;
+      return extent->width * extent->height *
+         MAX2(cmd->state.pass->num_views, cmd->state.framebuffer->layers);
+   }
+}
+
+static uint64_t
+estimate_drawcall_bandwidth(const struct tu_cmd_buffer *cmd,
+                            uint32_t avg_renderpass_sample_count)
+{
+   const struct tu_cmd_state *state = &cmd->state;
+
+   if (!state->rp.drawcall_count)
+      return 0;
+
+   return (uint64_t)avg_renderpass_sample_count *
+      state->rp.drawcall_bandwidth_per_sample_sum / state->rp.drawcall_count;
+}
+
 bool
 tu_autotune_use_bypass(struct tu_autotune *at,
                        struct tu_cmd_buffer *cmd_buffer,
                        struct tu_renderpass_result **autotune_result)
 {
-   /* ===== ДЛЯ ADRENO 810: ФОРСИРУЕМ GMEM ===== */
+   const struct tu_render_pass *pass = cmd_buffer->state.pass;
+   const struct tu_framebuffer *framebuffer = cmd_buffer->state.framebuffer;
+
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
    if (cmd_buffer->device->physical_device->dev_id.gpu_id == 810) {
-      /* Всегда используем GMEM для максимального FPS */
+      uint32_t width = cmd_buffer->state.render_areas[0].extent.width;
+      uint32_t height = cmd_buffer->state.render_areas[0].extent.height;
+      uint32_t pixels = width * height;
+      
+      uint32_t tiles_x = (width + 191) / 192;
+      uint32_t tiles_y = (height + 191) / 192;
+      uint32_t total_tiles = tiles_x * tiles_y;
+      
+      /* Если тайлов слишком много - sysmem, иначе GMEM */
+      if (total_tiles > 30) {
+         return true;  /* sysmem для больших сцен */
+      }
+      
+      /* Если мало дравов - sysmem тоже ок */
+      if (cmd_buffer->state.rp.drawcall_count < 5) {
+         return true;
+      }
+      
+      /* В остальном - GMEM для скорости */
       return false;
    }
    /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
-
-   /* Для остальных GPU - стандартная логика */
-   const struct tu_render_pass *pass = cmd_buffer->state.pass;
-   const struct tu_framebuffer *framebuffer = cmd_buffer->state.framebuffer;
 
    if (cmd_buffer->state.rp.sysmem_single_prim_mode)
       return false;
@@ -472,15 +563,8 @@ tu_autotune_use_bypass(struct tu_autotune *at,
    bool simultaneous_use =
       cmd_buffer->usage_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT;
 
-   if (!at->enabled || simultaneous_use) {
-      for (unsigned i = 0; i < pass->subpass_count; i++) {
-         if (pass->subpasses[i].samples != VK_SAMPLE_COUNT_1_BIT)
-            return false;
-      }
-      if (cmd_buffer->state.rp.drawcall_count > 5)
-         return false;
-      return true;
-   }
+   if (!at->enabled || simultaneous_use)
+      return fallback_use_bypass(pass, framebuffer, cmd_buffer);
 
    uint64_t renderpass_key = hash_renderpass_instance(pass, framebuffer, cmd_buffer);
 
@@ -488,45 +572,24 @@ tu_autotune_use_bypass(struct tu_autotune *at,
 
    uint32_t avg_samples = 0;
    if (get_history(at, renderpass_key, &avg_samples)) {
-      uint32_t pass_pixel_count;
-      if (cmd_buffer->state.per_layer_render_area) {
-         pass_pixel_count = 0;
-         for (unsigned i = 0; i < cmd_buffer->state.pass->num_views; i++) {
-            const VkExtent2D *extent = &cmd_buffer->state.render_areas[i].extent;
-            pass_pixel_count += extent->width * extent->height;
-         }
-      } else {
-         const VkExtent2D *extent = &cmd_buffer->state.render_areas[0].extent;
-         pass_pixel_count = extent->width * extent->height *
-            MAX2(cmd_buffer->state.pass->num_views, cmd_buffer->state.framebuffer->layers);
-      }
-
+      const uint32_t pass_pixel_count =
+         get_render_pass_pixel_count(cmd_buffer);
       uint64_t sysmem_bandwidth =
          (uint64_t)pass->sysmem_bandwidth_per_pixel * pass_pixel_count;
       uint64_t gmem_bandwidth =
          (uint64_t)pass->gmem_bandwidth_per_pixel * pass_pixel_count;
 
-      uint64_t total_draw_call_bandwidth = 0;
-      if (cmd_buffer->state.rp.drawcall_count) {
-         total_draw_call_bandwidth =
-            (uint64_t)avg_samples *
-            cmd_buffer->state.rp.drawcall_bandwidth_per_sample_sum /
-            cmd_buffer->state.rp.drawcall_count;
-      }
+      const uint64_t total_draw_call_bandwidth =
+         estimate_drawcall_bandwidth(cmd_buffer, avg_samples);
 
       sysmem_bandwidth += total_draw_call_bandwidth;
       gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
 
-      return sysmem_bandwidth <= gmem_bandwidth;
+      const bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;
+      return select_sysmem;
    }
 
-   for (unsigned i = 0; i < pass->subpass_count; i++) {
-      if (pass->subpasses[i].samples != VK_SAMPLE_COUNT_1_BIT)
-         return false;
-   }
-   if (cmd_buffer->state.rp.drawcall_count > 5)
-      return false;
-   return true;
+   return fallback_use_bypass(pass, framebuffer, cmd_buffer);
 }
 
 template <chip CHIP>
