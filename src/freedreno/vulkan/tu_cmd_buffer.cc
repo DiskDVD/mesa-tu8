@@ -216,7 +216,6 @@ tu6_lazy_emit_tessfactor_addr(struct tu_cmd_buffer *cmd)
    if (CHIP == A6XX)
       cmd->state.cache.flush_bits |= TU_CMD_FLAG_WAIT_FOR_IDLE;
 }
-
 static void
 tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
 {
@@ -237,7 +236,7 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 
-         /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
+   /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
       /* Фиксируем оптимальные значения 0x3000 для обоих буферов */
       if (dev->vsc_draw_strm_pitch < A810_VSC_DRAW_SIZE) {
@@ -300,52 +299,6 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
          mesa_logw("A810: VSC buffers large (%u KB), but letting it ride", 
                    total_vsc_size / 1024);
          /* Пока просто логируем, не форсируем sysmem */
-            /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      /* Для A810 объединяем resolve операции в пакеты */
-      bool wfi_emitted = false;
-      
-      for (unsigned i = 0; i < subpass->resolve_count; i++) {
-         uint32_t a = subpass->resolve_attachments[i].attachment;
-         if (a == VK_ATTACHMENT_UNUSED)
-            continue;
-            
-         uint32_t gmem_a = tu_subpass_get_attachment_to_resolve(subpass, i);
-         
-         /* Перед первым resolve - WFI и настройка кэша */
-         if (!wfi_emitted) {
-            tu_cs_emit_wfi(cs);
-            tu_emit_event_write<CHIP>(cmd, cs, FD_CCU_CLEAN_COLOR);
-            tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
-            
-            /* Включаем write-combine для A810 */
-            tu_cs_emit_pkt7(cs, CP_SET_MODE, 1);
-            tu_cs_emit(cs, 0x4); /* Write combine enable */
-            
-            wfi_emitted = true;
-         }
-         
-         /* Выполняем resolve с оптимизацией */
-         if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-            /* Для A810 используем оптимизированный путь */
-            tu_store_gmem_attachment_optimized<CHIP>(cmd, cs, resolve_group, 
-               a, gmem_a, fb->layers, subpass->multiview_mask,
-               per_layer_render_area, false);
-         } else {
-            tu_store_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, gmem_a,
-               fb->layers, subpass->multiview_mask,
-               per_layer_render_area, false);
-         }
-      }
-      
-      /* Финальная инвалидация кэша */
-      if (wfi_emitted) {
-         tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
-      }
-   } else {
-      /* ... стандартный код ... */
-   }
-   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
       }
    }
    /* ========== КОНЕЦ ПРОВЕРКИ ========== */
@@ -2145,67 +2098,72 @@ tu6_emit_gmem_resolves(struct tu_cmd_buffer *cmd,
    const struct tu_framebuffer *fb = cmd->state.framebuffer;
    bool per_layer_render_area = cmd->state.per_layer_render_area;
 
-   if (subpass->resolve_attachments) {
-      /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
-      if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-         /* Для A810 объединяем resolve операции в пакеты */
-         bool wfi_emitted = false;
-         
-         for (unsigned i = 0; i < subpass->resolve_count; i++) {
-            uint32_t a = subpass->resolve_attachments[i].attachment;
-            if (a == VK_ATTACHMENT_UNUSED)
-               continue;
-               
-            uint32_t gmem_a = tu_subpass_get_attachment_to_resolve(subpass, i);
+   if (!subpass->resolve_attachments)
+      return;
+
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Для A810 объединяем resolve операции в пакеты */
+      bool wfi_emitted = false;
+      
+      for (unsigned i = 0; i < subpass->resolve_count; i++) {
+         uint32_t a = subpass->resolve_attachments[i].attachment;
+         if (a == VK_ATTACHMENT_UNUSED)
+            continue;
             
-            /* Перед первым resolve - WFI и настройка кэша */
-            if (!wfi_emitted) {
-               tu_cs_emit_wfi(cs);
-               tu_emit_event_write<CHIP>(cmd, cs, FD_CCU_CLEAN_COLOR);
-               tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
-               
-               /* Включаем write-combine для A810 */
-               tu_cs_emit_pkt7(cs, CP_SET_MODE, 1);
-               tu_cs_emit(cs, 0x4); /* Write combine enable */
-               
-               wfi_emitted = true;
-            }
-            
-            /* Выполняем resolve с оптимизацией */
-            tu_store_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, gmem_a,
-                                          fb->layers, subpass->multiview_mask,
-                                          per_layer_render_area, false);
-         }
+         uint32_t gmem_a = tu_subpass_get_attachment_to_resolve(subpass, i);
          
-         /* Финальная инвалидация кэша */
-         if (wfi_emitted) {
+         /* Перед первым resolve - WFI и настройка кэша */
+         if (!wfi_emitted) {
+            tu_cs_emit_wfi(cs);
+            tu_emit_event_write<CHIP>(cmd, cs, FD_CCU_CLEAN_COLOR);
             tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
+            
+            /* Включаем write-combine для A810 */
+            tu_cs_emit_pkt7(cs, CP_SET_MODE, 1);
+            tu_cs_emit(cs, 0x4); /* Write combine enable */
+            
+            wfi_emitted = true;
          }
-      } else {
-         /* Стандартный код для других GPU */
-         for (unsigned i = 0; i < subpass->resolve_count; i++) {
-            uint32_t a = subpass->resolve_attachments[i].attachment;
-            if (a == VK_ATTACHMENT_UNUSED)
-               continue;
+         
+         /* Выполняем resolve с оптимизацией */
+         tu_store_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, gmem_a,
+                                       fb->layers, subpass->multiview_mask,
+                                       per_layer_render_area, false);
+      }
+      
+      /* Финальная инвалидация кэша */
+      if (wfi_emitted) {
+         tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
+      }
+   } else {
+      /* Стандартный код для других GPU */
+      for (unsigned i = 0; i < subpass->resolve_count; i++) {
+         uint32_t a = subpass->resolve_attachments[i].attachment;
+         if (a == VK_ATTACHMENT_UNUSED)
+            continue;
 
-            uint32_t gmem_a = tu_subpass_get_attachment_to_resolve(subpass, i);
+         uint32_t gmem_a = tu_subpass_get_attachment_to_resolve(subpass, i);
 
-            tu_store_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, gmem_a,
-                                          fb->layers, subpass->multiview_mask,
-                                          per_layer_render_area, false);
+         tu_store_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, gmem_a,
+                                        fb->layers, subpass->multiview_mask,
+                                        per_layer_render_area, false);
 
-            if (pass->attachments[a].gmem) {
-               perf_debug(cmd->device,
-                         "TODO: missing GMEM->GMEM resolve path\n");
-               if (CHIP >= A7XX)
-                  tu_emit_event_write<CHIP>(cmd, cs, FD_CCU_CLEAN_BLIT_CACHE);
-               tu_load_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, a,
-                                            per_layer_render_area, false, true);
-            }
+         if (pass->attachments[a].gmem) {
+            /* check if the resolved attachment is needed by later subpasses,
+             * if it is, should be doing a GMEM->GMEM resolve instead of
+             * GMEM->MEM->GMEM..
+             */
+            perf_debug(cmd->device,
+                       "TODO: missing GMEM->GMEM resolve path\n");
+            if (CHIP >= A7XX)
+               tu_emit_event_write<CHIP>(cmd, cs, FD_CCU_CLEAN_BLIT_CACHE);
+            tu_load_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, a,
+                                          per_layer_render_area, false, true);
          }
       }
-      /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
    }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 }
 
 /* Emits any tile stores at the end of a subpass.
