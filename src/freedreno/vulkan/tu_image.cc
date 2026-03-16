@@ -327,6 +327,31 @@ ubwc_possible(struct tu_device *device,
    if (info->props.is_a702)
       return false;
 
+   /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Используем chip из info для определения поколения,
+    * а gpu_id получаем через fd_dev_gpu_id если нужно точное совпадение */
+   if (info->chip == 6 && device && device->physical_device) {
+      /* Создаем fd_dev_id из device для получения точного gpu_id */
+      struct fd_dev_id id = {
+         .gpu_id = device->physical_device->dev_id.gpu_id,
+         .chip_id = device->physical_device->dev_id.chip_id,
+      };
+      uint32_t gpu_id = fd_dev_gpu_id(&id);
+      
+      if (gpu_id == 810 && !(flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
+          !(flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) &&
+          !vk_format_is_compressed(format) &&
+          format != VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 &&
+          format != VK_FORMAT_S8_UINT) {
+         
+         if (type != VK_IMAGE_TYPE_3D || mip_levels <= 1) {
+            if (!((usage | stencil_usage) & VK_IMAGE_USAGE_STORAGE_BIT) ||
+                info->props.supports_uav_ubwc) {
+               return true;
+            }
+         }
+      }
+   }
+
    /* UBWC isn't possible with sparse residency, because unbound blocks may
     * have leftover fast-clear data and therefore may show up as non-zero.
     * TODO: Enable UBWC if nonResidentStrict isn't enabled.
@@ -579,6 +604,13 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
          return vk_error(device, VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT);
       }
 
+      /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Проверяем gpu_id через dev_id */
+      if (device->physical_device->dev_id.gpu_id == 810 && image->ubwc_enabled) {
+         /* Для A810 мы бы хотели настроить параметры UBWC, но они находятся в
+          * fd_dev_info->props и уже установлены из freedreno_devices.h
+          * Оставляем комментарий для информации */
+      }
+
       if (TU_DEBUG(LAYOUT))
          fdl_dump_layout(layout);
 
@@ -707,6 +739,15 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
           VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR &&
        image->vk.extent.width < 16) {
       image->force_linear_tile = true;
+   }
+
+   /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Предпочитаем TILE6_3 для 2D текстур */
+   if (device->physical_device->dev_id.gpu_id == 810 &&
+       pCreateInfo->imageType == VK_IMAGE_TYPE_2D &&
+       !(pCreateInfo->usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) &&
+       !(pCreateInfo->usage & VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT)) {
+      /* Для A810 TILE6_3 дает лучшую производительность */
+      image->force_linear_tile = false;
    }
 
    if (image->force_linear_tile ||
@@ -1618,4 +1659,3 @@ tu_bind_sparse_image(struct tu_device *device, void *submit,
                          prev_bo_offset, bind_range);
    }
 }
-

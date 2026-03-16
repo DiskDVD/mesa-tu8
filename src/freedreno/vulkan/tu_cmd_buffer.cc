@@ -26,7 +26,40 @@
 #include "common/freedreno_gpu_event.h"
 #include "common/freedreno_lrz.h"
 #include "common/freedreno_vrs.h"
-#define A810 GMEM SIZE (512 * 1024)
+ /* ===== ОПРЕДЕЛЕНИЯ ДЛЯ ADRENO 810 ===== */
+#define A810_GMEM_SIZE (512 * 1024)           
+#define A810_VSC_DRAW_SIZE 0x3000              
+#define A810_VSC_PRIM_SIZE 0x3000              
+#define A810_VSC_DRAW_MAX 0x4000                
+#define A810_VSC_PRIM_MAX 0x4000 
+
+/* ===== ФУНКЦИИ МОНИТОРИНГА ДЛЯ ADRENO 810 ===== */
+static void
+tu_a810_monitor_vsc(struct tu_cmd_buffer *cmd)
+{
+   if (cmd->device->physical_device->dev_id.gpu_id != 810)
+      return;
+      
+   struct tu6_global *global = cmd->device->global_bo_map;
+   
+   if (global->vsc_draw_overflow > 0 || global->vsc_prim_overflow > 0) {
+      mesa_logw("A810 VSC overflow: draw=%u, prim=%u", 
+                global->vsc_draw_overflow, 
+                global->vsc_prim_overflow);
+   }
+   
+   global->vsc_draw_overflow = 0;
+   global->vsc_prim_overflow = 0;
+}
+
+static void
+tu_a810_end_renderpass(struct tu_cmd_buffer *cmd)
+{
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      tu_a810_monitor_vsc(cmd);
+   }
+}
+/* ===== КОНЕЦ ФУНКЦИЙ МОНИТОРИНГА ===== */
 
 enum tu_cmd_buffer_status {
    TU_CMD_BUFFER_STATUS_IDLE = 0,
@@ -193,24 +226,42 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 
-      /* ========== ИСПРАВЛЕНИЕ ДЛЯ A810 ========== */
-if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-   /* Увеличиваем draw буфер до 16KB */
-   if (dev->vsc_draw_strm_pitch < 0x3000) {
-      dev->vsc_draw_strm_pitch = 0x3000;  // 16KB
-   }
-   /* Увеличиваем prim буфер до 16KB */
-   if (dev->vsc_prim_strm_pitch < 0x3000) {
-      dev->vsc_prim_strm_pitch = 0x3000;  // 16KB
-   }
-}
-/* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */
-   if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
-      dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+         /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Фиксируем оптимальные значения 0x3000 для обоих буферов */
+      if (dev->vsc_draw_strm_pitch < A810_VSC_DRAW_SIZE) {
+         dev->vsc_draw_strm_pitch = A810_VSC_DRAW_SIZE;
+      }
+      if (dev->vsc_prim_strm_pitch < A810_VSC_PRIM_SIZE) {
+         dev->vsc_prim_strm_pitch = A810_VSC_PRIM_SIZE;
+      }
+      
+      /* Если все еще переполнение - увеличиваем, но осторожно */
+      if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch && 
+          dev->vsc_draw_strm_pitch < A810_VSC_DRAW_MAX) {
+         dev->vsc_draw_strm_pitch = MIN2(
+            dev->vsc_draw_strm_pitch + 0x200, /* +512 байт */
+            A810_VSC_DRAW_MAX
+         );
+      }
+      
+      if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch &&
+          dev->vsc_prim_strm_pitch < A810_VSC_PRIM_MAX) {
+         dev->vsc_prim_strm_pitch = MIN2(
+            dev->vsc_prim_strm_pitch + 0x200, /* +512 байт */
+            A810_VSC_PRIM_MAX
+         );
+      }
+   } else {
+      /* Стандартная логика для других GPU */
+      if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
+         dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
 
-   if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch)
-      dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
-
+      if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch)
+         dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+   }
+   /* ========== КОНЕЦ ОПТИМИЗАЦИИ ========== */
+   
    cmd->vsc_prim_strm_pitch = dev->vsc_prim_strm_pitch;
    cmd->vsc_draw_strm_pitch = dev->vsc_draw_strm_pitch;
 
@@ -234,7 +285,7 @@ if (cmd->device->physical_device->dev_id.gpu_id == 810) {
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
       uint32_t total_vsc_size = prim_strm_size + draw_strm_size + 
                                 draw_strm_size_size + state_size;
-      if (total_vsc_size > 256 * 1024) { /* 256KB лимит */
+      if (total_vsc_size > 512 * 1024) { /* 512KB лимит */
          mesa_logw("A810: VSC buffers large (%u KB), but letting it ride", 
                    total_vsc_size / 1024);
          /* Пока просто логируем, не форсируем sysmem */
@@ -2615,6 +2666,16 @@ static void
 tu6_emit_binning_pass(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
                       const VkOffset2D *fdm_offsets, bool use_cb)
 {
+    /* ===== CONCURRENT BINNING ДЛЯ A810 ===== 
+   if (cmd->device->physical_device->dev_id.gpu_id == 810 && !use_cb) {
+      /* Принудительно включаем concurrent binning */
+      //tu_cs_emit_pkt7(cs, CP_THREAD_CONTROL, 1);
+     // tu_cs_emit(cs, CP_THREAD_CONTROL_0_CONCURRENT_BINNING_ENABLE |
+                    //  CP_THREAD_CONTROL_0_SYNC_BIN |
+                  //    0x10); /* 16 потоков 
+   //  }
+   // ===== КОНЕЦ ===== */
+   
    struct tu_physical_device *phys_dev = cmd->device->physical_device;
    const struct tu_framebuffer *fb = cmd->state.framebuffer;
    const struct tu_tiling_config *tiling = cmd->state.tiling;
@@ -3445,20 +3506,7 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
 
    /* User flushes should always be executed on BR. */
    tu_emit_cache_flush_ccu<CHIP>(cmd, cs, TU_CMD_CCU_GMEM);
-/* ===== ОЧИСТКА GMEM ДЛЯ A810 ===== */
-if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-   static int first_gmem_pass = 1;
-   if (first_gmem_pass) {
-      first_gmem_pass = 0;
-      
-      /* Очищаем все аттачменты в GMEM */
-      for (uint32_t i = 0; i < cmd->state.pass->attachment_count; i++) {
-         tu_clear_gmem_attachment<CHIP>(cmd, cs, NULL, false, i);
-      }
-   }
-}
-/* ===== КОНЕЦ ОЧИСТКИ ===== */
-
+   
    bool use_cb = false;
 
    if (CHIP >= A7XX) {
@@ -9814,6 +9862,8 @@ tu_CmdEndRenderPass2(VkCommandBuffer commandBuffer,
    }
 
    TU_CALLX(cmd_buffer->device, tu_emit_custom_resolve_end)(cmd_buffer);
+   
+   tu_a810_end_renderpass(cmd_buffer);
 
    tu_cs_end(&cmd_buffer->draw_cs);
    tu_cs_end(&cmd_buffer->draw_epilogue_cs);
