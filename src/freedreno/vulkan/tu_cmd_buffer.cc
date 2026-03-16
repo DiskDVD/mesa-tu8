@@ -26,23 +26,12 @@
 #include "common/freedreno_gpu_event.h"
 #include "common/freedreno_lrz.h"
 #include "common/freedreno_vrs.h"
-/* ===== ОПТИМИЗИРОВАННЫЕ ПАРАМЕТРЫ RESOLVE ДЛЯ ADRENO 810 ===== */
-#define A810_TILE_WIDTH 192
-#define A810_TILE_HEIGHT 192
-#define A810_GMEM_ALIGN_W 32
-#define A810_GMEM_ALIGN_H 16
-#define A810_RESOLVE_GRANULARITY 64  /* Оптимальный размер для resolve операций */
-
-/* Флаги для оптимизации resolve */
-#define A810_RESOLVE_FLAG_WC_BUFFER      (1 << 0)  /* Использовать write-combine буферы */
-#define A810_RESOLVE_FLAG_PREFETCH       (1 << 1)  /* Предзагрузка в кэш */
-#define A810_RESOLVE_FLAG_BURST_MODE     (1 << 2)  /* Пакетный режим записи */
  /* ===== ОПРЕДЕЛЕНИЯ ДЛЯ ADRENO 810 ===== */
 #define A810_GMEM_SIZE (512 * 1024)           
-#define A810_VSC_DRAW_SIZE 0x1800              
-#define A810_VSC_PRIM_SIZE 0x1800              
-#define A810_VSC_DRAW_MAX 0x2000                
-#define A810_VSC_PRIM_MAX 0x2000 
+#define A810_VSC_DRAW_SIZE 0x3000              
+#define A810_VSC_PRIM_SIZE 0x3000              
+#define A810_VSC_DRAW_MAX 0x4000                
+#define A810_VSC_PRIM_MAX 0x4000 
 
 /* ===== ФУНКЦИИ МОНИТОРИНГА ДЛЯ ADRENO 810 ===== */
 static void
@@ -216,6 +205,7 @@ tu6_lazy_emit_tessfactor_addr(struct tu_cmd_buffer *cmd)
    if (CHIP == A6XX)
       cmd->state.cache.flush_bits |= TU_CMD_FLAG_WAIT_FOR_IDLE;
 }
+
 static void
 tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
 {
@@ -236,7 +226,7 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 
-   /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
+         /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
       /* Фиксируем оптимальные значения 0x3000 для обоих буферов */
       if (dev->vsc_draw_strm_pitch < A810_VSC_DRAW_SIZE) {
@@ -1425,65 +1415,37 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
       cmd->state.rp.gmem_disable_reason = "Can't fit attachments into gmem";
       return true;
    }
-      /* ========== УЛУЧШЕННАЯ ОПТИМИЗАЦИЯ ДЛЯ A810 ========== */
-   /* A810: проверка на переполнение 512KB GMEM с учетом выравнивания */
+    /* ========== ИСПРАВЛЕНО ДЛЯ A810 ========== */
+   /* A810: проверка на переполнение 512KB GMEM */
    if (cmd->device->physical_device->dev_id.gpu_id == 810) {
       uint32_t gmem_size = 512 * 1024; /* 512KB */
       uint32_t needed = 0;
-      uint32_t alignment_overhead = 0;
       
-      /* Считаем, сколько памяти нужно для всех аттачментов с учетом выравнивания */
+      /* Считаем, сколько памяти нужно для всех аттачментов */
       for (unsigned i = 0; i < cmd->state.pass->attachment_count; i++) {
          const struct tu_render_pass_attachment *att = 
             &cmd->state.pass->attachments[i];
          if (att->gmem) {
-            /* Используем tile0 из tiling config с выравниванием */
-            uint32_t tile_width = ALIGN_POT(cmd->state.tiling->tile0.width, 
-                                           A810_GMEM_ALIGN_W);
-            uint32_t tile_height = ALIGN_POT(cmd->state.tiling->tile0.height,
-                                            A810_GMEM_ALIGN_H);
+            /* Используем tile0 из tiling config */
+            uint32_t tile_width = cmd->state.tiling->tile0.width;
+            uint32_t tile_height = cmd->state.tiling->tile0.height;
             uint32_t tile_size = tile_width * tile_height;
-            uint32_t att_size = tile_size * att->cpp;
-            
-            needed += att_size;
-            
-            /* Учитываем оверхед на выравнивание в GMEM */
-            alignment_overhead += (tile_width * tile_height * att->cpp) - 
-                                  (cmd->state.tiling->tile0.width * 
-                                   cmd->state.tiling->tile0.height * att->cpp);
+            needed += tile_size * att->cpp;
          }
       }
-      
-      #ifdef A810_GMEM_DEBUG
-      fprintf(stderr, "A810 GMEM: needed=%u KB, overhead=%u KB, %s\n", 
-              needed / 1024, alignment_overhead / 1024,
-              needed > gmem_size ? "-> SYSMEM" : "-> GMEM");
-      #endif
-      
-      /* Если оверхед большой, возможно лучше использовать sysmem */
-      if (alignment_overhead > gmem_size / 4) {
-         mesa_logw("A810: High GMEM alignment overhead (%u KB), using sysmem",
-                   alignment_overhead / 1024);
-         cmd->state.rp.gmem_disable_reason = "A810: High alignment overhead";
-         return true;
-      }
+            #ifdef A810_GMEM_DEBUG
+            fprintf(stderr, "A810 GMEM: needed=%u KB, %s\n", 
+           needed / 1024,
+           needed > gmem_size ? "-> SYSMEM" : "-> GMEM");
+           #endif
       
       /* Если не влезает - используем sysmem */
       if (needed > gmem_size) {
          cmd->state.rp.gmem_disable_reason = "A810: GMEM overflow";
          return true;
       }
-      
-      /* Для маленьких render passes (меньше 4 тайлов) используем sysmem */
-      uint32_t tile_count_x = (cmd->state.framebuffer->width + A810_TILE_WIDTH - 1) / A810_TILE_WIDTH;
-      uint32_t tile_count_y = (cmd->state.framebuffer->height + A810_TILE_HEIGHT - 1) / A810_TILE_HEIGHT;
-      
-      if (tile_count_x * tile_count_y < 4) {
-         cmd->state.rp.gmem_disable_reason = "A810: Small render pass";
-         return true;
-      }
    }
-   /* ========== КОНЕЦ УЛУЧШЕННОЙ ОПТИМИЗАЦИИ ========== */
+   /* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */
 
    /* Use sysmem for empty render areas */
    if (cmd->state.per_layer_render_area) {
@@ -2098,46 +2060,7 @@ tu6_emit_gmem_resolves(struct tu_cmd_buffer *cmd,
    const struct tu_framebuffer *fb = cmd->state.framebuffer;
    bool per_layer_render_area = cmd->state.per_layer_render_area;
 
-   if (!subpass->resolve_attachments)
-      return;
-
-   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      /* Для A810 объединяем resolve операции в пакеты */
-      bool wfi_emitted = false;
-      
-      for (unsigned i = 0; i < subpass->resolve_count; i++) {
-         uint32_t a = subpass->resolve_attachments[i].attachment;
-         if (a == VK_ATTACHMENT_UNUSED)
-            continue;
-            
-         uint32_t gmem_a = tu_subpass_get_attachment_to_resolve(subpass, i);
-         
-         /* Перед первым resolve - WFI и настройка кэша */
-         if (!wfi_emitted) {
-            tu_cs_emit_wfi(cs);
-            tu_emit_event_write<CHIP>(cmd, cs, FD_CCU_CLEAN_COLOR);
-            tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
-            
-            /* Включаем write-combine для A810 */
-            tu_cs_emit_pkt7(cs, CP_SET_MODE, 1);
-            tu_cs_emit(cs, 0x4); /* Write combine enable */
-            
-            wfi_emitted = true;
-         }
-         
-         /* Выполняем resolve с оптимизацией */
-         tu_store_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, gmem_a,
-                                       fb->layers, subpass->multiview_mask,
-                                       per_layer_render_area, false);
-      }
-      
-      /* Финальная инвалидация кэша */
-      if (wfi_emitted) {
-         tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
-      }
-   } else {
-      /* Стандартный код для других GPU */
+   if (subpass->resolve_attachments) {
       for (unsigned i = 0; i < subpass->resolve_count; i++) {
          uint32_t a = subpass->resolve_attachments[i].attachment;
          if (a == VK_ATTACHMENT_UNUSED)
@@ -2163,7 +2086,6 @@ tu6_emit_gmem_resolves(struct tu_cmd_buffer *cmd,
          }
       }
    }
-   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 }
 
 /* Emits any tile stores at the end of a subpass.
