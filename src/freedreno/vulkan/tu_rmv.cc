@@ -15,6 +15,9 @@
 #include "tu_query_pool.h"
 
 #include <cstdio>
+#ifdef A810_OPTIMIZE
+#define TU_RMV_DISABLE 1
+#endif
 
 static VkResult
 capture_trace(VkQueue _queue)
