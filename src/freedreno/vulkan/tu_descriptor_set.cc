@@ -17,8 +17,10 @@
  * descriptor set at CmdBindDescriptors time/draw time.
  *
  * Оптимизировано для Adreno 810:
+ * - Кэширование дескрипторов (16 последних)
  * - Выравнивание всех структур по кэш-линии (64 байт)
- * - Увеличенный пул дескрипторов (2 МБ для производительности)
+ * - Увеличенный пул дескрипторов (4 МБ для производительности)
+ * - Prefetch для адресов буферов
  */
 
 #include "tu_descriptor_set.h"
@@ -26,6 +28,7 @@
 #include <fcntl.h>
 
 #include "util/mesa-sha1.h"
+#include "util/os_time.h"
 #include "vk_descriptors.h"
 #include "vk_util.h"
 #include "vk_acceleration_structure.h"
@@ -41,14 +44,26 @@
 /* Нужно для определения чипа Adreno 810 */
 #include "freedreno_dev_info.h"
 
-/* Adreno 810: размер кэш-линии */
+/* ===== ОПТИМИЗАЦИИ ДЛЯ ADRENO 810 ===== */
 #define ADRENO_CACHE_LINE_SIZE 64
+#define ADRENO_DESCRIPTOR_POOL_SIZE_SMALL (2 * 1024 * 1024)  /* 2 MB для небольших пулов */
+#define ADRENO_DESCRIPTOR_POOL_SIZE_LARGE (4 * 1024 * 1024)  /* 4 MB для игр */
+#define A810_DESCRIPTOR_CACHE_SIZE 16  /* Кэшируем 16 последних дескрипторов */
+#define A810_UBWC_FAST_PATH 1
+#define A810_PREFETCH_DISTANCE 4  /* Сколько дескрипторов prefetchить вперед */
+/* ===== КОНЕЦ ОПТИМИЗАЦИЙ ===== */
 
-/* Безопасный размер пула дескрипторов: 2 МБ */
-#define ADRENO_DESCRIPTOR_POOL_SIZE (2 * 1024 * 1024)
+/* Структура кэша для A810 */
+struct a810_desc_cache {
+   uint64_t key;
+   uint32_t desc[FDL6_TEX_CONST_DWORDS];
+   bool valid;
+   uint64_t last_used;
+};
 
-/* GMEM размер для Adreno 810 (из ваших релизов) */
-#define ADRENO_GMEM_SIZE (512 * 1024)
+/* Глобальный кэш для часто используемых дескрипторов */
+static struct a810_desc_cache a810_desc_caches[A810_DESCRIPTOR_CACHE_SIZE];
+static uint32_t a810_cache_idx = 0;
 
 static inline uint8_t *
 pool_base(struct tu_descriptor_pool *pool)
@@ -60,11 +75,19 @@ pool_base(struct tu_descriptor_pool *pool)
 static inline uint32_t
 adreno_align_size(struct tu_device *dev, uint32_t size)
 {
-   /* Проверяем, что это Adreno 810 (chip ID = 810) */
    if (dev->physical_device->info->chip == 810) {
       return ALIGN_POT(size, ADRENO_CACHE_LINE_SIZE);
    }
    return size;
+}
+
+/* Prefetch для A810 - загружаем в кэш следующие дескрипторы */
+static inline void
+a810_prefetch_descriptors(const uint32_t *ptr, uint32_t count)
+{
+   for (uint32_t i = 0; i < count && i < A810_PREFETCH_DISTANCE; i++) {
+      __builtin_prefetch(ptr + i * FDL6_TEX_CONST_DWORDS, 0, 3);
+   }
 }
 
 static uint32_t
@@ -76,21 +99,10 @@ descriptor_size(struct tu_device *dev,
    
    switch (type) {
    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-      /* We make offsets and sizes all 16 dwords, to match how the hardware
-       * interprets indices passed to sample/load/store instructions in
-       * multiples of 16 dwords.  This means that "normal" descriptors are all
-       * of size 16, with padding for smaller descriptors like uniform storage
-       * descriptors which are less than 16 dwords. However combined images
-       * and samplers are actually two descriptors, so they have size 2.
-       */
       base_size = FDL6_TEX_CONST_DWORDS * 4 * 2;
       break;
    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
    case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
-      /* isam.v allows using a single 16-bit descriptor for both 16-bit and
-       * 32-bit loads. If not available but 16-bit storage is still supported,
-       * two separate descriptors are required.
-       */
       base_size = FDL6_TEX_CONST_DWORDS * 4 * (1 +
          COND(dev->physical_device->info->props.storage_16bit &&
               !dev->physical_device->info->props.has_isam_v, 1) +
@@ -104,7 +116,6 @@ descriptor_size(struct tu_device *dev,
       base_size = FDL6_TEX_CONST_DWORDS * 4;
    }
    
-   /* Adreno 810: выравниваем все дескрипторы по кэш-линии */
    return adreno_align_size(dev, base_size);
 }
 
@@ -119,7 +130,6 @@ mutable_descriptor_size(struct tu_device *dev,
       max_size = MAX2(max_size, size);
    }
 
-   /* Adreno 810: выравниваем по кэш-линии */
    return adreno_align_size(dev, max_size);
 }
 
@@ -181,8 +191,6 @@ tu_CreateDescriptorSetLayout(
    uint32_t samplers_offset =
       offsetof_arr(struct tu_descriptor_set_layout, binding, num_bindings);
 
-   /* note: only need to store TEX_SAMP_DWORDS for immutable samples,
-    * but using struct tu_sampler makes things simpler */
    uint32_t size = samplers_offset +
       immutable_sampler_count * sizeof(struct tu_sampler) +
       ycbcr_sampler_count * sizeof(struct vk_ycbcr_conversion);
@@ -196,7 +204,6 @@ tu_CreateDescriptorSetLayout(
    set_layout->flags = pCreateInfo->flags;
    set_layout->vk.destroy = tu_descriptor_set_layout_destroy;
 
-   /* We just allocate all the immutable samplers at the end of the struct */
    struct tu_sampler *samplers =
       (struct tu_sampler *) &set_layout->binding[num_bindings];
    struct vk_ycbcr_conversion_state *ycbcr_samplers =
@@ -231,9 +238,6 @@ tu_CreateDescriptorSetLayout(
       set_layout->binding[b].shader_stages = binding->stageFlags;
 
       if (binding->descriptorType == VK_DESCRIPTOR_TYPE_MUTABLE_EXT) {
-         /* For mutable descriptor types we must allocate a size that fits the
-          * largest descriptor type that the binding can mutate to.
-          */
          set_layout->binding[b].size =
             mutable_descriptor_size(device, &mutable_info->pMutableDescriptorTypeLists[j]);
       } else {
@@ -247,10 +251,8 @@ tu_CreateDescriptorSetLayout(
       if (variable_flags && j < variable_flags->bindingCount &&
           (variable_flags->pBindingFlags[j] &
            VK_DESCRIPTOR_BINDING_VARIABLE_DESCRIPTOR_COUNT_BIT)) {
-         assert(!binding->pImmutableSamplers); /* Terribly ill defined  how
-                                                  many samplers are valid */
+         assert(!binding->pImmutableSamplers);
          assert(binding->binding == num_bindings - 1);
-
          set_layout->has_variable_descriptors = true;
       }
 
@@ -389,8 +391,6 @@ tu_GetDescriptorSetLayoutSupport(
             &mutable_info->pMutableDescriptorTypeLists[i];
 
          for (uint32_t j = 0; j < list->descriptorTypeCount; j++) {
-            /* Don't support the input attachement and combined image sampler type
-             * for mutable descriptors */
             if (list->pDescriptorTypes[j] == VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER ||
                 list->pDescriptorTypes[j] == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
                supported = false;
@@ -498,7 +498,6 @@ sha1_update_descriptor_set_binding_layout(struct mesa_sha1 *ctx,
    }
 }
 
-
 static void
 sha1_update_descriptor_set_layout(struct mesa_sha1 *ctx,
                                   const struct tu_descriptor_set_layout *layout)
@@ -509,11 +508,6 @@ sha1_update_descriptor_set_layout(struct mesa_sha1 *ctx,
       sha1_update_descriptor_set_binding_layout(ctx, &layout->binding[i],
                                                 layout);
 }
-
-/*
- * Pipeline layouts.  These have nothing to do with the pipeline.  They are
- * just multiple descriptor set layouts pasted together.
- */
 
 void
 tu_pipeline_layout_init(struct tu_pipeline_layout *layout)
@@ -609,10 +603,11 @@ tu_descriptor_set_create(struct tu_device *device,
    unsigned mem_size = dynamic_offset + layout->dynamic_offset_size;
 
    if (pool->host_memory_base) {
-      /* Adreno 810: выравниваем указатель по кэш-линии */
+      /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
       if (device->physical_device->info->chip == 810) {
          pool->host_memory_ptr = (uint8_t *)ALIGN_POT((uintptr_t)pool->host_memory_ptr, 64);
       }
+      /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
       
       if (pool->host_memory_end - pool->host_memory_ptr < mem_size)
          return VK_ERROR_OUT_OF_POOL_MEMORY;
@@ -671,10 +666,11 @@ tu_descriptor_set_create(struct tu_device *device,
          set->offset = pool_vma_offset - TU_POOL_HEAP_OFFSET;
          current_offset = set->offset;
       } else {
-         /* Adreno 810: выравниваем оффсет в пуле */
+         /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
          if (device->physical_device->info->chip == 810) {
             current_offset = ALIGN_POT(current_offset, 64);
          }
+         /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
          
          if (current_offset + set->size > pool->size)
             return VK_ERROR_OUT_OF_POOL_MEMORY;
@@ -752,11 +748,6 @@ tu_CreateDescriptorPool(VkDevice _device,
                            DESCRIPTOR_POOL_INLINE_UNIFORM_BLOCK_CREATE_INFO);
 
    if (inline_info) {
-      /* We have to factor in the padding for each binding. The sizes are 4
-       * aligned but we have to align to 4 * FDL6_TEX_CONST_DWORDS bytes, and in
-       * the worst case each inline binding has a size of 4 bytes and we have
-       * to pad each one out.
-       */
       bo_size += (4 * FDL6_TEX_CONST_DWORDS - 4) *
          inline_info->maxInlineUniformBlockBindings;
    }
@@ -777,7 +768,6 @@ tu_CreateDescriptorPool(VkDevice _device,
                mutable_descriptor_size(device, &mutable_info->pMutableDescriptorTypeLists[i]) *
                   pool_size->descriptorCount;
          } else {
-            /* Allocate the maximum size possible. */
             bo_size += 2 * FDL6_TEX_CONST_DWORDS * 4 *
                   pool_size->descriptorCount;
          }
@@ -792,11 +782,17 @@ tu_CreateDescriptorPool(VkDevice _device,
       }
    }
 
-   /* Adreno 810: увеличиваем пул до безопасных 2 МБ для производительности */
-   if (device->physical_device->info->chip == 810 && 
-       bo_size < ADRENO_DESCRIPTOR_POOL_SIZE) {
-      bo_size = ADRENO_DESCRIPTOR_POOL_SIZE;
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (device->physical_device->info->chip == 810) {
+      /* Для A810 увеличиваем пул до оптимальных размеров */
+      if (pCreateInfo->maxSets > 1000) {
+         bo_size = MAX2(bo_size, ADRENO_DESCRIPTOR_POOL_SIZE_LARGE);
+      } else {
+         bo_size = MAX2(bo_size, ADRENO_DESCRIPTOR_POOL_SIZE_SMALL);
+      }
+      bo_size = ALIGN_POT(bo_size, ADRENO_CACHE_LINE_SIZE);
    }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
    if (!(pCreateInfo->flags & VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT)) {
       uint64_t host_size = pCreateInfo->maxSets * sizeof(struct tu_descriptor_set);
@@ -940,7 +936,6 @@ tu_AllocateDescriptorSets(VkDevice _device,
    if (variable_counts && !variable_counts->descriptorSetCount)
       variable_counts = NULL;
 
-   /* allocate a set of buffers for each shader to contain descriptors */
    for (i = 0; i < pAllocateInfo->descriptorSetCount; i++) {
       VK_FROM_HANDLE(tu_descriptor_set_layout, layout,
              pAllocateInfo->pSetLayouts[i]);
@@ -988,6 +983,103 @@ tu_FreeDescriptorSets(VkDevice _device,
    }
    return VK_SUCCESS;
 }
+
+/* ===== ОПТИМИЗИРОВАННЫЕ ФУНКЦИИ ЗАПИСИ ДЕСКРИПТОРОВ ДЛЯ A810 ===== */
+
+/* Оптимизированная запись дескриптора изображения с кэшированием */
+template <chip CHIP>
+static void
+write_image_descriptor_a810(uint32_t *dst,
+                            VkDescriptorType descriptor_type,
+                            const VkDescriptorImageInfo *image_info,
+                            struct tu_device *device)
+{
+   if (device->physical_device->info->chip != 810) {
+      write_image_descriptor(dst, descriptor_type, image_info);
+      return;
+   }
+
+   if (!image_info || image_info->imageView == VK_NULL_HANDLE) {
+      memset(dst, 0, FDL6_TEX_CONST_DWORDS * sizeof(uint32_t));
+      return;
+   }
+
+   VK_FROM_HANDLE(tu_image_view, iview, image_info->imageView);
+   
+   /* Для A810: кэшируем часто используемые дескрипторы */
+   uint64_t key = (uint64_t)(uintptr_t)iview;
+   
+   /* Ищем в кэше */
+   uint64_t current_time = os_time_get_nano();
+   for (int i = 0; i < A810_DESCRIPTOR_CACHE_SIZE; i++) {
+      if (a810_desc_caches[i].key == key && a810_desc_caches[i].valid) {
+         a810_desc_caches[i].last_used = current_time;
+         memcpy(dst, a810_desc_caches[i].desc, sizeof(a810_desc_caches[i].desc));
+         return;
+      }
+   }
+   
+   /* Не нашли - создаем новый */
+   if (descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+      memcpy(dst, iview->view.storage_descriptor, sizeof(iview->view.storage_descriptor));
+   } else {
+      memcpy(dst, iview->view.descriptor, sizeof(iview->view.descriptor));
+   }
+   
+   /* Сохраняем в кэш */
+   uint32_t cache_slot = a810_cache_idx++ % A810_DESCRIPTOR_CACHE_SIZE;
+   a810_desc_caches[cache_slot].key = key;
+   memcpy(a810_desc_caches[cache_slot].desc, dst, FDL6_TEX_CONST_DWORDS * 4);
+   a810_desc_caches[cache_slot].valid = true;
+   a810_desc_caches[cache_slot].last_used = current_time;
+}
+
+/* Оптимизированная запись комбинированного дескриптора */
+template <chip CHIP>
+static void
+write_combined_image_sampler_descriptor_a810(uint32_t *dst,
+                                              VkDescriptorType descriptor_type,
+                                              const VkDescriptorImageInfo *image_info,
+                                              bool has_sampler,
+                                              struct tu_device *device)
+{
+   write_image_descriptor_a810<CHIP>(dst, descriptor_type, image_info, device);
+   
+   if (has_sampler && image_info && image_info->sampler != VK_NULL_HANDLE) {
+      VK_FROM_HANDLE(tu_sampler, sampler, image_info->sampler);
+      memcpy(dst + FDL6_TEX_CONST_DWORDS, sampler->descriptor, sizeof(sampler->descriptor));
+      
+      /* Prefetch следующий дескриптор */
+      __builtin_prefetch(dst + 2 * FDL6_TEX_CONST_DWORDS, 1, 3);
+   }
+}
+
+/* Оптимизированная запись буферного дескриптора с prefetch */
+template <chip CHIP>
+static void
+write_buffer_descriptor_a810(const struct tu_device *device,
+                             uint32_t *dst,
+                             const VkDescriptorBufferInfo *buffer_info)
+{
+   if (device->physical_device->info->chip != 810) {
+      write_buffer_descriptor<CHIP>(device, dst, buffer_info);
+      return;
+   }
+
+   if (!buffer_info || buffer_info->buffer == VK_NULL_HANDLE) {
+      memset(dst, 0, FDL6_TEX_CONST_DWORDS * 4);
+      return;
+   }
+
+   VK_FROM_HANDLE(tu_buffer, buffer, buffer_info->buffer);
+   uint64_t va = vk_buffer_address(&buffer->vk, buffer_info->offset);
+   
+   /* Prefetch адреса буфера для ускорения */
+   __builtin_prefetch((const void*)(uintptr_t)va, 0, 3);
+   
+   write_buffer_descriptor<CHIP>(device, dst, buffer_info);
+}
+/* ===== КОНЕЦ ОПТИМИЗИРОВАННЫХ ФУНКЦИЙ ===== */
 
 template <chip CHIP>
 static void
@@ -1038,15 +1130,7 @@ write_buffer_descriptor_addr(const struct tu_device *device,
                              const VkDescriptorAddressInfoEXT *buffer_info)
 {
    const struct fd_dev_info *info = device->physical_device->info;
-   /* This prevents any misconfiguration, but 16-bit descriptor capable of both
-    * 16-bit and 32-bit access through isam.v will of course only be functional
-    * when 16-bit storage is supported. */
    assert(!info->props.has_isam_v || info->props.storage_16bit);
-   /* Any configuration enabling 8-bit storage support will also provide 16-bit
-    * storage support and 16-bit descriptors capable of 32-bit isam loads. This
-    * indirectly ensures we won't need more than two descriptors for access of
-    * any size.
-    */
    assert(!info->props.storage_8bit || (info->props.storage_16bit &&
                                        info->props.has_isam_v));
 
@@ -1066,9 +1150,6 @@ write_buffer_descriptor_addr(const struct tu_device *device,
       dst += FDL6_TEX_CONST_DWORDS;
    }
 
-   /* Set up the 32-bit descriptor when 16-bit storage isn't supported or the
-    * 16-bit descriptor cannot be used for 32-bit loads through isam.v.
-    */
    if (!info->props.storage_16bit || !info->props.has_isam_v) {
       fdl6_buffer_view_init<CHIP>(dst, PIPE_FORMAT_R32_UINT, tu_swiz(X, Y, Z, W), va, range);
       dst += FDL6_TEX_CONST_DWORDS;
@@ -1100,7 +1181,6 @@ write_ubo_descriptor_addr(uint32_t *dst,
    }
 
    uint64_t va = buffer_info->address;
-   /* The HW range is in vec4 units */
    uint32_t range = va ? DIV_ROUND_UP(buffer_info->range, 16) : 0;
    dst[0] = A6XX_UBO_0_BASE_LO(va);
    dst[1] = A6XX_UBO_1_BASE_HI(va >> 32) | A6XX_UBO_1_SIZE(range);
@@ -1139,10 +1219,8 @@ write_combined_image_sampler_descriptor(uint32_t *dst,
                                         bool has_sampler)
 {
    write_image_descriptor(dst, descriptor_type, image_info);
-   /* copy over sampler state */
-   if (has_sampler) {
+   if (has_sampler && image_info && image_info->sampler != VK_NULL_HANDLE) {
       VK_FROM_HANDLE(tu_sampler, sampler, image_info->sampler);
-
       memcpy(dst + FDL6_TEX_CONST_DWORDS, sampler->descriptor, sizeof(sampler->descriptor));
    }
 }
@@ -1159,17 +1237,11 @@ template <chip CHIP>
 static void
 write_accel_struct(uint32_t *dst, uint64_t va)
 {
-   /* We don't actually use the bounds checking in the shader, since the
-    * instance array is accessed entirely with a driver-controlled offset.
-    * Therefore just always specify the maximum possible size to avoid having
-    * to keep track of the size.
-    */
    fdl6_buffer_view_init<CHIP>(dst, PIPE_FORMAT_R32_UINT,
                                tu_swiz(X, X, X, X), va,
                                MAX_TEXEL_ELEMENTS, AS_RECORD_SIZE / 4);
 }
 
-/* note: this is used with immutable samplers in push descriptors */
 static void
 write_sampler_push(uint32_t *dst, const struct tu_sampler *sampler)
 {
@@ -1246,6 +1318,21 @@ tu_update_descriptor_sets(const struct tu_device *device,
                           const VkCopyDescriptorSet *pDescriptorCopies)
 {
    uint32_t i, j;
+   
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   bool is_a810 = device->physical_device->info->chip == 810;
+   if (is_a810) {
+      /* Prefetch первых нескольких дескрипторов */
+      if (descriptorWriteCount > 0) {
+         const VkWriteDescriptorSet *first = &pDescriptorWrites[0];
+         VK_FROM_HANDLE(tu_descriptor_set, set, dstSetOverride ?: first->dstSet);
+         if (set && set->mapped_ptr) {
+            a810_prefetch_descriptors(set->mapped_ptr, 4);
+         }
+      }
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
+   
    for (i = 0; i < descriptorWriteCount; i++) {
       const VkWriteDescriptorSet *writeset = &pDescriptorWrites[i];
       VK_FROM_HANDLE(tu_descriptor_set, set, dstSetOverride ?: writeset->dstSet);
@@ -1262,29 +1349,12 @@ tu_update_descriptor_sets(const struct tu_device *device,
 
       const VkWriteDescriptorSetAccelerationStructureKHR *accel_structs = NULL;
 
-      /* for immutable samplers with push descriptors: */
       const bool copy_immutable_samplers =
          dstSetOverride && binding_layout->immutable_samplers_offset;
       const struct tu_sampler *samplers =
          tu_immutable_samplers(set->layout, binding_layout);
 
       if (writeset->descriptorType == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK) {
-         /* We need to respect this note:
-          *
-          *    The same behavior applies to bindings with a descriptor type of
-          *    VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK where descriptorCount
-          *    specifies the number of bytes to update while dstArrayElement
-          *    specifies the starting byte offset, thus in this case if the
-          *    dstBinding has a smaller byte size than the sum of
-          *    dstArrayElement and descriptorCount, then the remainder will be
-          *    used to update the subsequent binding - dstBinding+1 starting
-          *    at offset zero. This falls out as a special case of the above
-          *    rule.
-          *
-          * This means we can't just do a straight memcpy, because due to
-          * alignment padding there are gaps between sequential bindings. We
-          * have to loop over each binding updated.
-          */
          const VkWriteDescriptorSetInlineUniformBlock *inline_write =
             vk_find_struct_const(writeset->pNext,
                                  WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK);
@@ -1320,7 +1390,13 @@ tu_update_descriptor_sets(const struct tu_device *device,
             break;
          case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
          case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-            write_buffer_descriptor<CHIP>(device, ptr, writeset->pBufferInfo + j);
+            /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+            if (is_a810) {
+               write_buffer_descriptor_a810<CHIP>(device, ptr, writeset->pBufferInfo + j);
+            } else {
+               write_buffer_descriptor<CHIP>(device, ptr, writeset->pBufferInfo + j);
+            }
+            /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
             break;
          case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
          case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
@@ -1331,13 +1407,31 @@ tu_update_descriptor_sets(const struct tu_device *device,
          case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
          case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
          case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-            write_image_descriptor(ptr, writeset->descriptorType, writeset->pImageInfo + j);
+            /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+            if (is_a810) {
+               write_image_descriptor_a810<CHIP>(ptr, writeset->descriptorType,
+                                                writeset->pImageInfo + j, device);
+            } else {
+               write_image_descriptor(ptr, writeset->descriptorType,
+                                    writeset->pImageInfo + j);
+            }
+            /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
             break;
          case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-            write_combined_image_sampler_descriptor(ptr,
+            /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+            if (is_a810) {
+               write_combined_image_sampler_descriptor_a810<CHIP>(ptr,
+                                                    writeset->descriptorType,
+                                                    writeset->pImageInfo + j,
+                                                    !binding_layout->immutable_samplers_offset,
+                                                    device);
+            } else {
+               write_combined_image_sampler_descriptor(ptr,
                                                     writeset->descriptorType,
                                                     writeset->pImageInfo + j,
                                                     !binding_layout->immutable_samplers_offset);
+            }
+            /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
             if (copy_immutable_samplers)
                write_sampler_push(ptr + FDL6_TEX_CONST_DWORDS, &samplers[writeset->dstArrayElement + j]);
@@ -1433,9 +1527,6 @@ tu_update_descriptor_sets(const struct tu_device *device,
       src_ptr += src_binding_layout->size * copyset->srcArrayElement / 4;
       dst_ptr += dst_binding_layout->size * copyset->dstArrayElement / 4;
 
-      /* In case of copies between mutable descriptor types
-       * and non-mutable descriptor types.
-       */
       uint32_t copy_size = MIN2(src_binding_layout->size, dst_binding_layout->size);
 
       for (j = 0; j < copyset->descriptorCount; ++j) {
@@ -1478,9 +1569,6 @@ tu_CreateDescriptorUpdateTemplate(
    if (pCreateInfo->templateType == VK_DESCRIPTOR_UPDATE_TEMPLATE_TYPE_PUSH_DESCRIPTORS_KHR) {
       VK_FROM_HANDLE(tu_pipeline_layout, pipeline_layout, pCreateInfo->pipelineLayout);
 
-      /* descriptorSetLayout should be ignored for push descriptors
-       * and instead it refers to pipelineLayout and set.
-       */
       assert(pCreateInfo->set < device->physical_device->usable_sets);
       set_layout = pipeline_layout->set[pCreateInfo->set].layout;
    } else {
@@ -1496,10 +1584,6 @@ tu_CreateDescriptorUpdateTemplate(
          continue;
       }
 
-      /* Calculate how many bindings this update steps over, so we can split
-       * up the template entry. This lets the actual update be a simple
-       * memcpy.
-       */
       uint32_t remaining = entry->descriptorCount;
       const struct tu_descriptor_set_binding_layout *binding_layout =
          set_layout->binding + entry->dstBinding;
@@ -1540,9 +1624,6 @@ tu_CreateDescriptorUpdateTemplate(
       uint32_t dst_offset, dst_stride;
       const struct tu_sampler *immutable_samplers = NULL;
 
-      /* dst_offset is an offset into dynamic_descriptors when the descriptor 
-       * is dynamic, and an offset into mapped_ptr otherwise.
-       */
       switch (entry->descriptorType) {
       case VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC:
       case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
@@ -1552,7 +1633,6 @@ tu_CreateDescriptorUpdateTemplate(
          uint32_t remaining = entry->descriptorCount;
          uint32_t dst_start = entry->dstArrayElement;
          uint32_t src_offset = entry->offset;
-         /* See comment in update_descriptor_sets() */
          do {
             dst_offset =
                binding_layout->offset + dst_start;
@@ -1634,6 +1714,13 @@ tu_update_descriptor_set_with_template(
    VK_FROM_HANDLE(tu_descriptor_update_template, templ,
                   descriptorUpdateTemplate);
 
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   bool is_a810 = device->physical_device->info->chip == 810;
+   if (is_a810 && set && set->mapped_ptr) {
+      a810_prefetch_descriptors(set->mapped_ptr, 4);
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
+
    for (uint32_t i = 0; i < templ->entry_count; i++) {
       uint32_t *ptr = set->mapped_ptr;
       const void *src = ((const char *) pData) + templ->entry[i].src_offset;
@@ -1660,14 +1747,29 @@ tu_update_descriptor_set_with_template(
             break;
          case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC: {
             assert(!(set->layout->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR));
-            write_buffer_descriptor<CHIP>(device,
-                                          set->dynamic_descriptors + dst_offset,
-                                          (const VkDescriptorBufferInfo *) src);
+            /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+            if (is_a810) {
+               write_buffer_descriptor_a810<CHIP>(device,
+                                                 set->dynamic_descriptors + dst_offset,
+                                                 (const VkDescriptorBufferInfo *) src);
+            } else {
+               write_buffer_descriptor<CHIP>(device,
+                                            set->dynamic_descriptors + dst_offset,
+                                            (const VkDescriptorBufferInfo *) src);
+            }
+            /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
             break;
          }
          case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
-            write_buffer_descriptor<CHIP>(device, ptr,
-                                          (const VkDescriptorBufferInfo *) src);
+            /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+            if (is_a810) {
+               write_buffer_descriptor_a810<CHIP>(device, ptr,
+                                                 (const VkDescriptorBufferInfo *) src);
+            } else {
+               write_buffer_descriptor<CHIP>(device, ptr,
+                                            (const VkDescriptorBufferInfo *) src);
+            }
+            /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
             break;
          case VK_DESCRIPTOR_TYPE_UNIFORM_TEXEL_BUFFER:
          case VK_DESCRIPTOR_TYPE_STORAGE_TEXEL_BUFFER:
@@ -1678,15 +1780,33 @@ tu_update_descriptor_set_with_template(
          case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
          case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
          case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT: {
-            write_image_descriptor(ptr, templ->entry[i].descriptor_type,
-                                   (const VkDescriptorImageInfo *) src);
+            /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+            if (is_a810) {
+               write_image_descriptor_a810<CHIP>(ptr, templ->entry[i].descriptor_type,
+                                                (const VkDescriptorImageInfo *) src,
+                                                device);
+            } else {
+               write_image_descriptor(ptr, templ->entry[i].descriptor_type,
+                                    (const VkDescriptorImageInfo *) src);
+            }
+            /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
             break;
          }
          case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-            write_combined_image_sampler_descriptor(ptr,
+            /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+            if (is_a810) {
+               write_combined_image_sampler_descriptor_a810<CHIP>(ptr,
+                                                    templ->entry[i].descriptor_type,
+                                                    (const VkDescriptorImageInfo *) src,
+                                                    templ->entry[i].has_sampler,
+                                                    device);
+            } else {
+               write_combined_image_sampler_descriptor(ptr,
                                                     templ->entry[i].descriptor_type,
                                                     (const VkDescriptorImageInfo *) src,
                                                     templ->entry[i].has_sampler);
+            }
+            /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
             if (samplers)
                write_sampler_push(ptr + FDL6_TEX_CONST_DWORDS, &samplers[j]);
             break;
