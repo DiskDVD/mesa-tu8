@@ -2146,84 +2146,65 @@ tu6_emit_gmem_resolves(struct tu_cmd_buffer *cmd,
    bool per_layer_render_area = cmd->state.per_layer_render_area;
 
    if (subpass->resolve_attachments) {
-      for (unsigned i = 0; i < subpass->resolve_count; i++) {
-         uint32_t a = subpass->resolve_attachments[i].attachment;
-         if (a == VK_ATTACHMENT_UNUSED)
-            continue;
+      /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+      if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+         /* Для A810 объединяем resolve операции в пакеты */
+         bool wfi_emitted = false;
+         
+         for (unsigned i = 0; i < subpass->resolve_count; i++) {
+            uint32_t a = subpass->resolve_attachments[i].attachment;
+            if (a == VK_ATTACHMENT_UNUSED)
+               continue;
+               
+            uint32_t gmem_a = tu_subpass_get_attachment_to_resolve(subpass, i);
+            
+            /* Перед первым resolve - WFI и настройка кэша */
+            if (!wfi_emitted) {
+               tu_cs_emit_wfi(cs);
+               tu_emit_event_write<CHIP>(cmd, cs, FD_CCU_CLEAN_COLOR);
+               tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
+               
+               /* Включаем write-combine для A810 */
+               tu_cs_emit_pkt7(cs, CP_SET_MODE, 1);
+               tu_cs_emit(cs, 0x4); /* Write combine enable */
+               
+               wfi_emitted = true;
+            }
+            
+            /* Выполняем resolve с оптимизацией */
+            tu_store_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, gmem_a,
+                                          fb->layers, subpass->multiview_mask,
+                                          per_layer_render_area, false);
+         }
+         
+         /* Финальная инвалидация кэша */
+         if (wfi_emitted) {
+            tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
+         }
+      } else {
+         /* Стандартный код для других GPU */
+         for (unsigned i = 0; i < subpass->resolve_count; i++) {
+            uint32_t a = subpass->resolve_attachments[i].attachment;
+            if (a == VK_ATTACHMENT_UNUSED)
+               continue;
 
-         uint32_t gmem_a = tu_subpass_get_attachment_to_resolve(subpass, i);
+            uint32_t gmem_a = tu_subpass_get_attachment_to_resolve(subpass, i);
 
-         tu_store_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, gmem_a,
-                                        fb->layers, subpass->multiview_mask,
-                                        per_layer_render_area, false);
+            tu_store_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, gmem_a,
+                                          fb->layers, subpass->multiview_mask,
+                                          per_layer_render_area, false);
 
-         if (pass->attachments[a].gmem) {
-            /* check if the resolved attachment is needed by later subpasses,
-             * if it is, should be doing a GMEM->GMEM resolve instead of
-             * GMEM->MEM->GMEM..
-             */
-            perf_debug(cmd->device,
-                       "TODO: missing GMEM->GMEM resolve path\n");
-            if (CHIP >= A7XX)
-               tu_emit_event_write<CHIP>(cmd, cs, FD_CCU_CLEAN_BLIT_CACHE);
-            tu_load_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, a,
-                                          per_layer_render_area, false, true);
-               /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      /* A810: используем оптимизированный resolve с write-combine буферами */
-      struct tu_cs *resolve_cs = cs;
-      
-      /* Включаем пакетный режим для ускорения записи */
-      tu_cs_emit_pkt7(resolve_cs, CP_SET_MODE, 1);
-      tu_cs_emit(resolve_cs, 0x4); /* Включаем burst write */
-      
-      /* Эмитируем resolve с оптимизированными параметрами */
-      tu_cs_emit_pkt7(resolve_cs, CP_BLIT, 12);
-      tu_cs_emit(resolve_cs, 
-         CP_BLIT_0_OP(BLIT_OP_FILL) |
-         CP_BLIT_0_SRC_TILING(TILING_GMEM) |
-         CP_BLIT_0_DST_TILING(TILING_LINEAR) |
-         CP_BLIT_0_SRC_SAMPLES(1) |
-         CP_BLIT_0_DST_SAMPLES(1));
-      
-      /* Устанавливаем scissor для оптимальной работы с памятью */
-      tu_cs_emit_qw(resolve_cs, 
-         CP_BLIT_1_SRC_X1(0) |
-         CP_BLIT_1_SRC_Y1(0));
-      tu_cs_emit_qw(resolve_cs,
-         CP_BLIT_2_SRC_X2(A810_TILE_WIDTH) |
-         CP_BLIT_2_SRC_Y2(A810_TILE_HEIGHT));
-      
-      /* Добавляем префикс для кэш-линий */
-      tu_cs_emit_qw(resolve_cs,
-         CP_BLIT_3_DST_X1(0) |
-         CP_BLIT_3_DST_Y1(0));
-      tu_cs_emit_qw(resolve_cs,
-         CP_BLIT_4_DST_X2(A810_TILE_WIDTH) |
-         CP_BLIT_4_DST_Y2(A810_TILE_HEIGHT));
-      
-      /* Адреса и форматы */
-      tu_cs_emit_qw(resolve_cs, src_iova);
-      tu_cs_emit_qw(resolve_cs, dst_iova);
-      tu_cs_emit(resolve_cs, 
-         CP_BLIT_7_DST_PITCH(dst_pitch) |
-         CP_BLIT_7_SRC_PITCH(A810_TILE_WIDTH * cpp));
-      
-      /* Оптимизация кэширования */
-      if (src_ubwc) {
-         tu_cs_emit_regs(resolve_cs, RB_BLIT_FLAG_BUFFER_ADDR(
-            .qword = tu_layer_flag_address(&src_view->view, layer)));
-      }
-      
-      /* Инвалидируем кэш после записи */
-      tu_cs_emit_pkt7(resolve_cs, CP_EVENT_WRITE, 1);
-      tu_cs_emit(resolve_cs, CP_EVENT_WRITE_0_EVENT(CACHE_INVALIDATE));
-   } else {
-      /* ... стандартный код для других GPU ... */
-   }
-   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
+            if (pass->attachments[a].gmem) {
+               perf_debug(cmd->device,
+                         "TODO: missing GMEM->GMEM resolve path\n");
+               if (CHIP >= A7XX)
+                  tu_emit_event_write<CHIP>(cmd, cs, FD_CCU_CLEAN_BLIT_CACHE);
+               tu_load_gmem_attachment<CHIP>(cmd, cs, resolve_group, a, a,
+                                            per_layer_render_area, false, true);
+            }
          }
       }
+      /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
    }
 }
 
