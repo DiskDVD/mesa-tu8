@@ -3506,51 +3506,6 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
 
    /* User flushes should always be executed on BR. */
    tu_emit_cache_flush_ccu<CHIP>(cmd, cs, TU_CMD_CCU_GMEM);
-/* ===== ИСПРАВЛЕННАЯ ОЧИСТКА И ПРОВЕРКА GMEM ДЛЯ A810 ===== */
-if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-   /* 1. Сначала проверяем, хватит ли GMEM */
-   uint32_t total_gmem_needed = 0;
-   uint32_t gmem_size = 512 * 1024; /* 512KB */
-   
-   for (uint32_t i = 0; i < cmd->state.pass->attachment_count; i++) {
-      const struct tu_render_pass_attachment *att = 
-         &cmd->state.pass->attachments[i];
-      if (att->gmem) {
-         /* Считаем память для каждого аттачмента */
-         uint32_t tile_size = tiling->tile0.width * tiling->tile0.height;
-         total_gmem_needed += tile_size * att->cpp;
-      }
-   }
-   
-   /* Если не влезает в GMEM - принудительно используем SYSMEM */
-   if (total_gmem_needed > gmem_size) {
-      mesa_logw("A810: GMEM overflow (%u KB > 512 KB), switching to SYSMEM", 
-                total_gmem_needed / 1024);
-      
-      /* Форсируем sysmem для этого renderpass */
-      tu_cond_exec_start(cs, CP_COND_EXEC_0_RENDER_MODE_SYSMEM);
-      tu_cmd_render_sysmem<CHIP>(cmd, autotune_result);
-      tu_cond_exec_end(cs);
-      return;
-   }
-   
-   /* 2. Если GMEM хватает - выполняем безопасную очистку */
-   static int first_gmem_pass = 1;
-   if (first_gmem_pass) {
-      first_gmem_pass = 0;
-      
-      /* Очищаем ТОЛЬКО аттачменты с LOAD_OP_CLEAR */
-      for (uint32_t i = 0; i < cmd->state.pass->attachment_count; i++) {
-         const struct tu_render_pass_attachment *att = 
-            &cmd->state.pass->attachments[i];
-         if (att->clear_mask) {
-            tu_clear_gmem_attachment<CHIP>(cmd, cs, NULL, false, i);
-         }
-      }
-   }
-}
-/* ===== КОНЕЦ ИСПРАВЛЕНИЯ ===== */
-
    
    bool use_cb = false;
 
