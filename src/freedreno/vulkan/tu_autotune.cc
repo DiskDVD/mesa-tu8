@@ -388,19 +388,9 @@ tu_autotune_init(struct tu_autotune *at, struct tu_device *dev)
 void
 tu_autotune_fini(struct tu_autotune *at, struct tu_device *dev)
 {
-   if (TU_AUTOTUNE_LOG_AT_FINISH) {
-      while (!list_is_empty(&at->pending_results)) {
-         const uint32_t gpu_fence = get_autotune_fence(at);
-         process_results(at, gpu_fence);
-      }
-
-      hash_table_foreach(at->ht, entry) {
-         struct tu_renderpass_history *history =
-            (struct tu_renderpass_history *) entry->data;
-
-         mesa_logi("%016" PRIx64 " \tavg_passed=%u results=%u",
-                   history->key, history->avg_samples, history->num_results);
-      }
+   while (!list_is_empty(&at->pending_results)) {
+      const uint32_t gpu_fence = get_autotune_fence(at);
+      process_results(at, gpu_fence);
    }
 
    tu_autotune_free_results(dev, &at->pending_results);
