@@ -65,6 +65,135 @@ struct a810_desc_cache {
 static struct a810_desc_cache a810_desc_caches[A810_DESCRIPTOR_CACHE_SIZE];
 static uint32_t a810_cache_idx = 0;
 
+/* ===== ОБЪЯВЛЕНИЯ ФУНКЦИЙ ===== */
+template <chip CHIP>
+static void write_image_descriptor(uint32_t *dst,
+                                   VkDescriptorType descriptor_type,
+                                   const VkDescriptorImageInfo *image_info);
+
+template <chip CHIP>
+static void write_buffer_descriptor(const struct tu_device *device,
+                                   uint32_t *dst,
+                                   const VkDescriptorBufferInfo *buffer_info);
+
+template <chip CHIP>
+static void write_buffer_descriptor_addr(const struct tu_device *device,
+                                        uint32_t *dst,
+                                        const VkDescriptorAddressInfoEXT *buffer_info);
+
+template <chip CHIP>
+static void write_texel_buffer_descriptor_addr(uint32_t *dst,
+                                               const VkDescriptorAddressInfoEXT *buffer_info);
+
+template <chip CHIP>
+static void write_accel_struct(uint32_t *dst, uint64_t va);
+
+/* ===== ОПТИМИЗИРОВАННЫЕ ФУНКЦИИ ДЛЯ A810 ===== */
+
+/* Prefetch для A810 - загружаем в кэш следующие дескрипторы */
+static inline void
+a810_prefetch_descriptors(const uint32_t *ptr, uint32_t count)
+{
+   for (uint32_t i = 0; i < count && i < A810_PREFETCH_DISTANCE; i++) {
+      __builtin_prefetch(ptr + i * FDL6_TEX_CONST_DWORDS, 0, 3);
+   }
+}
+
+/* Оптимизированная запись дескриптора изображения с кэшированием */
+template <chip CHIP>
+static void
+write_image_descriptor_a810(uint32_t *dst,
+                            VkDescriptorType descriptor_type,
+                            const VkDescriptorImageInfo *image_info,
+                            const struct tu_device *device)
+{
+   if (device->physical_device->info->chip != 810) {
+      write_image_descriptor<CHIP>(dst, descriptor_type, image_info);
+      return;
+   }
+
+   if (!image_info || image_info->imageView == VK_NULL_HANDLE) {
+      memset(dst, 0, FDL6_TEX_CONST_DWORDS * sizeof(uint32_t));
+      return;
+   }
+
+   VK_FROM_HANDLE(tu_image_view, iview, image_info->imageView);
+   
+   /* Для A810: кэшируем часто используемые дескрипторы */
+   uint64_t key = (uint64_t)(uintptr_t)iview;
+   
+   /* Ищем в кэше */
+   uint64_t current_time = os_time_get_nano();
+   for (int i = 0; i < A810_DESCRIPTOR_CACHE_SIZE; i++) {
+      if (a810_desc_caches[i].key == key && a810_desc_caches[i].valid) {
+         a810_desc_caches[i].last_used = current_time;
+         memcpy(dst, a810_desc_caches[i].desc, sizeof(a810_desc_caches[i].desc));
+         return;
+      }
+   }
+   
+   /* Не нашли - создаем новый */
+   if (descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
+      memcpy(dst, iview->view.storage_descriptor, sizeof(iview->view.storage_descriptor));
+   } else {
+      memcpy(dst, iview->view.descriptor, sizeof(iview->view.descriptor));
+   }
+   
+   /* Сохраняем в кэш */
+   uint32_t cache_slot = a810_cache_idx++ % A810_DESCRIPTOR_CACHE_SIZE;
+   a810_desc_caches[cache_slot].key = key;
+   memcpy(a810_desc_caches[cache_slot].desc, dst, FDL6_TEX_CONST_DWORDS * 4);
+   a810_desc_caches[cache_slot].valid = true;
+   a810_desc_caches[cache_slot].last_used = current_time;
+}
+
+/* Оптимизированная запись комбинированного дескриптора */
+template <chip CHIP>
+static void
+write_combined_image_sampler_descriptor_a810(uint32_t *dst,
+                                              VkDescriptorType descriptor_type,
+                                              const VkDescriptorImageInfo *image_info,
+                                              bool has_sampler,
+                                              const struct tu_device *device)
+{
+   write_image_descriptor_a810<CHIP>(dst, descriptor_type, image_info, device);
+   
+   if (has_sampler && image_info && image_info->sampler != VK_NULL_HANDLE) {
+      VK_FROM_HANDLE(tu_sampler, sampler, image_info->sampler);
+      memcpy(dst + FDL6_TEX_CONST_DWORDS, sampler->descriptor, sizeof(sampler->descriptor));
+      
+      /* Prefetch следующий дескриптор */
+      __builtin_prefetch(dst + 2 * FDL6_TEX_CONST_DWORDS, 1, 3);
+   }
+}
+
+/* Оптимизированная запись буферного дескриптора с prefetch */
+template <chip CHIP>
+static void
+write_buffer_descriptor_a810(const struct tu_device *device,
+                             uint32_t *dst,
+                             const VkDescriptorBufferInfo *buffer_info)
+{
+   if (device->physical_device->info->chip != 810) {
+      write_buffer_descriptor<CHIP>(device, dst, buffer_info);
+      return;
+   }
+
+   if (!buffer_info || buffer_info->buffer == VK_NULL_HANDLE) {
+      memset(dst, 0, FDL6_TEX_CONST_DWORDS * 4);
+      return;
+   }
+
+   VK_FROM_HANDLE(tu_buffer, buffer, buffer_info->buffer);
+   uint64_t va = vk_buffer_address(&buffer->vk, buffer_info->offset);
+   
+   /* Prefetch адреса буфера для ускорения */
+   __builtin_prefetch((const void*)(uintptr_t)va, 0, 3);
+   
+   write_buffer_descriptor<CHIP>(device, dst, buffer_info);
+}
+/* ===== КОНЕЦ ОПТИМИЗИРОВАННЫХ ФУНКЦИЙ ===== */
+
 static inline uint8_t *
 pool_base(struct tu_descriptor_pool *pool)
 {
@@ -79,15 +208,6 @@ adreno_align_size(struct tu_device *dev, uint32_t size)
       return ALIGN_POT(size, ADRENO_CACHE_LINE_SIZE);
    }
    return size;
-}
-
-/* Prefetch для A810 - загружаем в кэш следующие дескрипторы */
-static inline void
-a810_prefetch_descriptors(const uint32_t *ptr, uint32_t count)
-{
-   for (uint32_t i = 0; i < count && i < A810_PREFETCH_DISTANCE; i++) {
-      __builtin_prefetch(ptr + i * FDL6_TEX_CONST_DWORDS, 0, 3);
-   }
 }
 
 static uint32_t
@@ -984,102 +1104,7 @@ tu_FreeDescriptorSets(VkDevice _device,
    return VK_SUCCESS;
 }
 
-/* ===== ОПТИМИЗИРОВАННЫЕ ФУНКЦИИ ЗАПИСИ ДЕСКРИПТОРОВ ДЛЯ A810 ===== */
-
-/* Оптимизированная запись дескриптора изображения с кэшированием */
-template <chip CHIP>
-static void
-write_image_descriptor_a810(uint32_t *dst,
-                            VkDescriptorType descriptor_type,
-                            const VkDescriptorImageInfo *image_info,
-                            struct tu_device *device)
-{
-   if (device->physical_device->info->chip != 810) {
-      write_image_descriptor(dst, descriptor_type, image_info);
-      return;
-   }
-
-   if (!image_info || image_info->imageView == VK_NULL_HANDLE) {
-      memset(dst, 0, FDL6_TEX_CONST_DWORDS * sizeof(uint32_t));
-      return;
-   }
-
-   VK_FROM_HANDLE(tu_image_view, iview, image_info->imageView);
-   
-   /* Для A810: кэшируем часто используемые дескрипторы */
-   uint64_t key = (uint64_t)(uintptr_t)iview;
-   
-   /* Ищем в кэше */
-   uint64_t current_time = os_time_get_nano();
-   for (int i = 0; i < A810_DESCRIPTOR_CACHE_SIZE; i++) {
-      if (a810_desc_caches[i].key == key && a810_desc_caches[i].valid) {
-         a810_desc_caches[i].last_used = current_time;
-         memcpy(dst, a810_desc_caches[i].desc, sizeof(a810_desc_caches[i].desc));
-         return;
-      }
-   }
-   
-   /* Не нашли - создаем новый */
-   if (descriptor_type == VK_DESCRIPTOR_TYPE_STORAGE_IMAGE) {
-      memcpy(dst, iview->view.storage_descriptor, sizeof(iview->view.storage_descriptor));
-   } else {
-      memcpy(dst, iview->view.descriptor, sizeof(iview->view.descriptor));
-   }
-   
-   /* Сохраняем в кэш */
-   uint32_t cache_slot = a810_cache_idx++ % A810_DESCRIPTOR_CACHE_SIZE;
-   a810_desc_caches[cache_slot].key = key;
-   memcpy(a810_desc_caches[cache_slot].desc, dst, FDL6_TEX_CONST_DWORDS * 4);
-   a810_desc_caches[cache_slot].valid = true;
-   a810_desc_caches[cache_slot].last_used = current_time;
-}
-
-/* Оптимизированная запись комбинированного дескриптора */
-template <chip CHIP>
-static void
-write_combined_image_sampler_descriptor_a810(uint32_t *dst,
-                                              VkDescriptorType descriptor_type,
-                                              const VkDescriptorImageInfo *image_info,
-                                              bool has_sampler,
-                                              struct tu_device *device)
-{
-   write_image_descriptor_a810<CHIP>(dst, descriptor_type, image_info, device);
-   
-   if (has_sampler && image_info && image_info->sampler != VK_NULL_HANDLE) {
-      VK_FROM_HANDLE(tu_sampler, sampler, image_info->sampler);
-      memcpy(dst + FDL6_TEX_CONST_DWORDS, sampler->descriptor, sizeof(sampler->descriptor));
-      
-      /* Prefetch следующий дескриптор */
-      __builtin_prefetch(dst + 2 * FDL6_TEX_CONST_DWORDS, 1, 3);
-   }
-}
-
-/* Оптимизированная запись буферного дескриптора с prefetch */
-template <chip CHIP>
-static void
-write_buffer_descriptor_a810(const struct tu_device *device,
-                             uint32_t *dst,
-                             const VkDescriptorBufferInfo *buffer_info)
-{
-   if (device->physical_device->info->chip != 810) {
-      write_buffer_descriptor<CHIP>(device, dst, buffer_info);
-      return;
-   }
-
-   if (!buffer_info || buffer_info->buffer == VK_NULL_HANDLE) {
-      memset(dst, 0, FDL6_TEX_CONST_DWORDS * 4);
-      return;
-   }
-
-   VK_FROM_HANDLE(tu_buffer, buffer, buffer_info->buffer);
-   uint64_t va = vk_buffer_address(&buffer->vk, buffer_info->offset);
-   
-   /* Prefetch адреса буфера для ускорения */
-   __builtin_prefetch((const void*)(uintptr_t)va, 0, 3);
-   
-   write_buffer_descriptor<CHIP>(device, dst, buffer_info);
-}
-/* ===== КОНЕЦ ОПТИМИЗИРОВАННЫХ ФУНКЦИЙ ===== */
+/* ===== ОСНОВНЫЕ ФУНКЦИИ ЗАПИСИ ДЕСКРИПТОРОВ (ОБЪЯВЛЕНЫ РАНЕЕ) ===== */
 
 template <chip CHIP>
 static void
@@ -1193,6 +1218,7 @@ write_ubo_descriptor(uint32_t *dst, const VkDescriptorBufferInfo *buffer_info)
    write_ubo_descriptor_addr(dst, &addr);
 }
 
+template <chip CHIP>
 static void
 write_image_descriptor(uint32_t *dst,
                        VkDescriptorType descriptor_type,
@@ -1212,13 +1238,14 @@ write_image_descriptor(uint32_t *dst,
    }
 }
 
+template <chip CHIP>
 static void
 write_combined_image_sampler_descriptor(uint32_t *dst,
                                         VkDescriptorType descriptor_type,
                                         const VkDescriptorImageInfo *image_info,
                                         bool has_sampler)
 {
-   write_image_descriptor(dst, descriptor_type, image_info);
+   write_image_descriptor<CHIP>(dst, descriptor_type, image_info);
    if (has_sampler && image_info && image_info->sampler != VK_NULL_HANDLE) {
       VK_FROM_HANDLE(tu_sampler, sampler, image_info->sampler);
       memcpy(dst + FDL6_TEX_CONST_DWORDS, sampler->descriptor, sizeof(sampler->descriptor));
@@ -1273,15 +1300,15 @@ tu_GetDescriptorEXT(
       write_texel_buffer_descriptor_addr<CHIP>(dest, pDescriptorInfo->data.pStorageTexelBuffer);
       break;
    case VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE:
-      write_image_descriptor(dest, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
+      write_image_descriptor<CHIP>(dest, VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE,
                              pDescriptorInfo->data.pSampledImage);
       break;
    case VK_DESCRIPTOR_TYPE_STORAGE_IMAGE:
-      write_image_descriptor(dest, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
+      write_image_descriptor<CHIP>(dest, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE,
                              pDescriptorInfo->data.pStorageImage);
       break;
    case VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER:
-      write_combined_image_sampler_descriptor(dest,
+      write_combined_image_sampler_descriptor<CHIP>(dest,
                                               VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
                                               pDescriptorInfo->data.pCombinedImageSampler,
                                               true);
@@ -1298,7 +1325,7 @@ tu_GetDescriptorEXT(
       break;
    }
    case VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT:
-      write_image_descriptor(dest, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
+      write_image_descriptor<CHIP>(dest, VK_DESCRIPTOR_TYPE_INPUT_ATTACHMENT,
                              pDescriptorInfo->data.pInputAttachmentImage);
       break;
    default:
@@ -1412,7 +1439,7 @@ tu_update_descriptor_sets(const struct tu_device *device,
                write_image_descriptor_a810<CHIP>(ptr, writeset->descriptorType,
                                                 writeset->pImageInfo + j, device);
             } else {
-               write_image_descriptor(ptr, writeset->descriptorType,
+               write_image_descriptor<CHIP>(ptr, writeset->descriptorType,
                                     writeset->pImageInfo + j);
             }
             /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
@@ -1426,7 +1453,7 @@ tu_update_descriptor_sets(const struct tu_device *device,
                                                     !binding_layout->immutable_samplers_offset,
                                                     device);
             } else {
-               write_combined_image_sampler_descriptor(ptr,
+               write_combined_image_sampler_descriptor<CHIP>(ptr,
                                                     writeset->descriptorType,
                                                     writeset->pImageInfo + j,
                                                     !binding_layout->immutable_samplers_offset);
@@ -1786,7 +1813,7 @@ tu_update_descriptor_set_with_template(
                                                 (const VkDescriptorImageInfo *) src,
                                                 device);
             } else {
-               write_image_descriptor(ptr, templ->entry[i].descriptor_type,
+               write_image_descriptor<CHIP>(ptr, templ->entry[i].descriptor_type,
                                     (const VkDescriptorImageInfo *) src);
             }
             /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
@@ -1801,7 +1828,7 @@ tu_update_descriptor_set_with_template(
                                                     templ->entry[i].has_sampler,
                                                     device);
             } else {
-               write_combined_image_sampler_descriptor(ptr,
+               write_combined_image_sampler_descriptor<CHIP>(ptr,
                                                     templ->entry[i].descriptor_type,
                                                     (const VkDescriptorImageInfo *) src,
                                                     templ->entry[i].has_sampler);
