@@ -1,4 +1,4 @@
-   /*
+/*
  * Copyright © 2016 Red Hat
  * SPDX-License-Identifier: MIT
  *

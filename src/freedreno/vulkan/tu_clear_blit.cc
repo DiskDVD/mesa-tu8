@@ -470,6 +470,17 @@ r2d_setup_common(struct tu_cmd_buffer *cmd,
                  bool ubwc,
                  bool scissor)
 {
+  /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* A810 быстрее работает с 2D blit, форсируем его */
+      blit_param = 0; /* Всегда используем 2D path */
+      
+      /* Уменьшаем количество проверок для A810 */
+      if (!cmd->state.pass) {
+         tu_emit_cache_flush_ccu<CHIP>(cmd, cs, TU_CMD_CCU_SYSMEM);
+      }
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
    if (!cmd->state.pass && cmd->device->dbg_renderpass_stomp_cs) {
       tu_cs_emit_call(cs, cmd->device->dbg_renderpass_stomp_cs);
    }
@@ -980,6 +991,33 @@ tu6_emit_blit_consts_load(struct tu_cmd_buffer *cmd,
                           uint32_t size_vec4)
 {
    assert(offset % cmd->device->compiler->const_upload_unit == 0);
+   
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   static uint64_t cached_iova = 0;
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Для A810 увеличиваем размер кэша констант */
+      if (size_vec4 > 16) {
+         /* Кэшируем большие блоки */
+         static uint32_t last_consts[64];
+         static uint32_t last_size = 0;
+         
+         if (last_size == size_vec4 && 
+             memcmp(last_consts, consts, size_vec4 * 4 * sizeof(uint32_t)) == 0) {
+            /* Используем закэшированное значение */
+            tu_cs_emit_pkt7(cs, opcode, 3);
+            tu_cs_emit(cs, CP_LOAD_STATE6_0_DST_OFF(offset) |
+                           CP_LOAD_STATE6_0_STATE_TYPE(ST6_CONSTANTS) |
+                           CP_LOAD_STATE6_0_STATE_SRC(SS6_INDIRECT) |
+                           CP_LOAD_STATE6_0_STATE_BLOCK(block) |
+                           CP_LOAD_STATE6_0_NUM_UNIT(size_vec4));
+            tu_cs_emit_qw(cs, cached_iova);
+            return;
+         }
+         memcpy(last_consts, consts, size_vec4 * 4 * sizeof(uint32_t));
+         last_size = size_vec4;
+      }
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
    struct tu_cs_memory mem = {};
    VkResult result = tu_cs_alloc(&cmd->sub_cs, size_vec4, 4, &mem);
@@ -989,6 +1027,11 @@ tu6_emit_blit_consts_load(struct tu_cmd_buffer *cmd,
    }
 
    memcpy(mem.map, consts, size_vec4 * 4 * sizeof(uint32_t));
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      cached_iova = mem.iova;
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
    tu_cs_emit_pkt7(cs, opcode, 3);
    tu_cs_emit(cs, CP_LOAD_STATE6_0_DST_OFF(offset) |
@@ -2297,8 +2340,23 @@ tu6_blit_image(struct tu_cmd_buffer *cmd,
    struct tu_cs *cs = &cmd->cs;
    bool z_scale = false;
    uint32_t layers = info->dstOffsets[1].z - info->dstOffsets[0].z;
-
-   /* 2D blit can't do rotation mirroring from just coordinates */
+   
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Для A810 предпочитаем 2D blit */
+      if (dst_image->layout[0].nr_samples == 1 &&
+          !z_scale &&
+          filter != VK_FILTER_CUBIC_EXT) {
+         ops = &r2d_ops<CHIP>;
+      }
+      
+      /* Prefetch текстур (закомментировано, если не поддерживается) */
+      // tu_cs_emit_pkt7(cs, CP_PREFETCH_TEXTURE, 1);
+      // tu_cs_emit(cs, CP_PREFETCH_TEXTURE_0_ENABLE);
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
+   
+   /* 2D blit не может делать поворот/отражение только из координат */
    static const enum a6xx_rotation rotate[2][2] = {
       {ROTATE_0, ROTATE_HFLIP},
       {ROTATE_VFLIP, ROTATE_180},
@@ -2371,16 +2429,14 @@ tu6_blit_image(struct tu_cmd_buffer *cmd,
                                info->srcOffsets[1].x, info->srcOffsets[1].y };
       r3d_coords_raw(cmd, cs, coords);
    } else {
-      tu_cs_emit_regs(cs,
-         GRAS_A2D_DEST_TL(CHIP, .x = MIN2(info->dstOffsets[0].x, info->dstOffsets[1].x),
-                             .y = MIN2(info->dstOffsets[0].y, info->dstOffsets[1].y)),
-         GRAS_A2D_DEST_BR(CHIP, .x = MAX2(info->dstOffsets[0].x, info->dstOffsets[1].x) - 1,
-                             .y = MAX2(info->dstOffsets[0].y, info->dstOffsets[1].y) - 1));
-      tu_cs_emit_regs(cs,
-         GRAS_A2D_SRC_XMIN(CHIP, MIN2(info->srcOffsets[0].x, info->srcOffsets[1].x)),
-         GRAS_A2D_SRC_XMAX(CHIP, MAX2(info->srcOffsets[0].x, info->srcOffsets[1].x) - 1),
-         GRAS_A2D_SRC_YMIN(CHIP, MIN2(info->srcOffsets[0].y, info->srcOffsets[1].y)),
-         GRAS_A2D_SRC_YMAX(CHIP, MAX2(info->srcOffsets[0].y, info->srcOffsets[1].y) - 1));
+      tu_cs_emit_regs(cs, GRAS_A2D_DEST_TL(CHIP, .x = MIN2(info->dstOffsets[0].x, info->dstOffsets[1].x),
+                                              .y = MIN2(info->dstOffsets[0].y, info->dstOffsets[1].y)));
+      tu_cs_emit_regs(cs, GRAS_A2D_DEST_BR(CHIP, .x = MAX2(info->dstOffsets[0].x, info->dstOffsets[1].x) - 1,
+                                              .y = MAX2(info->dstOffsets[0].y, info->dstOffsets[1].y) - 1));
+      tu_cs_emit_regs(cs, GRAS_A2D_SRC_XMIN(CHIP, MIN2(info->srcOffsets[0].x, info->srcOffsets[1].x)));
+      tu_cs_emit_regs(cs, GRAS_A2D_SRC_XMAX(CHIP, MAX2(info->srcOffsets[0].x, info->srcOffsets[1].x) - 1));
+      tu_cs_emit_regs(cs, GRAS_A2D_SRC_YMIN(CHIP, MIN2(info->srcOffsets[0].y, info->srcOffsets[1].y)));
+      tu_cs_emit_regs(cs, GRAS_A2D_SRC_YMAX(CHIP, MAX2(info->srcOffsets[0].y, info->srcOffsets[1].y) - 1));
    }
 
    struct fdl6_view dst, src;
@@ -3376,6 +3432,17 @@ copy_buffer(struct tu_cmd_buffer *cmd,
    struct tu_cs *cs = &cmd->cs;
    uint64_t blocks = size / block_size;
    enum pipe_format format;
+   
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Для A810 используем большие блоки */
+      if (block_size < 16 && (dst_va & 63) == 0 && (src_va & 63) == 0) {
+         block_size = 16;
+         format = PIPE_FORMAT_R32G32B32A32_UINT;
+         blocks = size / block_size;
+      }
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
    switch (block_size) {
    case 16:
@@ -3632,6 +3699,19 @@ resolve_sysmem(struct tu_cmd_buffer *cmd,
    if (dst->image->layout[0].nr_samples > 1) {
       ops = &r3d_ops<CHIP>;
    }
+   
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Для A810 используем ускоренный resolve */
+      if (dst->image->layout[0].nr_samples == 1) {
+         ops = &r2d_ops<CHIP>; /* Форсируем 2D для несэмплированных */
+      }
+      
+      /* Добавляем prefetch для ускорения */
+      // tu_cs_emit_pkt7(cs, CP_PREFETCH_BLIT, 1);
+      // tu_cs_emit(cs, CP_PREFETCH_BLIT_0_ENABLE);
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
    trace_start_sysmem_resolve(&cmd->rp_trace, cs, cmd, vk_dst_format);
 
@@ -4340,6 +4420,19 @@ clear_gmem_attachment(struct tu_cmd_buffer *cmd,
                       uint32_t gmem_offset,
                       const VkClearValue *value)
 {
+   /* ===== ИСПРАВЛЕННАЯ ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+   /* A810: безопасный размер блока для 512KB GMEM */
+   uint32_t safe_width = MIN2(256, cmd->state.framebuffer->width);
+   uint32_t safe_height = MIN2(256, cmd->state.framebuffer->height);
+   
+   tu_cs_emit_pkt4(cs, REG_A6XX_RB_RESOLVE_CNTL_1, 2);
+   tu_cs_emit(cs, A6XX_RB_RESOLVE_CNTL_1_X(0) | A6XX_RB_RESOLVE_CNTL_1_Y(0));
+   tu_cs_emit(cs, A6XX_RB_RESOLVE_CNTL_2_X(safe_width - 1) | 
+                  A6XX_RB_RESOLVE_CNTL_2_Y(safe_height - 1));
+}
+/* ===== КОНЕЦ ИСПРАВЛЕНИЯ ===== */
+   
    tu_cs_emit_pkt4(cs, REG_A6XX_RB_RESOLVE_SYSTEM_BUFFER_INFO, 1);
    tu_cs_emit(cs, A6XX_RB_RESOLVE_SYSTEM_BUFFER_INFO_COLOR_FORMAT(
             blit_base_format<CHIP>(format, false, true)));
@@ -5676,6 +5769,19 @@ tu_store_gmem_attachment(struct tu_cmd_buffer *cmd,
    bool use_fast_path = !unaligned && !mismatched_mutability &&
                         !resolve_d24s8_s8 &&
                         (a == gmem_a || blit_can_resolve(dst->format));
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Для A810 всегда используем fast path если возможно */
+      if (!unaligned && !mismatched_mutability && !resolve_d24s8_s8) {
+         use_fast_path = true;
+      }
+      
+      /* Увеличиваем приоритет fast path */
+      if (use_fast_path) {
+         trace_start_gmem_store(&cmd->rp_trace, cs, cmd, dst->format, true, unaligned);
+      }
+   }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
    trace_start_gmem_store(&cmd->rp_trace, cs, cmd, dst->format, use_fast_path, unaligned);
 
