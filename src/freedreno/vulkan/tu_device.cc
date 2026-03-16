@@ -938,6 +938,18 @@ tu_get_physical_device_properties_1_2(struct tu_physical_device *pdevice,
          .patch = 1,
       };
    }
+      /* ===== ИСПРАВЛЕНИЕ ДЛЯ ADRENO A810 ===== */
+   /* Убираем подмену driverID, которая вызывает артефакты */
+   if (TU_DEBUG(DECK_EMU) && pdevice->dev_id.gpu_id == 810) {
+      /* Для A810 оставляем driverID как TURNIP */
+      mesa_logi("A810: DECK_EMU mode active - keeping TURNIP driver");
+   } else if (TU_DEBUG(DECK_EMU)) {
+      /* Для других GPU оставляем старую логику */
+      p->driverID = VK_DRIVER_ID_MESA_RADV;
+      memset(p->driverName, 0, sizeof(p->driverName));
+      snprintf(p->driverName, VK_MAX_DRIVER_NAME_SIZE, "radv");
+   }
+   /* ======================================= */
 
    if (TU_DEBUG(DECK_EMU)) {
       p->driverID = VK_DRIVER_ID_MESA_RADV;
