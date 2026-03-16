@@ -15,9 +15,9 @@
 inline uint32_t
 tu_sanitize_ib_size(uint32_t size)
 {
-   /* A810 может обрабатывать большие буферы */
-   /* 0x1fffff = ~2M двойных слов = 8MB */
-   return MIN2(size, 0x1fffff);
+   /* A810 может обрабатывать большие буферы, но не слишком большие */
+   /* 0x100000 = 1MB двойных слов = 4MB */
+   return MIN2(size, 0x100000);
 }
 
 /**
@@ -167,17 +167,24 @@ tu_cs_add_bo(struct tu_cs *cs, uint32_t size)
    struct tu_bo *new_bo;
 
    /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
-   /* A810: увеличиваем выравнивание для больших буферов */
-   if (cs->device->physical_device->dev_id.gpu_id == 810) {
-      /* Для больших буферов просим выравнивание по 64KB */
+   /* A810: оптимизированное выравнивание для уменьшения фрагментации */
+   bool is_a810 = cs->device->physical_device->dev_id.gpu_id == 810;
+   if (is_a810) {
+      /* Для A810 используем выравнивание по степени двойки */
       if (size > 4096) {
-         size = align(size, 64 * 1024 / sizeof(uint32_t));
+         /* Выравниваем до ближайшей степени двойки */
+         uint32_t align_to = 32 * 1024 / sizeof(uint32_t); /* 32KB */
+         size = ALIGN_POT(size, align_to);
       }
       
-      /* Для очень больших буферов используем 1MB выравнивание */
+      /* Для очень больших буферов используем 256KB выравнивание */
       if (size > 256 * 1024) {
-         size = align(size, 1024 * 1024 / sizeof(uint32_t));
+         uint32_t align_to = 256 * 1024 / sizeof(uint32_t); /* 256KB */
+         size = ALIGN_POT(size, align_to);
       }
+      
+      /* Ограничиваем максимальный размер для A810 */
+      size = MIN2(size, 512 * 1024); /* 512KB максимум */
    }
    /* ========== КОНЕЦ ОПТИМИЗАЦИИ ========== */
 
@@ -500,24 +507,30 @@ tu_cs_reserve_space(struct tu_cs *cs, uint32_t reserved_size)
       new_size = tu_sanitize_ib_size(new_size << 1);
 
       /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
-      /* A810: более агрессивный рост для больших батчей */
-      if (cs->device->physical_device->dev_id.gpu_id == 810) {
-         /* Для A810 растем быстрее, но не слишком */
+      bool is_a810 = cs->device->physical_device->dev_id.gpu_id == 810;
+      if (is_a810) {
+         /* A810: плавный рост для уменьшения фрагментации */
+         uint32_t old_size = new_size;
+         
          if (new_size < 64 * 1024) {
-            /* Маленькие буферы: рост x4 */
-            new_size = tu_sanitize_ib_size(new_size << 2);
+            /* Маленькие буферы: рост x2.5 (было x4) */
+            new_size = tu_sanitize_ib_size((new_size * 5) / 2);
          } else if (new_size < 256 * 1024) {
-            /* Средние буферы: рост x3 */
-            new_size = tu_sanitize_ib_size(new_size * 3);
-         } else {
-            /* Большие буферы: рост x2 как обычно */
+            /* Средние буферы: рост x2 (было x3) */
             new_size = tu_sanitize_ib_size(new_size << 1);
+         } else {
+            /* Большие буферы: рост x1.5 (было x2) */
+            new_size = tu_sanitize_ib_size((new_size * 3) / 2);
          }
          
          /* Ограничиваем максимальный размер для A810 */
-         new_size = MIN2(new_size, 1024 * 1024); /* 1MB максимум */
+         new_size = MIN2(new_size, 512 * 1024); /* 512KB максимум */
+         
+         if (old_size != new_size) {
+            mesa_logi("A810: BO growth: %u -> %u", old_size, new_size);
+         }
       } else {
-         /* Другие GPU: обычный рост */
+         /* Другие GPU: обычный рост x2 */
          new_size = tu_sanitize_ib_size(new_size << 1);
       }
       /* ========== КОНЕЦ ОПТИМИЗАЦИИ ========== */
