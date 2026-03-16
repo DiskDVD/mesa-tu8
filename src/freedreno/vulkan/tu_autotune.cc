@@ -56,11 +56,34 @@ tu_autotune_free_results_locked(struct tu_device *dev, struct list_head *results
 /* How many last renderpass stats are taken into account. */
 #define MAX_HISTORY_RESULTS 5
 /* Для A810 храним больше истории для точности */
-#define A810_MAX_HISTORY_RESULTS 10
+#define A810_MAX_HISTORY_RESULTS 12
 /* For how many submissions we store renderpass stats. */
 #define MAX_HISTORY_LIFETIME 128
 /* Для A810 дольше храним историю */
 #define A810_MAX_HISTORY_LIFETIME 256
+
+/* Пороги для A810 с учетом 512KB GMEM и тайлов 192x192 */
+#define A810_LOW_DRAW_CALL_THRESHOLD 8     /* GMEM выгоден при малом числе дравов */
+#define A810_MEDIUM_DRAW_CALL_THRESHOLD 16  /* Средняя нагрузка */
+#define A810_HIGH_DRAW_CALL_THRESHOLD 25    /* Высокая нагрузка - осторожно с GMEM */
+
+/* Реалистичные разрешения для мобильного устройства (360p - 720p) */
+#define A810_RES_360P_WIDTH 480
+#define A810_RES_360P_HEIGHT 360
+#define A810_RES_480P_WIDTH 854
+#define A810_RES_480P_HEIGHT 480
+#define A810_RES_540P_WIDTH 960
+#define A810_RES_540P_HEIGHT 540
+#define A810_RES_600P_WIDTH 1024
+#define A810_RES_600P_HEIGHT 600
+#define A810_RES_720P_WIDTH 1280
+#define A810_RES_720P_HEIGHT 720
+
+/* Максимальное безопасное разрешение для GMEM на A810 с тайлами 192x192 */
+/* 720p (1280x720) = 7x4 = 28 тайлов * 192*192*4*4 ≈ 16.5MB - ЭТО МНОГО!
+ * Реально GMEM всего 512KB, поэтому даже 360p может быть тяжело.
+ * Эти константы используются для относительного сравнения.
+ */
 
 
 /**
@@ -522,21 +545,55 @@ fallback_use_bypass(const struct tu_render_pass *pass,
                     const struct tu_framebuffer *framebuffer,
                     const struct tu_cmd_buffer *cmd_buffer)
 {
-   /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 */
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
    if (cmd_buffer->device->physical_device->dev_id.gpu_id == 810) {
-      /* A810: даже при 10 драв-коллах GMEM может быть быстрее */
-      if (cmd_buffer->state.rp.drawcall_count > 10)
-         return false;
-   } else {
-      /* Стандартное поведение */
-      if (cmd_buffer->state.rp.drawcall_count > 5)
-         return false;
+      /* A810: GMEM предпочтительнее при малом числе дравов */
+      if (cmd_buffer->state.rp.drawcall_count <= A810_LOW_DRAW_CALL_THRESHOLD)
+         return false; /* Используем GMEM */
+      
+      /* При среднем числе дравов - GMEM все еще хорош, но с оглядкой на разрешение */
+      if (cmd_buffer->state.rp.drawcall_count <= A810_MEDIUM_DRAW_CALL_THRESHOLD) {
+         /* Учитываем разрешение - для 720p уже осторожнее */
+         uint32_t width = cmd_buffer->state.render_areas[0].extent.width;
+         uint32_t height = cmd_buffer->state.render_areas[0].extent.height;
+         uint32_t pixels = width * height;
+         
+         /* 360p (480x360 ≈ 172k пикселей) - GMEM отлично */
+         if (pixels <= A810_RES_360P_WIDTH * A810_RES_360P_HEIGHT)
+            return false;
+         
+         /* 480p (854x480 ≈ 410k пикселей) - GMEM еще нормально */
+         if (pixels <= A810_RES_480P_WIDTH * A810_RES_480P_HEIGHT)
+            return false;
+         
+         /* 540p (960x540 ≈ 518k пикселей) - GMEM уже на пределе */
+         if (pixels <= A810_RES_540P_WIDTH * A810_RES_540P_HEIGHT) {
+            /* Если глубина сцены небольшая - GMEM */
+            if (cmd_buffer->state.rp.drawcall_bandwidth_per_sample_sum < 800)
+               return false;
+            else
+               return true; /* Иначе sysmem */
+         }
+         
+         /* 600p+ (1024x600 ≈ 614k пикселей) - лучше sysmem */
+         return true;
+      }
+      
+      /* При высоком числе дравов - sysmem почти всегда */
+      if (cmd_buffer->state.rp.drawcall_count > A810_HIGH_DRAW_CALL_THRESHOLD)
+         return true;
    }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
+   /* Стандартная логика для всех GPU */
    for (unsigned i = 0; i < pass->subpass_count; i++) {
       if (pass->subpasses[i].samples != VK_SAMPLE_COUNT_1_BIT)
          return false;
    }
+
+   /* Обычное поведение для остальных */
+   if (cmd_buffer->state.rp.drawcall_count > 5)
+      return false;
 
    return true;
 }
@@ -580,11 +637,40 @@ tu_autotune_use_bypass(struct tu_autotune *at,
    const struct tu_render_pass *pass = cmd_buffer->state.pass;
    const struct tu_framebuffer *framebuffer = cmd_buffer->state.framebuffer;
 
-   /* Если A810 - форсируем GMEM для сложных сцен */
-   if (cmd_buffer->device->physical_device->dev_id.gpu_id == 810 &&
-       cmd_buffer->state.rp.drawcall_count > 20) {
-      return false; /* Используем GMEM */
+   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
+   /* Форсируем GMEM для простых сцен, но следим за переполнением */
+   if (cmd_buffer->device->physical_device->dev_id.gpu_id == 810) {
+      /* Получаем размер рендер-области */
+      uint32_t width = cmd_buffer->state.render_areas[0].extent.width;
+      uint32_t height = cmd_buffer->state.render_areas[0].extent.height;
+      uint32_t pixels = width * height;
+      
+      /* Оцениваем, поместится ли сцена в 512KB GMEM с тайлами 192x192 */
+      uint32_t tiles_x = (width + 191) / 192; /* округление вверх */
+      uint32_t tiles_y = (height + 191) / 192;
+      uint32_t total_tiles = tiles_x * tiles_y;
+      
+      /* Каждый тайл требует памяти для всех аттачментов */
+      /* Примерно: тайл 192x192, 4 байта на пиксель, 4 аттачмента */
+      uint32_t gmem_needed = total_tiles * 192 * 192 * 4 * pass->attachment_count;
+      
+      /* Если GMEM явно не хватает (меньше 10% запаса) - форсируем sysmem */
+      if (gmem_needed > 480 * 1024) { /* 480KB с запасом 32KB */
+         if (cmd_buffer->state.rp.drawcall_count > 3)
+            return true; /* sysmem */
+      }
+      
+      /* Для 720p и выше - почти всегда sysmem, если не очень мало дравов */
+      if (pixels > A810_RES_720P_WIDTH * A810_RES_720P_HEIGHT) {
+         if (cmd_buffer->state.rp.drawcall_count > 2)
+            return true;
+      }
+      
+      /* Для очень большого числа дравов - sysmem */
+      if (cmd_buffer->state.rp.drawcall_count > 30)
+         return true;
    }
+   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
    /* If a feedback loop in the subpass caused one of the pipelines used to set
     * SINGLE_PRIM_MODE(FLUSH_PER_OVERLAP_AND_OVERWRITE) or even
@@ -642,16 +728,67 @@ tu_autotune_use_bypass(struct tu_autotune *at,
       const uint64_t total_draw_call_bandwidth =
          estimate_drawcall_bandwidth(cmd_buffer, avg_samples);
 
-      /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 - пересчет весов */
+      /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
       if (cmd_buffer->device->physical_device->dev_id.gpu_id == 810) {
-         /* A810: GMEM эффективнее, увеличиваем вес GMEM */
-         sysmem_bandwidth = sysmem_bandwidth * 12 / 10;
-         gmem_bandwidth = gmem_bandwidth * 9 / 10;
+         /* A810: GMEM эффективнее, но только при небольших разрешениях */
+         uint32_t width = cmd_buffer->state.render_areas[0].extent.width;
+         uint32_t height = cmd_buffer->state.render_areas[0].extent.height;
+         uint32_t pixels = width * height;
+         
+         /* Базовые веса - осторожные */
+         float gmem_bonus = 0.9f;    /* -10% для GMEM */
+         float sysmem_penalty = 1.1f; /* +10% для sysmem */
+         
+         /* Корректировка на основе разрешения */
+         if (pixels <= A810_RES_360P_WIDTH * A810_RES_360P_HEIGHT) {
+            /* 360p и ниже - GMEM очень эффективен */
+            gmem_bonus = 0.75f;      /* -25% */
+            sysmem_penalty = 1.25f;  /* +25% */
+         } else if (pixels <= A810_RES_480P_WIDTH * A810_RES_480P_HEIGHT) {
+            /* 480p - GMEM все еще хорош */
+            gmem_bonus = 0.8f;       /* -20% */
+            sysmem_penalty = 1.2f;   /* +20% */
+         } else if (pixels <= A810_RES_540P_WIDTH * A810_RES_540P_HEIGHT) {
+            /* 540p - GMEM еще работает */
+            gmem_bonus = 0.85f;       /* -15% */
+            sysmem_penalty = 1.15f;   /* +15% */
+         } else if (pixels <= A810_RES_600P_WIDTH * A810_RES_600P_HEIGHT) {
+            /* 600p - GMEM уже на пределе */
+            gmem_bonus = 0.95f;       /* -5% */
+            sysmem_penalty = 1.05f;   /* +5% */
+         } else {
+            /* 720p и выше - GMEM невыгоден */
+            gmem_bonus = 1.1f;        /* +10% штраф GMEM */
+            sysmem_penalty = 0.95f;   /* -5% бонус sysmem */
+         }
+         
+         /* Корректировка на основе числа драв-коллов */
+         if (cmd_buffer->state.rp.drawcall_count > A810_MEDIUM_DRAW_CALL_THRESHOLD) {
+            /* Много дравов - GMEM чуть менее эффективен */
+            gmem_bonus *= 1.05f;
+            if (gmem_bonus > 1.0f) gmem_bonus = 1.0f;
+         }
+         
+         /* Применяем веса */
+         sysmem_bandwidth = sysmem_bandwidth * sysmem_penalty;
+         gmem_bandwidth = gmem_bandwidth * gmem_bonus;
+         
+         /* Добавляем drawcall bandwidth с учетом особенностей A810 */
+         sysmem_bandwidth += total_draw_call_bandwidth;
+         gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
+         
+         if (TU_AUTOTUNE_DEBUG_LOG) {
+            mesa_logi("A810: %ux%u (%u pixels), tiles=%ux%u, gmem_needed=%uKB",
+                     width, height, pixels,
+                     tiles_x, tiles_y,
+                     gmem_needed / 1024);
+         }
       } else {
-         /* Стандартные значения для других GPU */
+         /* ===== СТАНДАРТНАЯ ЛОГИКА ДЛЯ ДРУГИХ GPU ===== */
          sysmem_bandwidth += total_draw_call_bandwidth;
          gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
       }
+      /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
 
       const bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;
       if (TU_AUTOTUNE_DEBUG_LOG) {
