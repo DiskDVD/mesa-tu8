@@ -5626,6 +5626,7 @@ fdm_apply_store_coords(struct tu_cmd_buffer *cmd,
                       GRAS_A2D_SRC_YMAX(CHIP, common_bin_offset.y + scaled_height - 1));
    }
 }
+
 template <chip CHIP>
 void
 tu_store_gmem_attachment(struct tu_cmd_buffer *cmd,
@@ -5676,20 +5677,6 @@ tu_store_gmem_attachment(struct tu_cmd_buffer *cmd,
                         !resolve_d24s8_s8 &&
                         (a == gmem_a || blit_can_resolve(dst->format));
 
-   /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
-   bool is_a810 = cmd->device->physical_device->dev_id.gpu_id == 810;
-   if (is_a810 && use_fast_path) {
-      /* Для A810 используем оптимизированный путь даже для unaligned случаев,
-       * но с правильным выравниванием
-       */
-      if (unaligned) {
-         /* Принудительно выравниваем на границы 32x16 */
-         unaligned = false;
-         use_fast_path = true;
-      }
-   }
-   /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
-
    trace_start_gmem_store(&cmd->rp_trace, cs, cmd, dst->format, use_fast_path, unaligned);
 
    /* Unconditional store should happen only if attachment was cleared,
@@ -5702,37 +5689,12 @@ tu_store_gmem_attachment(struct tu_cmd_buffer *cmd,
 
    /* use fast path when render area is aligned, except for unsupported resolve cases */
    if (use_fast_path) {
-      /* ===== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ===== */
-      if (is_a810) {
-         /* Для A810 используем оптимизированные параметры resolve */
-         if (store_common) {
-            /* Устанавливаем оптимальный scissor для A810 */
-            tu6_emit_blit_scissor(cmd, cs, 0, true);
-            
-            /* Включаем burst режим для ускорения */
-            tu_cs_emit_pkt7(cs, CP_SET_MODE, 1);
-            tu_cs_emit(cs, 0x0); /* Отключаем write-combine для стабильности */
-            
-            tu_emit_blit<CHIP>(cmd, cs, resolve_group, dst_iview, src, clear_value,
-                              BLIT_EVENT_STORE, per_layer_render_area, true, false);
-         }
-         if (store_separate_stencil) {
-            tu_emit_blit<CHIP>(cmd, cs, resolve_group, dst_iview, src, clear_value,
-                              BLIT_EVENT_STORE, per_layer_render_area, true, true);
-         }
-         
-         /* Инвалидируем кэш после записи */
-         tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
-      } else {
-         /* Стандартный код для других GPU */
-         if (store_common)
-            tu_emit_blit<CHIP>(cmd, cs, resolve_group, dst_iview, src, clear_value,
-                              BLIT_EVENT_STORE, per_layer_render_area, true, false);
-         if (store_separate_stencil)
-            tu_emit_blit<CHIP>(cmd, cs, resolve_group, dst_iview, src, clear_value,
-                              BLIT_EVENT_STORE, per_layer_render_area, true, true);
-      }
-      /* ===== КОНЕЦ ОПТИМИЗАЦИИ ===== */
+      if (store_common)
+         tu_emit_blit<CHIP>(cmd, cs, resolve_group, dst_iview, src, clear_value,
+                            BLIT_EVENT_STORE, per_layer_render_area, true, false);
+      if (store_separate_stencil)
+         tu_emit_blit<CHIP>(cmd, cs, resolve_group, dst_iview, src, clear_value,
+                            BLIT_EVENT_STORE, per_layer_render_area, true, true);
 
       if (cond_exec) {
          tu_end_load_store_cond_exec(cmd, cs, false);
