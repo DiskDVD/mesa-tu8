@@ -7291,12 +7291,17 @@ tu_subpass_barrier(cmd, &pass->subpasses[0].start_barrier, true);
    cmd->state.renderpass_cache.flush_bits = 0;
    
 tu_choose_gmem_layout(cmd);
+   /* ===== A810: КОРРЕКТИРОВКА TILE SIZE ===== */
 if (cmd->device->physical_device->dev_id.gpu_id == 810) {
     /* A810: tile size должен быть кратен 32x16 */
-    struct tu_tiling_config *tiling = cmd->state.tiling;  // <-- ДОБАВИТЬ!
-    tiling->tile0.width = ALIGN_POT(tiling->tile0.width, 32);
-    tiling->tile0.height = ALIGN_POT(tiling->tile0.height, 16);
+    struct tu_tiling_config *tiling = (struct tu_tiling_config *)cmd->state.tiling;
+    if (tiling) {
+        tiling->tile0.width = ALIGN_POT(tiling->tile0.width, 32);
+        tiling->tile0.height = ALIGN_POT(tiling->tile0.height, 16);
+    }
 }
+/* ===== КОНЕЦ ===== */
+   
    if (pass->subpasses[0].feedback_invalidate) {
       cmd->state.renderpass_cache.flush_bits |=
          TU_CMD_FLAG_CACHE_INVALIDATE | TU_CMD_FLAG_BLIT_CACHE_CLEAN |
