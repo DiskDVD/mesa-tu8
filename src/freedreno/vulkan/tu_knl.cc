@@ -311,44 +311,7 @@ tu_queue_submit(struct tu_queue *queue, void *submit,
 }
 
 /**
- * Enumeration entrypoint specific to non-drm devices (ie. kgsl)
- */
-VkResult
-tu_enumerate_devices(struct vk_instance *vk_instance)
-{
-#ifdef TU_HAS_KGSL
-   struct tu_instance *instance =
-      container_of(vk_instance, struct tu_instance, vk);
-
-   static const char path[] = "/dev/kgsl-3d0";
-   int fd;
-
-   fd = open(path, O_RDWR | O_CLOEXEC);
-   if (fd < 0) {
-      if (errno == ENOENT)
-         return VK_ERROR_INCOMPATIBLE_DRIVER;
-
-      return vk_errorf(instance, VK_ERROR_INITIALIZATION_FAILED,
-                       "failed to open device %s", path);
-   }
-
-   VkResult result = tu_knl_kgsl_load(instance, fd);
-   if (result != VK_SUCCESS) {
-      close(fd);
-      return result;
-   }
-
-   if (TU_DEBUG(STARTUP))
-      mesa_logi("Found compatible device '%s'.", path);
-
-   return result;
-#else
-   return VK_ERROR_INCOMPATIBLE_DRIVER;
-#endif
-}
-
-/**
- * Enumeration entrypoint for drm devices
+ * Enumeration entrypoint for drm devices (MSM) - теперь с высшим приоритетом
  */
 VkResult
 tu_physical_device_try_create(struct vk_instance *vk_instance,
@@ -388,15 +351,12 @@ tu_physical_device_try_create(struct vk_instance *vk_instance,
 
    VkResult result = VK_ERROR_INCOMPATIBLE_DRIVER;
 
-#ifdef TU_HAS_VIRTIO
-   if (debug_get_bool_option("FD_FORCE_VTEST", false)) {
-      result = tu_knl_drm_virtio_load(instance, -1, version, &device);
-      path = "";
-   } else
-#endif
+   /* ===== ИСПРАВЛЕНО: СНАЧАЛА ПРОВЕРЯЕМ MSM ===== */
    if (strcmp(version->name, "msm") == 0) {
 #ifdef TU_HAS_MSM
       result = tu_knl_drm_msm_load(instance, fd, version, &device);
+      if (TU_DEBUG(STARTUP) && result == VK_SUCCESS)
+         mesa_logi("Using MSM DRM driver for device %s", path);
 #endif
    } else if (strcmp(version->name, "virtio_gpu") == 0) {
 #ifdef TU_HAS_VIRTIO
@@ -406,6 +366,34 @@ tu_physical_device_try_create(struct vk_instance *vk_instance,
       result = vk_startup_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
                                  "device %s (%s) is not compatible with turnip",
                                  path, version->name);
+   }
+
+   /* ===== KGSL ТОЛЬКО КАК ЗАПАСНОЙ ВАРИАНТ ===== */
+   if (result != VK_SUCCESS) {
+#ifdef TU_HAS_KGSL
+      close(fd);
+      /* Пробуем KGSL как запасной вариант */
+      fd = open("/dev/kgsl-3d0", O_RDWR | O_CLOEXEC);
+      if (fd >= 0) {
+         result = tu_knl_kgsl_load(instance, fd);
+         if (result == VK_SUCCESS) {
+            /* Создаем фиктивное устройство для KGSL */
+            device = (struct tu_physical_device *) 
+               vk_zalloc(&instance->vk.alloc, sizeof(*device), 8,
+                        VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+            if (!device) {
+               result = VK_ERROR_OUT_OF_HOST_MEMORY;
+               goto out;
+            }
+            device->fd = fd;
+            device->instance = instance;
+            strncpy(device->fd_path, "/dev/kgsl-3d0", sizeof(device->fd_path) - 1);
+            result = tu_physical_device_init(device, instance);
+            if (TU_DEBUG(STARTUP))
+               mesa_logw("Using KGSL fallback driver - GMEM may have issues!");
+         }
+      }
+#endif
    }
 
    if (result != VK_SUCCESS)
@@ -463,11 +451,18 @@ out:
    if (result != VK_SUCCESS) {
       if (master_fd != -1)
          close(master_fd);
-      close(fd);
+      if (fd >= 0)
+         close(fd);
       vk_free(&instance->vk.alloc, device);
    }
 
-   drmFreeVersion(version);
+   if (version)
+      drmFreeVersion(version);
 
    return result;
 }
+
+/**
+ * Удалена отдельная функция tu_enumerate_devices для KGSL
+ * Теперь всё делается через стандартный DRM путь
+ */
