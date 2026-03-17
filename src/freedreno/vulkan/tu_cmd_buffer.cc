@@ -1606,6 +1606,64 @@ tu_bin_offset(VkOffset2D fdm_offset, const struct tu_tiling_config *tiling)
 
 template <chip CHIP>
 static void
+tu6_emit_bin_size_gmem(struct tu_cmd_buffer *cmd,
+                       struct tu_cs *cs,
+                       enum a6xx_buffers_location buffers_location,
+                       bool disable_lrz)
+{
+   struct tu_physical_device *phys_dev = cmd->device->physical_device;
+   const struct tu_tiling_config *tiling = cmd->state.tiling;
+   bool hw_binning = use_hw_binning(cmd);
+
+   tu6_emit_bin_size<CHIP>(
+      cs, buffers_location == BUFFERS_IN_GMEM ? tiling->tile0.width : 0,
+      buffers_location == BUFFERS_IN_GMEM ? tiling->tile0.height : 0,
+      {
+         .render_mode = RENDERING_PASS,
+         .force_lrz_write_dis = !phys_dev->info->props.has_lrz_feedback,
+         .buffers_location = buffers_location,
+         .lrz_feedback_zmode_mask =
+            phys_dev->info->props.has_lrz_feedback
+               ? (hw_binning ? LRZ_FEEDBACK_EARLY_Z_OR_EARLY_Z_LATE_Z :
+                  LRZ_FEEDBACK_EARLY_Z_LATE_Z)
+               : LRZ_FEEDBACK_NONE,
+         .force_lrz_dis = CHIP >= A7XX && disable_lrz,
+      });
+
+}
+
+/* Set always-identical registers used specifically for GMEM */
+template <chip CHIP>
+static void
+tu7_emit_tile_render_begin_regs(struct tu_cs *cs)
+{
+   tu_cs_emit_regs(cs, RB_BUFFER_CNTL(CHIP, 0x0));
+   tu_cs_emit_regs(cs, RB_CLEAR_TARGET(CHIP, .clear_mode = CLEAR_MODE_GMEM));
+}
+
+/* Set always-identical registers used specifically for sysmem */
+template <chip CHIP>
+static void
+tu7_emit_sysmem_render_begin_regs(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
+{
+   tu_cs_emit_regs(cs, RB_BUFFER_CNTL(CHIP,
+      .z_sysmem = true,
+      .s_sysmem = true,
+      .rt0_sysmem = true,
+      .rt1_sysmem = true,
+      .rt2_sysmem = true,
+      .rt3_sysmem = true,
+      .rt4_sysmem = true,
+      .rt5_sysmem = true,
+      .rt6_sysmem = true,
+      .rt7_sysmem = true,
+   ));
+
+   tu_cs_emit_regs(cs, RB_CLEAR_TARGET(CHIP, .clear_mode = CLEAR_MODE_SYSMEM));
+}
+
+template <chip CHIP>
+static void
 tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
                      struct tu_cs *cs,
                      const struct tu_tile_config *tile,
@@ -1615,11 +1673,6 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
    const struct tu_framebuffer *fb = cmd->state.framebuffer;
    const struct tu_vsc_config *vsc = tu_vsc_config(cmd, tiling);
    bool hw_binning = use_hw_binning(cmd);
-
-   /* ===== A810: СПЕЦИАЛЬНАЯ ОБРАБОТКА ===== */
-   bool is_a810 = cmd->device->physical_device->dev_id.gpu_id == 810;
-   bool is_first_tile = is_a810 && tile->pos.x == 0 && tile->pos.y == 0;
-   /* ===== КОНЕЦ ===== */
 
    tu_set_render_mode<CHIP>(cs, { .mode = RM6_BIN_RENDER_START, .uses_gmem = true });
 
@@ -1653,256 +1706,10 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
       layers <= MAX_HW_SCALED_VIEWS && !cmd->state.rp.shared_viewport &&
       bin_is_scaled;
 
+   /* We cannot support LRZ if we cannot use HW bin scaling and the bin is
+    * scaled (i.e. less than full resolution)
+    */
    bool disable_lrz = bin_is_scaled && !bin_scale_en;
-
-   if (fdm_offsets && (tile->pos.x == 0 || tile->pos.y == 0))
-      disable_lrz = true;
-
-   if (CHIP >= A7XX &&
-       cmd->state.pass->subpasses[cmd->state.pass->subpass_count - 1].custom_resolve) {
-      tu7_emit_tile_render_begin_regs<CHIP>(cs);
-   }
-
-   assert(tile->gmem_extent.width == 1);
-
-   tu6_emit_bin_size_gmem<CHIP>(cmd, cs, BUFFERS_IN_GMEM, disable_lrz);
-
-   tu_cs_emit_regs(cs,
-                   A6XX_VFD_RENDER_MODE(RENDERING_PASS));
-
-   const uint32_t x1 = tiling->tile0.width * tile->pos.x;
-   const uint32_t y1 = tiling->tile0.height * tile->pos.y;
-
-   const uint32_t x2 = MIN2(x1 + tiling->tile0.width, MAX_VIEWPORT_SIZE);
-   const uint32_t y2 =
-      MIN2(y1 + tiling->tile0.height * tile->gmem_extent.height,
-           MAX_VIEWPORT_SIZE);
-
-   /* ===== A810: ПРИНУДИТЕЛЬНАЯ УСТАНОВКА SCISSOR ===== */
-   if (is_first_tile) {
-      tu6_emit_window_scissor<CHIP>(cs, 0, 0, 
-                                    tiling->tile0.width - 1, 
-                                    tiling->tile0.height - 1);
-      tu6_emit_window_offset<CHIP>(cs, 0, 0);
-   } else if (bin_scale_en) {
-      uint32_t width = fb->width + tiling->tile0.width;
-      uint32_t height = fb->height + tiling->tile0.height;
-      tu6_emit_window_scissor<CHIP>(cs, 0, 0, width, height);
-      tu6_emit_window_offset<CHIP>(cs, x1, y1);
-   } else {
-      tu6_emit_window_scissor<CHIP>(cs, x1, y1, x2 - 1, y2 - 1);
-      tu6_emit_window_offset<CHIP>(cs, x1, y1);
-   }
-   /* ===== КОНЕЦ ===== */
-
-   unsigned slot = ffs(tile->slot_mask) - 1;
-
-   if (hw_binning) {
-      bool abs_mask =
-         cmd->device->physical_device->info->props.has_abs_bin_mask;
-      
-      /* ===== A810: ПРИНУДИТЕЛЬНО ВКЛЮЧАЕМ ABS_MASK ===== */
-      if (is_a810) {
-         abs_mask = true;
-      }
-      /* ===== КОНЕЦ ===== */
-      
-      tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
-      tu_cs_emit_pkt7(cs, CP_SET_MODE, 1);
-      tu_cs_emit(cs, 0x0);
-
-      tu_cs_emit_pkt7(cs, CP_SET_BIN_DATA5_OFFSET, abs_mask ? 5 : 4);
-      
-      uint32_t mask_value = tile->slot_mask;
-      /* ===== A810: ДЛЯ ПЕРВОГО ТАЙЛА ПОЛНАЯ МАСКА ===== */
-      if (is_first_tile) {
-         mask_value = 0xFFFFFFFF;
-      }
-      /* ===== КОНЕЦ ===== */
-      
-      tu_cs_emit(cs, vsc->pipe_sizes[tile->pipe] |
-                     CP_SET_BIN_DATA5_0_VSC_N(slot) |
-                     CP_SET_BIN_DATA5_0_VSC_MASK(mask_value >> slot) |
-                     COND(abs_mask, CP_SET_BIN_DATA5_0_ABS_MASK(ABS_MASK)));
-      if (abs_mask)
-         tu_cs_emit(cs, mask_value);
-      tu_cs_emit(cs, tile->pipe * cmd->vsc_draw_strm_pitch);
-      tu_cs_emit(cs, tile->pipe * 4);
-      tu_cs_emit(cs, tile->pipe * cmd->vsc_prim_strm_pitch);
-   }
-
-   if (util_is_power_of_two_nonzero(tile->slot_mask))
-      tu6_emit_cond_for_load_stores<CHIP>(cmd, cs, tile->pipe, slot, hw_binning);
-
-   /* ===== A810: ДЛЯ ПЕРВОГО ТАЙЛА ПРИНУДИТЕЛЬНАЯ ВИДИМОСТЬ ===== */
-   if (is_first_tile) {
-      tu_cs_emit_pkt7(cs, CP_SET_VISIBILITY_OVERRIDE, 1);
-      tu_cs_emit(cs, 0x1);
-   } else {
-      tu_cs_emit_pkt7(cs, CP_SET_VISIBILITY_OVERRIDE, 1);
-      tu_cs_emit(cs, !hw_binning);
-   }
-   /* ===== КОНЕЦ ===== */
-
-   tu_cs_emit_pkt7(cs, CP_SET_MODE, 1);
-   tu_cs_emit(cs, 0x0);
-
-   if (cmd->fdm_bin_patchpoints.size != 0) {
-      VkRect2D bin = {
-         { x1, y1 },
-         {
-            tiling->tile0.width * tile->sysmem_extent.width,
-            tiling->tile0.height * tile->sysmem_extent.height
-         }
-      };
-      VkRect2D bins[views];
-      VkOffset2D frag_offsets[MAX_VIEWS];
-      for (unsigned i = 0; i < views; i++) {
-         frag_offsets[i] = (VkOffset2D) { 0, 0 };
-
-         if (!(tile->visible_views & (1u << i))) {
-            bins[i] = { { 0, 0 }, { 0, 0 } };
-            continue;
-         }
-
-         if (!fdm_offsets || cmd->state.rp.shared_viewport) {
-            bins[i] = bin;
-            continue;
-         }
-
-         VkOffset2D bin_offset = tu_bin_offset(fdm_offsets[i], tiling);
-
-         bins[i].offset.x = MAX2(0, (int32_t)x1 - bin_offset.x);
-         bins[i].offset.y = MAX2(0, (int32_t)y1 - bin_offset.y);
-         bins[i].extent.width =
-            MAX2(MIN2((int32_t)x1 + bin.extent.width - bin_offset.x, MAX_VIEWPORT_SIZE) - bins[i].offset.x, 0);
-         bins[i].extent.height =
-            MAX2(MIN2((int32_t)y1 + bin.extent.height - bin_offset.y, MAX_VIEWPORT_SIZE) - bins[i].offset.y, 0);
-      }
-
-      if (cmd->device->physical_device->info->props.has_hw_bin_scaling) {
-         if (bin_scale_en) {
-            VkExtent2D frag_areas[MAX_HW_SCALED_VIEWS];
-            for (unsigned i = 0; i < MAX_HW_SCALED_VIEWS; i++) {
-               unsigned view = MIN2(i, views - 1);
-
-               if (!(tile->visible_views & (1u << view)) || i >= layers) {
-                  frag_areas[i] = (VkExtent2D) {1, 1};
-                  frag_offsets[i] = (VkOffset2D) { 0, 0 };
-                  continue;
-               }
-
-               frag_areas[i] = tile->frag_areas[view];
-               frag_offsets[i].x = x1 - x1 / tile->frag_areas[view].width;
-               frag_offsets[i].y = y1 - y1 / tile->frag_areas[view].height;
-            }
-
-            with_crb (cs, 26) {
-               crb.add(GRAS_BIN_FOVEAT(CHIP,
-                     .binscaleen = bin_scale_en,
-                     .xscale_0 = (enum a7xx_bin_scale)util_logbase2(frag_areas[0].width),
-                     .yscale_0 = (enum a7xx_bin_scale)util_logbase2(frag_areas[0].height),
-                     .xscale_1 = (enum a7xx_bin_scale)util_logbase2(frag_areas[1].width),
-                     .yscale_1 = (enum a7xx_bin_scale)util_logbase2(frag_areas[1].height),
-                     .xscale_2 = (enum a7xx_bin_scale)util_logbase2(frag_areas[2].width),
-                     .yscale_2 = (enum a7xx_bin_scale)util_logbase2(frag_areas[2].height),
-                     .xscale_3 = (enum a7xx_bin_scale)util_logbase2(frag_areas[3].width),
-                     .yscale_3 = (enum a7xx_bin_scale)util_logbase2(frag_areas[3].height),
-                     .xscale_4 = (enum a7xx_bin_scale)util_logbase2(frag_areas[4].width),
-                     .yscale_4 = (enum a7xx_bin_scale)util_logbase2(frag_areas[4].height),
-                     .xscale_5 = (enum a7xx_bin_scale)util_logbase2(frag_areas[5].width),
-                     .yscale_5 = (enum a7xx_bin_scale)util_logbase2(frag_areas[5].height)))
-                  .add(RB_BIN_FOVEAT(CHIP,
-                     .binscaleen = bin_scale_en));
-
-               if (CHIP >= A8XX) {
-                  for (unsigned i = 0; i < MAX_HW_SCALED_VIEWS; i++) {
-                     crb.add(GRAS_BIN_FOVEAT_XY_OFFSET(CHIP, i,
-                        .xoffset = frag_offsets[i].x,
-                        .yoffset = frag_offsets[i].y,
-                     ));
-                     crb.add(RB_BIN_FOVEAT_XY_OFFSET(CHIP, i,
-                        .xoffset = frag_offsets[i].x,
-                        .yoffset = frag_offsets[i].y,
-                     ));
-                     crb.add(GRAS_BIN_FOVEAT_XY_FDM_OFFSET(CHIP, i,
-                        .xoffset = frag_offsets[i].x,
-                        .yoffset = frag_offsets[i].y,
-                     ));
-                     crb.add(RB_BIN_FOVEAT_XY_FDM_OFFSET(CHIP, i,
-                        .xoffset = frag_offsets[i].x,
-                        .yoffset = frag_offsets[i].y,
-                     ));
-                  }
-               } else {
-                  crb.add(GRAS_BIN_FOVEAT_OFFSET_0(CHIP,
-                           .xoffset_0 = frag_offsets[0].x,
-                           .xoffset_1 = frag_offsets[1].x,
-                           .xoffset_2 = frag_offsets[2].x))
-                     .add(GRAS_BIN_FOVEAT_OFFSET_1(CHIP,
-                           .xoffset_3 = frag_offsets[3].x,
-                           .xoffset_4 = frag_offsets[4].x,
-                           .xoffset_5 = frag_offsets[5].x))
-                     .add(GRAS_BIN_FOVEAT_OFFSET_2(CHIP,
-                           .yoffset_0 = frag_offsets[0].y,
-                           .yoffset_1 = frag_offsets[1].y,
-                           .yoffset_2 = frag_offsets[2].y))
-                     .add(GRAS_BIN_FOVEAT_OFFSET_3(CHIP,
-                           .yoffset_3 = frag_offsets[3].y,
-                           .yoffset_4 = frag_offsets[4].y,
-                           .yoffset_5 = frag_offsets[5].y));
-               }
-            }
-
-         } else {
-            tu_cs_emit_regs(cs, GRAS_BIN_FOVEAT(CHIP));
-            tu_cs_emit_regs(cs, RB_BIN_FOVEAT(CHIP));
-         }
-      }
-
-      util_dynarray_foreach (&cmd->fdm_bin_patchpoints,
-                             struct tu_fdm_bin_patchpoint, patch) {
-         tu_cs_emit_pkt7(cs, CP_MEM_WRITE, 2 + patch->size);
-         tu_cs_emit_qw(cs, patch->iova);
-         patch->apply(cmd, cs, patch->data, (VkOffset2D) { x1, y1 },
-                      frag_offsets, views, tile->frag_areas, bins, false);
-      }
-
-      tu_cs_emit_pkt7(cs, CP_WAIT_MEM_WRITES, 0);
-      if (cmd->device->compiler->info->props.load_shader_consts_via_preamble) {
-         tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
-         tu_cs_emit_wfi(cs);
-      }
-      tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
-   } else if (cmd->device->physical_device->info->props.has_hw_bin_scaling) {
-      tu_cs_emit_regs(cs, GRAS_BIN_FOVEAT(CHIP, 0));
-      tu_cs_emit_regs(cs, RB_BIN_FOVEAT(CHIP, 0));
-   }
-}
-
-template <chip CHIP>
-static void
-tu7_emit_sysmem_render_begin_regs(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
-{
-   tu_cs_emit_regs(cs, RB_BUFFER_CNTL(CHIP,
-      .z_sysmem = true,
-      .s_sysmem = true,
-      .rt0_sysmem = true,
-      .rt1_sysmem = true,
-      .rt2_sysmem = true,
-      .rt3_sysmem = true,
-      .rt4_sysmem = true,
-      .rt5_sysmem = true,
-      .rt6_sysmem = true,
-      .rt7_sysmem = true,
-   ));
-
-   tu_cs_emit_regs(cs, RB_CLEAR_TARGET(CHIP, .clear_mode = CLEAR_MODE_SYSMEM));
-}
-
-template <chip CHIP>
-static void
- = bin_is_scaled && !bin_scale_en;
 
    /* We cannot support LRZ for the first row and column because the offset
     * required wouldn't be aligned to HW requirements.
@@ -2041,6 +1848,97 @@ static void
                   continue;
                }
 
+               frag_areas[i] = tile->frag_areas[view];
+               frag_offsets[i].x = x1 - x1 / tile->frag_areas[view].width;
+               frag_offsets[i].y = y1 - y1 / tile->frag_areas[view].height;
+            }
+
+            with_crb (cs, 26) {
+               crb.add(GRAS_BIN_FOVEAT(CHIP,
+                     .binscaleen = bin_scale_en,
+                     .xscale_0 = (enum a7xx_bin_scale)util_logbase2(frag_areas[0].width),
+                     .yscale_0 = (enum a7xx_bin_scale)util_logbase2(frag_areas[0].height),
+                     .xscale_1 = (enum a7xx_bin_scale)util_logbase2(frag_areas[1].width),
+                     .yscale_1 = (enum a7xx_bin_scale)util_logbase2(frag_areas[1].height),
+                     .xscale_2 = (enum a7xx_bin_scale)util_logbase2(frag_areas[2].width),
+                     .yscale_2 = (enum a7xx_bin_scale)util_logbase2(frag_areas[2].height),
+                     .xscale_3 = (enum a7xx_bin_scale)util_logbase2(frag_areas[3].width),
+                     .yscale_3 = (enum a7xx_bin_scale)util_logbase2(frag_areas[3].height),
+                     .xscale_4 = (enum a7xx_bin_scale)util_logbase2(frag_areas[4].width),
+                     .yscale_4 = (enum a7xx_bin_scale)util_logbase2(frag_areas[4].height),
+                     .xscale_5 = (enum a7xx_bin_scale)util_logbase2(frag_areas[5].width),
+                     .yscale_5 = (enum a7xx_bin_scale)util_logbase2(frag_areas[5].height)))
+                  .add(RB_BIN_FOVEAT(CHIP,
+                     .binscaleen = bin_scale_en));
+
+               if (CHIP >= A8XX) {
+                  for (unsigned i = 0; i < MAX_HW_SCALED_VIEWS; i++) {
+                     crb.add(GRAS_BIN_FOVEAT_XY_OFFSET(CHIP, i,
+                        .xoffset = frag_offsets[i].x,
+                        .yoffset = frag_offsets[i].y,
+                     ));
+                     crb.add(RB_BIN_FOVEAT_XY_OFFSET(CHIP, i,
+                        .xoffset = frag_offsets[i].x,
+                        .yoffset = frag_offsets[i].y,
+                     ));
+                     crb.add(GRAS_BIN_FOVEAT_XY_FDM_OFFSET(CHIP, i,
+                        .xoffset = frag_offsets[i].x,
+                        .yoffset = frag_offsets[i].y,
+                     ));
+                     crb.add(RB_BIN_FOVEAT_XY_FDM_OFFSET(CHIP, i,
+                        .xoffset = frag_offsets[i].x,
+                        .yoffset = frag_offsets[i].y,
+                     ));
+                  }
+               } else {
+                  crb.add(GRAS_BIN_FOVEAT_OFFSET_0(CHIP,
+                           .xoffset_0 = frag_offsets[0].x,
+                           .xoffset_1 = frag_offsets[1].x,
+                           .xoffset_2 = frag_offsets[2].x))
+                     .add(GRAS_BIN_FOVEAT_OFFSET_1(CHIP,
+                           .xoffset_3 = frag_offsets[3].x,
+                           .xoffset_4 = frag_offsets[4].x,
+                           .xoffset_5 = frag_offsets[5].x))
+                     .add(GRAS_BIN_FOVEAT_OFFSET_2(CHIP,
+                           .yoffset_0 = frag_offsets[0].y,
+                           .yoffset_1 = frag_offsets[1].y,
+                           .yoffset_2 = frag_offsets[2].y))
+                     .add(GRAS_BIN_FOVEAT_OFFSET_3(CHIP,
+                           .yoffset_3 = frag_offsets[3].y,
+                           .yoffset_4 = frag_offsets[4].y,
+                           .yoffset_5 = frag_offsets[5].y));
+               }
+            }
+
+         } else {
+            tu_cs_emit_regs(cs, GRAS_BIN_FOVEAT(CHIP));
+            tu_cs_emit_regs(cs, RB_BIN_FOVEAT(CHIP));
+         }
+      }
+
+      util_dynarray_foreach (&cmd->fdm_bin_patchpoints,
+                             struct tu_fdm_bin_patchpoint, patch) {
+         tu_cs_emit_pkt7(cs, CP_MEM_WRITE, 2 + patch->size);
+         tu_cs_emit_qw(cs, patch->iova);
+         patch->apply(cmd, cs, patch->data, (VkOffset2D) { x1, y1 },
+                      frag_offsets, views, tile->frag_areas, bins, false);
+      }
+
+      /* Make the CP wait until the CP_MEM_WRITE's to the command buffers
+       * land. When loading FS params via UBOs, we also need to invalidate
+       * UCHE because the FS param patchpoint is read through UCHE.
+       */
+      tu_cs_emit_pkt7(cs, CP_WAIT_MEM_WRITES, 0);
+      if (cmd->device->compiler->info->props.load_shader_consts_via_preamble) {
+         tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
+         tu_cs_emit_wfi(cs);
+      }
+      tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
+   } else if (cmd->device->physical_device->info->props.has_hw_bin_scaling) {
+      tu_cs_emit_regs(cs, GRAS_BIN_FOVEAT(CHIP, 0));
+      tu_cs_emit_regs(cs, RB_BIN_FOVEAT(CHIP, 0));
+   }
+}
 
 template <chip CHIP>
 static void
