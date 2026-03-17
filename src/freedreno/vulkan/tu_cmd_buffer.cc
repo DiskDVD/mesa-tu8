@@ -1,4 +1,4 @@
-/*
+/* Исправление gmem
  * Copyright © 2016 Red Hat.
  * Copyright © 2016 Bas Nieuwenhuizen
  * SPDX-License-Identifier: MIT
