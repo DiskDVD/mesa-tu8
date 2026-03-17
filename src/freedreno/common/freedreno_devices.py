@@ -1739,7 +1739,7 @@ add_gpus([
         tile_align_h = 32,
         tile_max_w = 16416,
         tile_max_h = 16384,
-        num_vsc_pipes = 32,
+        num_vsc_pipes = 8,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
