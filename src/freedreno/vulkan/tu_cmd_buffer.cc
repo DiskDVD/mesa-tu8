@@ -4367,7 +4367,7 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
                   tile_width = tiling->tile0.width;
                   tile_height = tiling->tile0.height;
                }
-               /* ===== КОНЕЦ ИСПРАВЛЕНИЯ ===== *
+               /* ===== КОНЕЦ ИСПРАВЛЕНИЯ ===== */
                
                struct tu_tile_config tile = {
                   .pos = { tx1 + tx, ty },
