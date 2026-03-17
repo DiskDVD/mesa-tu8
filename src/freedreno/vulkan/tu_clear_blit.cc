@@ -5730,6 +5730,7 @@ tu_store_gmem_attachment(struct tu_cmd_buffer *cmd,
        */
       if (store_common || store_separate_stencil)
          tu_disable_draw_states(cmd, cs);
+}
 
       for_each_layer(i, layer_mask, layers) {
          const VkRect2D *render_area =
