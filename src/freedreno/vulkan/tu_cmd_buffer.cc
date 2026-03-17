@@ -4339,6 +4339,35 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
                      tx = tile_row_i;
                }
                /* ===== КОНЕЦ ===== */
+                 /* ===== ИСПРАВЛЕНИЕ ДЛЯ ПОСЛЕДНЕГО ТАЙЛА ===== */
+               /* Вычисляем реальные размеры тайла (могут быть меньше на границах) */
+               uint32_t tile_x = tx1 + tx;
+               uint32_t tile_y = ty;
+               
+               uint32_t tile_width = tiling->tile0.width;
+               uint32_t tile_height = tiling->tile0.height;
+               
+               /* Проверяем, не выходит ли тайл за границы фреймбуфера */
+               if (tile_x == vsc->tile_count.width - 1) {
+                  /* Последний тайл по ширине - может быть обрезан */
+                  uint32_t remaining_width = cmd->state.framebuffer->width - 
+                                            (tile_x * tiling->tile0.width);
+                  tile_width = MIN2(tiling->tile0.width, remaining_width);
+               }
+               
+               if (tile_y == vsc->tile_count.height - 1) {
+                  /* Последний тайл по высоте - может быть обрезан */
+                  uint32_t remaining_height = cmd->state.framebuffer->height - 
+                                             (tile_y * tiling->tile0.height);
+                  tile_height = MIN2(tiling->tile0.height, remaining_height);
+               }
+               
+               /* Для первого тайла (0,0) используем полные размеры */
+               if (tile_x == 0 && tile_y == 0) {
+                  tile_width = tiling->tile0.width;
+                  tile_height = tiling->tile0.height;
+               }
+               /* ===== КОНЕЦ ИСПРАВЛЕНИЯ ===== *
                
                struct tu_tile_config tile = {
                   .pos = { tx1 + tx, ty },
