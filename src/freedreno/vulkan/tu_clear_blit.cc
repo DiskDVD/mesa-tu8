@@ -4329,6 +4329,7 @@ tu_clear_sysmem_attachments(struct tu_cmd_buffer *cmd,
 
    trace_end_sysmem_clear_all(&cmd->rp_trace, cs);
 }
+
 template <chip CHIP>
 static void
 clear_gmem_attachment(struct tu_cmd_buffer *cmd,
@@ -4339,18 +4340,9 @@ clear_gmem_attachment(struct tu_cmd_buffer *cmd,
                       uint32_t gmem_offset,
                       const VkClearValue *value)
 {
-   /* ===== A810: СПЕЦИАЛЬНАЯ ОБРАБОТКА ===== */
-   enum a6xx_format fmt;
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      /* A810: используем специальный формат для GMEM */
-      fmt = FMT6_8_8_8_8_UNORM;  // или другой подходящий
-   } else {
-      fmt = blit_base_format<CHIP>(format, false, true);
-   }
-   /* ===== КОНЕЦ ===== */
-
    tu_cs_emit_pkt4(cs, REG_A6XX_RB_RESOLVE_SYSTEM_BUFFER_INFO, 1);
-   tu_cs_emit(cs, A6XX_RB_RESOLVE_SYSTEM_BUFFER_INFO_COLOR_FORMAT(fmt));
+   tu_cs_emit(cs, A6XX_RB_RESOLVE_SYSTEM_BUFFER_INFO_COLOR_FORMAT(
+            blit_base_format<CHIP>(format, false, true)));
 
    tu_cs_emit_regs(cs, A6XX_RB_RESOLVE_OPERATION(.type = BLIT_EVENT_CLEAR,
                                          .clear_mask = clear_mask,
@@ -5046,6 +5038,7 @@ static bool
 blit_can_resolve(VkFormat format)
 {
    const struct util_format_description *desc = vk_format_description(format);
+
    /* blit event can only do resolve for simple cases:
     * averaging samples as unsigned integers or choosing only one sample
     * Note this is allowed for SRGB formats, but results differ from 2D draw resolve
@@ -5492,18 +5485,6 @@ tu_attachment_store_unaligned(struct tu_cmd_buffer *cmd, uint32_t a)
    if (cmd->state.pass->has_fdm)
       return true;
 
-   /* ===== A810: СПЕЦИАЛЬНОЕ ВЫРАВНИВАНИЕ ===== */
-   uint32_t align_w, align_h;
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      /* A810: аппаратное выравнивание 32x16 */
-      align_w = 32;
-      align_h = 16;
-   } else {
-      align_w = phys_dev->info->gmem_align_w;
-      align_h = phys_dev->info->gmem_align_h;
-   }
-   /* ===== КОНЕЦ ===== */
-
    unsigned render_area_count =
       cmd->state.per_layer_render_area ? cmd->state.pass->num_views : 1;
 
@@ -5520,16 +5501,15 @@ tu_attachment_store_unaligned(struct tu_cmd_buffer *cmd, uint32_t a)
       bool need_y2_align =
          y2 != iview->view.height || iview->view.need_y2_align;
 
-      if (x1 % align_w ||
-          (x2 % align_w && x2 != iview->view.width) ||
-          y1 % align_h ||
-          (y2 % align_h && need_y2_align))
+      if (x1 % phys_dev->info->gmem_align_w ||
+          (x2 % phys_dev->info->gmem_align_w && x2 != iview->view.width) ||
+          y1 % phys_dev->info->gmem_align_h ||
+          (y2 % phys_dev->info->gmem_align_h && need_y2_align))
          return true;
    }
 
    return false;
 }
-
 
 /* The fast path cannot handle mismatched mutability. */
 static bool

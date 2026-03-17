@@ -55,12 +55,8 @@ tu_autotune_free_results_locked(struct tu_device *dev, struct list_head *results
 
 /* How many last renderpass stats are taken into account. */
 #define MAX_HISTORY_RESULTS 5
-/* Для A810 храним больше истории для точности */
-#define A810_MAX_HISTORY_RESULTS 10
 /* For how many submissions we store renderpass stats. */
 #define MAX_HISTORY_LIFETIME 128
-/* Для A810 дольше храним историю */
-#define A810_MAX_HISTORY_LIFETIME 256
 
 
 /**
@@ -244,15 +240,10 @@ static void
 history_add_result(struct tu_device *dev, struct tu_renderpass_history *history,
                       struct tu_renderpass_result *result)
 {
-   /* ОПТИМИЗАЦИЯ ДЛЯ A810: динамический размер истории */
-   uint32_t max_results = MAX_HISTORY_RESULTS;
-   if (dev->physical_device->dev_id.gpu_id == 810)
-      max_results = A810_MAX_HISTORY_RESULTS;
-
    list_delinit(&result->node);
    list_add(&result->node, &history->results);
 
-   if (history->num_results < max_results) {
+   if (history->num_results < MAX_HISTORY_RESULTS) {
       history->num_results++;
    } else {
       /* Once above the limit, start popping old results off the
@@ -383,11 +374,6 @@ tu_autotune_on_submit(struct tu_device *dev,
    if (TU_AUTOTUNE_DEBUG_LOG)
       mesa_logi("Total history entries: %u", at->ht->entries);
 
-   /* ОПТИМИЗАЦИЯ ДЛЯ A810: дольше храним историю */
-   uint32_t history_lifetime = MAX_HISTORY_LIFETIME;
-   if (dev->physical_device->dev_id.gpu_id == 810)
-      history_lifetime = A810_MAX_HISTORY_LIFETIME;
-
    /* Cleanup old entries from history table. The assumption
     * here is that application doesn't hold many old unsubmitted
     * command buffers, otherwise this table may grow big.
@@ -395,7 +381,7 @@ tu_autotune_on_submit(struct tu_device *dev,
    hash_table_foreach(at->ht, entry) {
       struct tu_renderpass_history *history =
          (struct tu_renderpass_history *) entry->data;
-      if (fence_before(gpu_fence, history->last_fence + history_lifetime))
+      if (fence_before(gpu_fence, history->last_fence + MAX_HISTORY_LIFETIME))
          continue;
 
       if (TU_AUTOTUNE_DEBUG_LOG)
@@ -522,16 +508,8 @@ fallback_use_bypass(const struct tu_render_pass *pass,
                     const struct tu_framebuffer *framebuffer,
                     const struct tu_cmd_buffer *cmd_buffer)
 {
-   /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 */
-   if (cmd_buffer->device->physical_device->dev_id.gpu_id == 810) {
-      /* A810: даже при 10 драв-коллах GMEM может быть быстрее */
-      if (cmd_buffer->state.rp.drawcall_count > 10)
-         return false;
-   } else {
-      /* Стандартное поведение */
-      if (cmd_buffer->state.rp.drawcall_count > 5)
-         return false;
-   }
+   if (cmd_buffer->state.rp.drawcall_count > 5)
+      return false;
 
    for (unsigned i = 0; i < pass->subpass_count; i++) {
       if (pass->subpasses[i].samples != VK_SAMPLE_COUNT_1_BIT)
@@ -636,7 +614,13 @@ tu_autotune_use_bypass(struct tu_autotune *at,
       const uint64_t total_draw_call_bandwidth =
          estimate_drawcall_bandwidth(cmd_buffer, avg_samples);
 
+      /* drawcalls access the memory in sysmem rendering (ignoring CCU) */
       sysmem_bandwidth += total_draw_call_bandwidth;
+
+      /* drawcalls access gmem in gmem rendering, but we do not want to ignore
+       * them completely.  The state changes between tiles also have an
+       * overhead.  The magic numbers of 11 and 10 are randomly chosen.
+       */
       gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
 
       const bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;
