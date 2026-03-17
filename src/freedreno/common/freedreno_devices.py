@@ -1665,7 +1665,7 @@ add_gpus([
         [a7xx_base, a7xx_gen3, a8xx_base, a8xx_810],
         num_ccu = 2,
         num_slices = 1,
-        tile_align_w = 64,
+        tile_align_w = 32,
         tile_align_h = 16,
         tile_max_w = 192,
         tile_max_h = 192,
