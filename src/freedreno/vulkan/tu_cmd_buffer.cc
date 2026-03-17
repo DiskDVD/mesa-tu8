@@ -1653,28 +1653,16 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
       layers <= MAX_HW_SCALED_VIEWS && !cmd->state.rp.shared_viewport &&
       bin_is_scaled;
 
-   /* We cannot support LRZ if we cannot use HW bin scaling and the bin is
-    * scaled (i.e. less than full resolution)
-    */
    bool disable_lrz = bin_is_scaled && !bin_scale_en;
 
-   /* We cannot support LRZ for the first row and column because the offset
-    * required wouldn't be aligned to HW requirements.
-    */
    if (fdm_offsets && (tile->pos.x == 0 || tile->pos.y == 0))
       disable_lrz = true;
 
-   /* When using custom resolve we need to re-emit these regs as they are
-    * overwritten when switching to sysmem.
-    */
    if (CHIP >= A7XX &&
        cmd->state.pass->subpasses[cmd->state.pass->subpass_count - 1].custom_resolve) {
       tu7_emit_tile_render_begin_regs<CHIP>(cs);
    }
 
-   /* The GMEM stride is hardcoded when we emit input attachments and 3d
-    * loads, so the width can't be changed currently.
-    */
    assert(tile->gmem_extent.width == 1);
 
    tu6_emit_bin_size_gmem<CHIP>(cmd, cs, BUFFERS_IN_GMEM, disable_lrz);
@@ -1690,22 +1678,13 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
       MIN2(y1 + tiling->tile0.height * tile->gmem_extent.height,
            MAX_VIEWPORT_SIZE);
 
-   /* ===== A810: ПРИНУДИТЕЛЬНАЯ УСТАНОВКА SCISSOR ДЛЯ ПЕРВОГО ТАЙЛА ===== */
+   /* ===== A810: ПРИНУДИТЕЛЬНАЯ УСТАНОВКА SCISSOR ===== */
    if (is_first_tile) {
-      /* Для первого тайла устанавливаем scissor точно по границам тайла */
       tu6_emit_window_scissor<CHIP>(cs, 0, 0, 
                                     tiling->tile0.width - 1, 
                                     tiling->tile0.height - 1);
       tu6_emit_window_offset<CHIP>(cs, 0, 0);
    } else if (bin_scale_en) {
-      /* It seems that the window scissor happens *before*
-       * GRAS_BIN_FOVEAT_OFFSET_* is applied to the fragment coordinates,
-       * unlike the window offset which happens after it is applied. This
-       * means that the window scissor cannot do its job and we have to
-       * disable it by setting it to the entire FB size (plus an extra tile
-       * size, in case GRAS_BIN_FOVEAT_OFFSET_* is not in use). With FDM it is
-       * effectively replaced by the user's scissor anyway.
-       */
       uint32_t width = fb->width + tiling->tile0.width;
       uint32_t height = fb->height + tiling->tile0.height;
       tu6_emit_window_scissor<CHIP>(cs, 0, 0, width, height);
@@ -1729,16 +1708,15 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
       /* ===== КОНЕЦ ===== */
       
       tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
-
       tu_cs_emit_pkt7(cs, CP_SET_MODE, 1);
       tu_cs_emit(cs, 0x0);
 
       tu_cs_emit_pkt7(cs, CP_SET_BIN_DATA5_OFFSET, abs_mask ? 5 : 4);
       
       uint32_t mask_value = tile->slot_mask;
-      /* ===== A810: ДЛЯ ПЕРВОГО ТАЙЛА ИСПОЛЬЗУЕМ ПОЛНУЮ МАСКУ ===== */
+      /* ===== A810: ДЛЯ ПЕРВОГО ТАЙЛА ПОЛНАЯ МАСКА ===== */
       if (is_first_tile) {
-         mask_value = 0xFFFFFFFF;  // Все биты установлены
+         mask_value = 0xFFFFFFFF;
       }
       /* ===== КОНЕЦ ===== */
       
@@ -1756,10 +1734,10 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
    if (util_is_power_of_two_nonzero(tile->slot_mask))
       tu6_emit_cond_for_load_stores<CHIP>(cmd, cs, tile->pipe, slot, hw_binning);
 
-   /* ===== A810: ДЛЯ ПЕРВОГО ТАЙЛА ПРИНУДИТЕЛЬНО ВКЛЮЧАЕМ VISIBILITY ===== */
+   /* ===== A810: ДЛЯ ПЕРВОГО ТАЙЛА ПРИНУДИТЕЛЬНАЯ ВИДИМОСТЬ ===== */
    if (is_first_tile) {
       tu_cs_emit_pkt7(cs, CP_SET_VISIBILITY_OVERRIDE, 1);
-      tu_cs_emit(cs, 0x1);  // Игнорируем visibility stream, рисуем всё
+      tu_cs_emit(cs, 0x1);
    } else {
       tu_cs_emit_pkt7(cs, CP_SET_VISIBILITY_OVERRIDE, 1);
       tu_cs_emit(cs, !hw_binning);
@@ -1782,10 +1760,6 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
       for (unsigned i = 0; i < views; i++) {
          frag_offsets[i] = (VkOffset2D) { 0, 0 };
 
-         /* This makes the bin empty for non-visible views, which makes us not
-          * render anything. This frees up the GMEM space for the non-visible
-          * view to be used to combine tiles.
-          */
          if (!(tile->visible_views & (1u << i))) {
             bins[i] = { { 0, 0 }, { 0, 0 } };
             continue;
@@ -1810,16 +1784,9 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
          if (bin_scale_en) {
             VkExtent2D frag_areas[MAX_HW_SCALED_VIEWS];
             for (unsigned i = 0; i < MAX_HW_SCALED_VIEWS; i++) {
-               /* The HW bin offset is always per-layer, whereas if there is
-                * more than 1 layer (i.e. layered rendering instead of
-                * multiview rendering) and FDM is not per-layer then all
-                * layers implicitly use the scale from FDM layer 0. We have to
-                * explicitly broadcast it here.
-                */
                unsigned view = MIN2(i, views - 1);
 
                if (!(tile->visible_views & (1u << view)) || i >= layers) {
-                  /* Make sure unused views aren't garbage */
                   frag_areas[i] = (VkExtent2D) {1, 1};
                   frag_offsets[i] = (VkOffset2D) { 0, 0 };
                   continue;
@@ -1901,10 +1868,6 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
                       frag_offsets, views, tile->frag_areas, bins, false);
       }
 
-      /* Make the CP wait until the CP_MEM_WRITE's to the command buffers
-       * land. When loading FS params via UBOs, we also need to invalidate
-       * UCHE because the FS param patchpoint is read through UCHE.
-       */
       tu_cs_emit_pkt7(cs, CP_WAIT_MEM_WRITES, 0);
       if (cmd->device->compiler->info->props.load_shader_consts_via_preamble) {
          tu_emit_event_write<CHIP>(cmd, cs, FD_CACHE_INVALIDATE);
@@ -1915,19 +1878,8 @@ tu6_emit_tile_select(struct tu_cmd_buffer *cmd,
       tu_cs_emit_regs(cs, GRAS_BIN_FOVEAT(CHIP, 0));
       tu_cs_emit_regs(cs, RB_BIN_FOVEAT(CHIP, 0));
    }
-   }
-
-
-/* Set always-identical registers used specifically for GMEM */
-template <chip CHIP>
-static void
-tu7_emit_tile_render_begin_regs(struct tu_cs *cs)
-{
-   tu_cs_emit_regs(cs, RB_BUFFER_CNTL(CHIP, 0x0));
-   tu_cs_emit_regs(cs, RB_CLEAR_TARGET(CHIP, .clear_mode = CLEAR_MODE_GMEM));
 }
 
-/* Set always-identical registers used specifically for sysmem */
 template <chip CHIP>
 static void
 tu7_emit_sysmem_render_begin_regs(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
