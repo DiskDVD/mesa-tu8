@@ -4329,7 +4329,6 @@ tu_clear_sysmem_attachments(struct tu_cmd_buffer *cmd,
 
    trace_end_sysmem_clear_all(&cmd->rp_trace, cs);
 }
-
 template <chip CHIP>
 static void
 clear_gmem_attachment(struct tu_cmd_buffer *cmd,
@@ -4340,9 +4339,18 @@ clear_gmem_attachment(struct tu_cmd_buffer *cmd,
                       uint32_t gmem_offset,
                       const VkClearValue *value)
 {
+   /* ===== A810: СПЕЦИАЛЬНАЯ ОБРАБОТКА ===== */
+   enum a6xx_format fmt;
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* A810: используем специальный формат для GMEM */
+      fmt = FMT6_8_8_8_8_UNORM;  // или другой подходящий
+   } else {
+      fmt = blit_base_format<CHIP>(format, false, true);
+   }
+   /* ===== КОНЕЦ ===== */
+
    tu_cs_emit_pkt4(cs, REG_A6XX_RB_RESOLVE_SYSTEM_BUFFER_INFO, 1);
-   tu_cs_emit(cs, A6XX_RB_RESOLVE_SYSTEM_BUFFER_INFO_COLOR_FORMAT(
-            blit_base_format<CHIP>(format, false, true)));
+   tu_cs_emit(cs, A6XX_RB_RESOLVE_SYSTEM_BUFFER_INFO_COLOR_FORMAT(fmt));
 
    tu_cs_emit_regs(cs, A6XX_RB_RESOLVE_OPERATION(.type = BLIT_EVENT_CLEAR,
                                          .clear_mask = clear_mask,
@@ -5038,12 +5046,6 @@ static bool
 blit_can_resolve(VkFormat format)
 {
    const struct util_format_description *desc = vk_format_description(format);
-      /* ===== A810: ВРЕМЕННО ОТКЛЮЧАЕМ RESOLVE ===== */
-   if (cmd && cmd->device->physical_device->dev_id.gpu_id == 810) {
-      return false;
-   }
-   /* ===== КОНЕЦ ===== */
-
    /* blit event can only do resolve for simple cases:
     * averaging samples as unsigned integers or choosing only one sample
     * Note this is allowed for SRGB formats, but results differ from 2D draw resolve
