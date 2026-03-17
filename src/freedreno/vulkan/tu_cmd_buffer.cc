@@ -32,6 +32,7 @@
 #define A810_VSC_PRIM_SIZE 0x1800              
 #define A810_VSC_DRAW_MAX 0x2000                
 #define A810_VSC_PRIM_MAX 0x2000 
+#define VSC_PAD 0x800
 
 /* ===== ФУНКЦИИ МОНИТОРИНГА ДЛЯ ADRENO 810 ===== */
 static void
