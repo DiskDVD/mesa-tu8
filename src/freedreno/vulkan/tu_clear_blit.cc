@@ -5714,28 +5714,18 @@ tu_store_gmem_attachment(struct tu_cmd_buffer *cmd,
    if (dst_format == PIPE_FORMAT_Z32_FLOAT_S8X24_UINT)
       dst_format = PIPE_FORMAT_Z32_FLOAT;
 
-if (dst->samples > 1) {
-   /* If we hit this path, we have to disable draw states after every tile
-    * instead of once at the end of the renderpass, so that they aren't
-    * executed when calling CP_DRAW.
-    *
-    * TODO: store a flag somewhere so we don't do this more than once and
-    * don't do it after the renderpass when this happens.
-    */
-    
-   /* ===== ФИКС ДЛЯ ADRENO 810 ===== */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      /* Для A810 принудительно выравниваем scissor перед store */
-      if (!per_layer_render_area) {
-         tu6_emit_blit_scissor(cmd, cs, 0, false);
-      }
-   }
-   /* ===== КОНЕЦ ФИКСА ===== */
+   if (dst->samples > 1) {
+      /* If we hit this path, we have to disable draw states after every tile
+       * instead of once at the end of the renderpass, so that they aren't
+       * executed when calling CP_DRAW.
+       *
+       * TODO: store a flag somewhere so we don't do this more than once and
+       * don't do it after the renderpass when this happens.
+       */
+      if (store_common || store_separate_stencil)
+         tu_disable_draw_states(cmd, cs);
 
-   if (store_common || store_separate_stencil)
-      tu_disable_draw_states(cmd, cs);
-
-   for_each_layer(i, layer_mask, layers) {
+      for_each_layer(i, layer_mask, layers) {
          const VkRect2D *render_area =
             per_layer_render_area ? &cmd->state.render_areas[i] :
             &cmd->state.render_areas[0];
