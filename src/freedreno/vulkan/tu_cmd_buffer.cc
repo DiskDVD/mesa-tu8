@@ -211,6 +211,36 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
 {
    struct tu_device *dev = cmd->device;
    uint32_t num_vsc_pipes = dev->physical_device->info->num_vsc_pipes;
+      /* ===== A810: ПРИНУДИТЕЛЬНЫЕ РАЗМЕРЫ VSC ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* A810: используем предопределенные безопасные значения */
+      uint32_t vsc_size = A810_VSC_DRAW_SIZE; // 0x3000 = 12KB
+      
+      dev->vsc_draw_strm_pitch = vsc_size;
+      dev->vsc_prim_strm_pitch = vsc_size;
+      cmd->vsc_draw_strm_pitch = vsc_size;
+      cmd->vsc_prim_strm_pitch = vsc_size;
+      
+      uint32_t prim_strm_size = vsc_size * num_vsc_pipes;
+      uint32_t draw_strm_size = vsc_size * num_vsc_pipes;
+      uint32_t draw_strm_size_size = 4 * num_vsc_pipes;
+      uint32_t state_size = 4 * num_vsc_pipes;
+
+      cmd->vsc_size = prim_strm_size + draw_strm_size + draw_strm_size_size + state_size;
+      cmd->vsc_prim_strm_offset = 0;
+      cmd->vsc_draw_strm_offset = prim_strm_size;
+      cmd->vsc_draw_strm_size_offset = cmd->vsc_draw_strm_offset + draw_strm_size;
+      cmd->vsc_state_offset = cmd->vsc_draw_strm_size_offset + draw_strm_size_size;
+      
+      /* Сбрасываем overflow принудительно */
+      struct tu6_global *global = dev->global_bo_map;
+      global->vsc_draw_overflow = 0;
+      global->vsc_prim_overflow = 0;
+      
+      return;
+   }
+   /* ===== КОНЕЦ ===== */
+   
 
    /* VSC buffers:
     * use vsc pitches from the largest values used so far with this device
