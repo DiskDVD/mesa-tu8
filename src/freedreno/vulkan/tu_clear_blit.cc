@@ -5038,6 +5038,11 @@ static bool
 blit_can_resolve(VkFormat format)
 {
    const struct util_format_description *desc = vk_format_description(format);
+      /* ===== A810: ВРЕМЕННО ОТКЛЮЧАЕМ RESOLVE ===== */
+   if (cmd && cmd->device->physical_device->dev_id.gpu_id == 810) {
+      return false;
+   }
+   /* ===== КОНЕЦ ===== */
 
    /* blit event can only do resolve for simple cases:
     * averaging samples as unsigned integers or choosing only one sample
