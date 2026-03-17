@@ -21,10 +21,46 @@
 #include "tu_image.h"
 #include "tu_knl.h"
 #include "tu_tracepoints.h"
+#include <stdio.h>
 
 #include "common/freedreno_gpu_event.h"
 #include "common/freedreno_lrz.h"
 #include "common/freedreno_vrs.h"
+ /* ===== ОПРЕДЕЛЕНИЯ ДЛЯ ADRENO 810 ===== */
+#define A810_GMEM_SIZE (512 * 1024)           
+#define A810_VSC_DRAW_SIZE 0x1800              
+#define A810_VSC_PRIM_SIZE 0x1800              
+#define A810_VSC_DRAW_MAX 0x3000                
+#define A810_VSC_PRIM_MAX 0x3000 
+#define VSC_PAD 0x800
+
+/* ===== ФУНКЦИИ МОНИТОРИНГА ДЛЯ ADRENO 810 ===== */
+static void
+tu_a810_monitor_vsc(struct tu_cmd_buffer *cmd)
+{
+   if (cmd->device->physical_device->dev_id.gpu_id != 810)
+      return;
+      
+   struct tu6_global *global = cmd->device->global_bo_map;
+   
+   if (global->vsc_draw_overflow > 0 || global->vsc_prim_overflow > 0) {
+      mesa_logw("A810 VSC overflow: draw=%u, prim=%u", 
+                global->vsc_draw_overflow, 
+                global->vsc_prim_overflow);
+   }
+   
+   global->vsc_draw_overflow = 0;
+   global->vsc_prim_overflow = 0;
+}
+
+static void
+tu_a810_end_renderpass(struct tu_cmd_buffer *cmd)
+{
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      tu_a810_monitor_vsc(cmd);
+   }
+}
+/* ===== КОНЕЦ ФУНКЦИЙ МОНИТОРИНГА ===== */
 
 enum tu_cmd_buffer_status {
    TU_CMD_BUFFER_STATUS_IDLE = 0,
@@ -176,6 +212,36 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
 {
    struct tu_device *dev = cmd->device;
    uint32_t num_vsc_pipes = dev->physical_device->info->num_vsc_pipes;
+      /* ===== A810: ПРИНУДИТЕЛЬНЫЕ РАЗМЕРЫ VSC ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* A810: используем предопределенные безопасные значения */
+      uint32_t vsc_size = A810_VSC_DRAW_SIZE; // 0x3000 = 12KB
+      
+      dev->vsc_draw_strm_pitch = vsc_size;
+      dev->vsc_prim_strm_pitch = vsc_size;
+      cmd->vsc_draw_strm_pitch = vsc_size;
+      cmd->vsc_prim_strm_pitch = vsc_size;
+      
+      uint32_t prim_strm_size = vsc_size * num_vsc_pipes;
+      uint32_t draw_strm_size = vsc_size * num_vsc_pipes;
+      uint32_t draw_strm_size_size = 4 * num_vsc_pipes;
+      uint32_t state_size = 4 * num_vsc_pipes;
+
+      cmd->vsc_size = prim_strm_size + draw_strm_size + draw_strm_size_size + state_size;
+      cmd->vsc_prim_strm_offset = 0;
+      cmd->vsc_draw_strm_offset = prim_strm_size;
+      cmd->vsc_draw_strm_size_offset = cmd->vsc_draw_strm_offset + draw_strm_size;
+      cmd->vsc_state_offset = cmd->vsc_draw_strm_size_offset + draw_strm_size_size;
+      
+      /* Сбрасываем overflow принудительно */
+      struct tu6_global *global = dev->global_bo_map;
+      global->vsc_draw_overflow = 0;
+      global->vsc_prim_overflow = 0;
+      
+      return;
+   }
+   /* ===== КОНЕЦ ===== */
+   
 
    /* VSC buffers:
     * use vsc pitches from the largest values used so far with this device
@@ -196,7 +262,7 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
 
    if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch)
       dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
-
+   
    cmd->vsc_prim_strm_pitch = dev->vsc_prim_strm_pitch;
    cmd->vsc_draw_strm_pitch = dev->vsc_draw_strm_pitch;
 
@@ -214,6 +280,7 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    cmd->vsc_draw_strm_offset = prim_strm_size;
    cmd->vsc_draw_strm_size_offset = cmd->vsc_draw_strm_offset + draw_strm_size;
    cmd->vsc_state_offset = cmd->vsc_draw_strm_size_offset + draw_strm_size_size;
+
 }
 
 static void
@@ -1040,7 +1107,33 @@ tu6_emit_blit_scissor(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
    uint32_t y1 = render_area->offset.y;
    uint32_t x2 = x1 + render_area->extent.width - 1;
    uint32_t y2 = y1 + render_area->extent.height - 1;
-
+   
+   /* ===== ИСПРАВЛЕНО ДЛЯ ADRENO 810 ===== */
+if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+    /* A810: аппаратное выравнивание 32x16, сохраняем границы тайла */
+    uint32_t orig_x1 = x1;
+    uint32_t orig_y1 = y1;
+    uint32_t orig_x2 = x2;
+    uint32_t orig_y2 = y2;
+    
+    x1 = orig_x1 & ~31;
+    y1 = orig_y1 & ~15;
+    x2 = ((orig_x2 + 32) & ~31) - 1;
+    y2 = ((orig_y2 + 16) & ~15) - 1;
+    
+    /* Не выходим за пределы исходного тайла */
+    if (x2 > orig_x2) x2 = orig_x2;
+    if (y2 > orig_y2) y2 = orig_y2;
+    if (x2 < x1) x2 = orig_x2;
+    if (y2 < y1) y2 = orig_y2;
+} else if (align) {
+    /* Стандартное выравнивание для других GPU */
+    x1 = x1 & ~(phys_dev->info->gmem_align_w - 1);
+    y1 = y1 & ~(phys_dev->info->gmem_align_h - 1);
+    x2 = ALIGN_POT(x2 + 1, phys_dev->info->gmem_align_w) - 1;
+    y2 = ALIGN_POT(y2 + 1, phys_dev->info->gmem_align_h) - 1;
+}
+/* ===== КОНЕЦ ФИКСА ===== */    
    if (align) {
       x1 = x1 & ~(phys_dev->info->gmem_align_w - 1);
       y1 = y1 & ~(phys_dev->info->gmem_align_h - 1);
@@ -1326,11 +1419,48 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
       return true;
    }
 
+   bool no_gmem = cmd->device->physical_device->dev_info.props.disable_gmem;
+   if (no_gmem) {
+       cmd->state.rp.gmem_disable_reason = "Unsupported GPU";
+       return true;
+    }
+
    /* can't fit attachments into gmem */
    if (!cmd->state.tiling->possible) {
       cmd->state.rp.gmem_disable_reason = "Can't fit attachments into gmem";
       return true;
    }
+    /* ========== ИСПРАВЛЕНО ДЛЯ A810 ========== */
+   /* A810: проверка на переполнение 512KB GMEM */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      uint32_t gmem_size = 512 * 1024; /* 512KB */
+      uint32_t needed = 0;
+      
+      /* Считаем, сколько памяти нужно для всех аттачментов */
+      for (unsigned i = 0; i < cmd->state.pass->attachment_count; i++) {
+         const struct tu_render_pass_attachment *att = 
+            &cmd->state.pass->attachments[i];
+         if (att->gmem) {
+            /* Используем tile0 из tiling config */
+            uint32_t tile_width = cmd->state.tiling->tile0.width;
+            uint32_t tile_height = cmd->state.tiling->tile0.height;
+            uint32_t tile_size = tile_width * tile_height;
+            needed += tile_size * att->cpp;
+         }
+      }
+            #ifdef A810_GMEM_DEBUG
+            fprintf(stderr, "A810 GMEM: needed=%u KB, %s\n", 
+           needed / 1024,
+           needed > gmem_size ? "-> SYSMEM" : "-> GMEM");
+           #endif
+      
+      /* Если не влезает - используем sysmem */
+      if (needed > gmem_size) {
+         cmd->state.rp.gmem_disable_reason = "A810: GMEM overflow";
+         return true;
+      }
+   }
+   /* ========== КОНЕЦ ИСПРАВЛЕНИЯ ========== */
 
    /* Use sysmem for empty render areas */
    if (cmd->state.per_layer_render_area) {
@@ -2551,6 +2681,16 @@ static void
 tu6_emit_binning_pass(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
                       const VkOffset2D *fdm_offsets, bool use_cb)
 {
+    /* ===== CONCURRENT BINNING ДЛЯ A810 ===== 
+   if (cmd->device->physical_device->dev_id.gpu_id == 810 && !use_cb) {
+      /* Принудительно включаем concurrent binning */
+      //tu_cs_emit_pkt7(cs, CP_THREAD_CONTROL, 1);
+     // tu_cs_emit(cs, CP_THREAD_CONTROL_0_CONCURRENT_BINNING_ENABLE |
+                    //  CP_THREAD_CONTROL_0_SYNC_BIN |
+                  //    0x10); /* 16 потоков 
+   //  }
+   // ===== КОНЕЦ ===== */
+   
    struct tu_physical_device *phys_dev = cmd->device->physical_device;
    const struct tu_framebuffer *fb = cmd->state.framebuffer;
    const struct tu_tiling_config *tiling = cmd->state.tiling;
@@ -3381,6 +3521,18 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
 
    /* User flushes should always be executed on BR. */
    tu_emit_cache_flush_ccu<CHIP>(cmd, cs, TU_CMD_CCU_GMEM);
+/* ===== ОЧИСТКА GMEM ДЛЯ A810 ===== */
+if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+    /* Очищаем только аттачменты, которые будут загружены */
+    for (uint32_t i = 0; i < cmd->state.pass->attachment_count; i++) {
+        const struct tu_render_pass_attachment *att = 
+            &cmd->state.pass->attachments[i];
+        if (att->load || att->load_stencil) {
+            tu_clear_gmem_attachment<CHIP>(cmd, cs, NULL, false, i);
+        }
+    }
+}
+/* ===== КОНЕЦ ОЧИСТКИ ===== */
 
    bool use_cb = false;
 
@@ -3534,7 +3686,7 @@ tu6_tile_render_begin(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
             /* Emit vis stream on BR */
             tu_emit_vsc<CHIP>(cmd, cs);
          }
-
+         
          tu_cs_emit_pkt7(cs, CP_MEM_TO_SCRATCH_MEM, 4);
          tu_cs_emit(cs, num_vsc_pipes); /* count */
          tu_cs_emit(cs, 0); /* offset */
@@ -4088,7 +4240,6 @@ tu_allocate_transient_attachments(struct tu_cmd_buffer *cmd, bool sysmem)
 
    return VK_SUCCESS;
 }
-
 template <chip CHIP>
 static void
 tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
@@ -4145,17 +4296,28 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
     */
    for (uint32_t py = 0; py < vsc->pipe_count.height; py++) {
       uint32_t pipe_row = py * vsc->pipe_count.width;
+      
       for (uint32_t pipe_row_i = 0; pipe_row_i < vsc->pipe_count.width; pipe_row_i++) {
          uint32_t px;
-         if (py & 1)
-            px = vsc->pipe_count.width - 1 - pipe_row_i;
-         else
-            px = pipe_row_i;
+         
+         /* ===== A810: ПРОСТОЙ ЛИНЕЙНЫЙ ОБХОД ===== */
+         if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+            px = pipe_row_i;  /* Линейно, без зигзага */
+         } else {
+            if (py & 1)
+               px = vsc->pipe_count.width - 1 - pipe_row_i;
+            else
+               px = pipe_row_i;
+         }
+         /* ===== КОНЕЦ ===== */
+         
          uint32_t pipe = pipe_row + px;
          uint32_t tx1 = px * vsc->pipe0.width;
          uint32_t ty1 = py * vsc->pipe0.height;
          uint32_t tx2 = MIN2(tx1 + vsc->pipe0.width, vsc->tile_count.width);
          uint32_t ty2 = MIN2(ty1 + vsc->pipe0.height, vsc->tile_count.height);
+         uint32_t tile_row_stride = tx2 - tx1;
+         uint32_t slot_row = 0;
 
          if (merge_tiles) {
             tu_render_pipe_fdm<CHIP>(cmd, pipe, tx1, ty1, tx2, ty2, fdm,
@@ -4163,16 +4325,21 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
             continue;
          }
 
-         uint32_t tile_row_stride = tx2 - tx1;
-         uint32_t slot_row = 0;
          for (uint32_t ty = ty1; ty < ty2; ty++) {
             for (uint32_t tile_row_i = 0; tile_row_i < tile_row_stride; tile_row_i++) {
                uint32_t tx;
-               if (ty & 1)
-                  tx = tile_row_stride - 1 - tile_row_i;
-               else
-                  tx = tile_row_i;
-
+               
+               /* ===== A810: ПРОСТОЙ ЛИНЕЙНЫЙ ОБХОД ТАЙЛОВ ===== */
+               if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+                  tx = tile_row_i;  /* Линейно, без зигзага */
+               } else {
+                  if (ty & 1)
+                     tx = tile_row_stride - 1 - tile_row_i;
+                  else
+                     tx = tile_row_i;
+               }
+               /* ===== КОНЕЦ ===== */
+               
                struct tu_tile_config tile = {
                   .pos = { tx1 + tx, ty },
                   .pipe = pipe,
@@ -4180,6 +4347,7 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
                   .sysmem_extent = { 1, 1 },
                   .gmem_extent = { 1, 1 },
                };
+               
                tu_calc_bin_visibility(cmd, &tile, fdm_offsets);
                if (has_fdm)
                   tu_calc_frag_area(cmd, &tile, fdm, fdm_offsets);
@@ -7153,17 +7321,30 @@ tu_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
       }
    }
 
-   tu_choose_gmem_layout(cmd);
 
-   /* Note: because this is external, any flushes will happen before draw_cs
-    * gets called. However deferred flushes could have to happen later as part
-    * of the subpass.
-    */
-   tu_subpass_barrier(cmd, &pass->subpasses[0].start_barrier, true);
+
+
+/* Note: because this is external, any flushes will happen before draw_cs
+ * gets called. However deferred flushes could have to happen later as part
+ * of the subpass.
+ */
+tu_subpass_barrier(cmd, &pass->subpasses[0].start_barrier, true);
    cmd->state.renderpass_cache.pending_flush_bits =
       cmd->state.cache.pending_flush_bits;
    cmd->state.renderpass_cache.flush_bits = 0;
-
+   
+tu_choose_gmem_layout(cmd);
+   /* ===== A810: КОРРЕКТИРОВКА TILE SIZE ===== */
+if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+    /* A810: tile size должен быть кратен 32x16 */
+    struct tu_tiling_config *tiling = (struct tu_tiling_config *)cmd->state.tiling;
+    if (tiling) {
+        tiling->tile0.width = ALIGN_POT(tiling->tile0.width, 32);
+        tiling->tile0.height = ALIGN_POT(tiling->tile0.height, 16);
+    }
+}
+/* ===== КОНЕЦ ===== */
+   
    if (pass->subpasses[0].feedback_invalidate) {
       cmd->state.renderpass_cache.flush_bits |=
          TU_CMD_FLAG_CACHE_INVALIDATE | TU_CMD_FLAG_BLIT_CACHE_CLEAN |
@@ -9737,6 +9918,8 @@ tu_CmdEndRenderPass2(VkCommandBuffer commandBuffer,
    }
 
    TU_CALLX(cmd_buffer->device, tu_emit_custom_resolve_end)(cmd_buffer);
+   
+   tu_a810_end_renderpass(cmd_buffer);
 
    tu_cs_end(&cmd_buffer->draw_cs);
    tu_cs_end(&cmd_buffer->draw_epilogue_cs);
