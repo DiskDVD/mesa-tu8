@@ -4264,55 +4264,59 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
    /* Note: we reverse the order of walking the pipes and tiles on every
     * other row, to improve texture cache locality compared to raster order.
     */
-   for (uint32_t py = 0; py < vsc->pipe_count.height; py++) {
-      uint32_t pipe_row = py * vsc->pipe_count.width;
-      for (uint32_t pipe_row_i = 0; pipe_row_i < vsc->pipe_count.width; pipe_row_i++) {
-         uint32_t px;
-         if (py & 1)
-            px = vsc->pipe_count.width - 1 - pipe_row_i;
-         else
-            px = pipe_row_i;
-         uint32_t pipe = pipe_row + px;
-         uint32_t tx1 = px * vsc->pipe0.width;
-         uint32_t ty1 = py * vsc->pipe0.height;
-         uint32_t tx2 = MIN2(tx1 + vsc->pipe0.width, vsc->tile_count.width);
-         uint32_t ty2 = MIN2(ty1 + vsc->pipe0.height, vsc->tile_count.height);
-
-         if (merge_tiles) {
-            tu_render_pipe_fdm<CHIP>(cmd, pipe, tx1, ty1, tx2, ty2, fdm,
-                                     fdm_offsets);
-            continue;
-         }
-
-         uint32_t tile_row_stride = tx2 - tx1;
-         uint32_t slot_row = 0;
-         for (uint32_t ty = ty1; ty < ty2; ty++) {
+for (uint32_t py = 0; py < vsc->pipe_count.height; py++) {
+    for (uint32_t pipe_row_i = 0; pipe_row_i < vsc->pipe_count.width; pipe_row_i++) {
+        uint32_t px;
+        
+        /* ===== A810: ПРОСТОЙ ЛИНЕЙНЫЙ ОБХОД ===== */
+        if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+            px = pipe_row_i;  /* Линейно, без зигзага */
+        } else {
+            if (py & 1)
+                px = vsc->pipe_count.width - 1 - pipe_row_i;
+            else
+                px = pipe_row_i;
+        }
+        /* ===== КОНЕЦ ===== */
+        
+        uint32_t pipe = pipe_row + px;
+        uint32_t tx1 = px * vsc->pipe0.width;
+        uint32_t ty1 = py * vsc->pipe0.height;
+        
+        for (uint32_t ty = ty1; ty < ty2; ty++) {
             for (uint32_t tile_row_i = 0; tile_row_i < tile_row_stride; tile_row_i++) {
-               uint32_t tx;
-               if (ty & 1)
-                  tx = tile_row_stride - 1 - tile_row_i;
-               else
-                  tx = tile_row_i;
+                uint32_t tx;
+                
+                /* ===== A810: ПРОСТОЙ ЛИНЕЙНЫЙ ОБХОД ТАЙЛОВ ===== */
+                if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+                    tx = tile_row_i;  /* Линейно, без зигзага */
+                } else {
+                    if (ty & 1)
+                        tx = tile_row_stride - 1 - tile_row_i;
+                    else
+                        tx = tile_row_i;
+                }
+                /* ===== КОНЕЦ ===== */
+                
+                struct tu_tile_config tile = {
+                    .pos = { tx1 + tx, ty },
+                    .pipe = pipe,
+                    .slot_mask = 1u << (slot_row + tx),
+                    .sysmem_extent = { 1, 1 },
+                    .gmem_extent = { 1, 1 },
+                };
+                
+                tu_calc_bin_visibility(cmd, &tile, fdm_offsets);
+                if (has_fdm)
+                    tu_calc_frag_area(cmd, &tile, fdm, fdm_offsets);
+                else
+                    tu_identity_frag_area(cmd, &tile);
 
-               struct tu_tile_config tile = {
-                  .pos = { tx1 + tx, ty },
-                  .pipe = pipe,
-                  .slot_mask = 1u << (slot_row + tx),
-                  .sysmem_extent = { 1, 1 },
-                  .gmem_extent = { 1, 1 },
-               };
-               tu_calc_bin_visibility(cmd, &tile, fdm_offsets);
-               if (has_fdm)
-                  tu_calc_frag_area(cmd, &tile, fdm, fdm_offsets);
-               else
-                  tu_identity_frag_area(cmd, &tile);
-
-               tu6_render_tile<CHIP>(cmd, &cmd->cs, &tile, fdm_offsets);
+                tu6_render_tile<CHIP>(cmd, &cmd->cs, &tile, fdm_offsets);
             }
-            slot_row += tile_row_stride;
-         }
-      }
-   }
+        }
+    }
+}
 
    tu6_tile_render_end<CHIP>(cmd, &cmd->cs, autotune_result);
 
