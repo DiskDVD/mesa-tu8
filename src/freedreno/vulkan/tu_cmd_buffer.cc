@@ -7271,6 +7271,7 @@ tu_choose_gmem_layout(cmd);
 if (cmd->device->physical_device->dev_id.gpu_id == 810) {
    /* Принудительно устанавливаем размер тайла для A810 */
    if (cmd->state.tiling) {
+      struct tu_tiling_config *tiling = (struct tu_tiling_config*)cmd->state.tiling;
       cmd->state.tiling->tile0.width = 192;
       cmd->state.tiling->tile0.height = 192;
       
@@ -7283,8 +7284,6 @@ if (cmd->device->physical_device->dev_id.gpu_id == 810) {
          cmd->state.rp.gmem_disable_reason = "A810: GMEM overflow after fix";
          cmd->state.rp.disable_gmem = true;
       }
-      
-      mesa_logi("A810: Tile size set to %ux%u", 192, 192);
    }
 }
 /* ===== КОНЕЦ ФИКСА ===== */
