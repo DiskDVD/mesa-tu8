@@ -7278,17 +7278,6 @@ tu_subpass_barrier(cmd, &pass->subpasses[0].start_barrier, true);
    cmd->state.renderpass_cache.flush_bits = 0;
    
 tu_choose_gmem_layout(cmd);
-
-/* ===== ФИКС ВЫРАВНИВАНИЯ ДЛЯ ADRENO 810 ===== */
-if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-   /* Принудительно устанавливаем выравнивание в физическом устройстве */
-   struct tu_physical_device *phys_dev = cmd->device->physical_device;
-   phys_dev->info->gmem_align_w = 32;
-   phys_dev->info->gmem_align_h = 16;
-   
-   mesa_logi("A810: Forced alignment in phys_dev to %ux%u", 32, 16);
-}
-/* ===== КОНЕЦ ФИКСА ===== */
    if (pass->subpasses[0].feedback_invalidate) {
       cmd->state.renderpass_cache.flush_bits |=
          TU_CMD_FLAG_CACHE_INVALIDATE | TU_CMD_FLAG_BLIT_CACHE_CLEAN |
