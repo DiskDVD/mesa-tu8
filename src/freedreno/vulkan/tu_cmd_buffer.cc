@@ -7265,13 +7265,35 @@ tu_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
       }
    }
 
-   tu_choose_gmem_layout(cmd);
+tu_choose_gmem_layout(cmd);
 
-   /* Note: because this is external, any flushes will happen before draw_cs
-    * gets called. However deferred flushes could have to happen later as part
-    * of the subpass.
-    */
-   tu_subpass_barrier(cmd, &pass->subpasses[0].start_barrier, true);
+/* ===== ФИКС ДЛЯ ADRENO 810 ===== */
+if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+   /* Принудительно устанавливаем размер тайла для A810 */
+   if (cmd->state.tiling) {
+      cmd->state.tiling->tile0.width = 192;
+      cmd->state.tiling->tile0.height = 192;
+      
+      /* Проверяем, не превышает ли размер GMEM */
+      uint32_t tile_size = 192 * 192 * 4; // 32bpp
+      uint32_t total_needed = tile_size * cmd->state.pass->attachment_count;
+      
+      if (total_needed > 512 * 1024) {
+         mesa_logw("A810: GMEM overflow, forcing sysmem");
+         cmd->state.rp.gmem_disable_reason = "A810: GMEM overflow after fix";
+         cmd->state.rp.disable_gmem = true;
+      }
+      
+      mesa_logi("A810: Tile size set to %ux%u", 192, 192);
+   }
+}
+/* ===== КОНЕЦ ФИКСА ===== */
+
+/* Note: because this is external, any flushes will happen before draw_cs
+ * gets called. However deferred flushes could have to happen later as part
+ * of the subpass.
+ */
+tu_subpass_barrier(cmd, &pass->subpasses[0].start_barrier, true);
    cmd->state.renderpass_cache.pending_flush_bits =
       cmd->state.cache.pending_flush_bits;
    cmd->state.renderpass_cache.flush_bits = 0;
