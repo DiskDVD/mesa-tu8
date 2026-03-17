@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Function call support in RADV/ACO &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="../../_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/screen.css?v=10557b77" />
+
+    <script src="../../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="../../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="../../_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="../../download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="../../index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="function-call-support-in-radv-aco">
+<span id="aco-fn-calls"></span><h1>Function call support in RADV/ACO<a class="headerlink" href="#function-call-support-in-radv-aco" title="Link to this heading">¶</a></h1>
+<p>ACO supports function calls inside shaders - given a function signature and ABI, shaders can call
+an arbitrary function, even via only a function pointer (i.e. with an unknown function definition).</p>
+<p>This function call support is useful for implementing ray tracing pipelines (by representing individual RT shaders
+as callable functions), but it also has potential use cases in GPGPU/Compute workloads.</p>
+<p>This page serves to document the concepts involved in implementing function calls as well as an overview of the
+implementation components.</p>
+<section id="function-call-representation">
+<h2>Function call representation<a class="headerlink" href="#function-call-representation" title="Link to this heading">¶</a></h2>
+<p>In NIR, function calls are represented by a <span class="c-expr sig sig-inline c"><span class="n">nir_call_instr</span></span>. The instruction takes a <span class="c-expr sig sig-inline c"><span class="n">nir_function</span></span> representing
+the function being called, as well as SSA defs for each call parameter.
+NIR can also represent “indirect calls”, i.e. calls where the function being called is
+unknown - instead, the instruction takes an SSA def containing a function pointer to the callee. In this case, the
+<span class="c-expr sig sig-inline c"><span class="n">nir_function</span></span> only serves to provide information about the function signature, i.e. how many and which parameters
+the function takes.</p>
+<p>Call instructions do not have return values - instead, return values are represented by so-called “return parameters”.
+Instead of an SSA value, these parameters are derefs, and the return value is written into the deref when the callee
+returns. Return parameters can double as input parameters, too - the callee can read the previous value of the deref
+before (potentially) overwriting it with a new value.</p>
+<p>ACO’s representation of function calls follows this very closely. Calls are described by the <span class="c-expr sig sig-inline c"><span class="n">p_call</span></span> pseudo-instruction.
+The operands to this instruction are a function pointer (i.e. the address of the callee), followed by the call
+parameters. Return parameters are handled differently, though: While the initial value of the return parameter is passed
+as an operand, the call instruction produces new definitions that refer to the SSA values of the return parameters after
+the function call returns. There is a special NIR intrinsic <code class="docutils literal notranslate"><span class="pre">load_return_param_amd</span></code> that can be used to access these
+new definitions when lowering return parameter derefs to SSA form.</p>
+</section>
+<section id="divergent-calls">
+<span id="div-calls"></span><h2>Divergent calls<a class="headerlink" href="#divergent-calls" title="Link to this heading">¶</a></h2>
+<p>On CPUs, a call instruction will only ever jump to a single address. However, GPUs are SIMT, and the value of a function
+pointer may be divergent, i.e. different threads try calling different functions within the same call instruction. AMD
+hardware executes one instruction for all threads in lockstep, so the multiple callees have to be executed one after
+the other.</p>
+<p>This is handled by RADV in <code class="docutils literal notranslate"><span class="pre">radv_nir_lower_call_abi</span></code>. In addition to the (non-divergent) function pointer to jump to,
+<code class="docutils literal notranslate"><span class="pre">radv_nir_lower_call_abi</span></code> prepends another parameter representing the (potentially divergent) function pointer for all
+lanes. For callable functions, <code class="docutils literal notranslate"><span class="pre">radv_nir_lower_call_abi</span></code> wraps the function body in a condition that verifies that the
+current thread’s (divergent) pointer matches the (non-divergent) pointer that is currently being executed. This serves
+to “mask off” all threads that wanted to jump to a different function than what is currently executing. At the very end,
+<code class="docutils literal notranslate"><span class="pre">radv_nir_lower_call_abi</span></code> inserts some code deciding whether to jump to the next callee or to return.</p>
+</section>
+<section id="stack">
+<span id="id1"></span><h2>Stack<a class="headerlink" href="#stack" title="Link to this heading">¶</a></h2>
+<p>Supporting arbitrary function calls also means supporting recursion, and recursive functions need a stack.
+AMD hardware provides instructions for accessing a per-thread scratch memory area in VRAM, and ACO uses this per-thread
+scratch memory to set up its stack.</p>
+<p>The stack frame for a function consists of all scratch memory allocated for this function in NIR, as well as space to
+spill VGPRs if that is required. ACO adds a stack pointer as a parameter to every function - this stack pointer is added
+to the offset inside the scratch space for all scratch loads/stores to make sure they don’t overwrite stack frames of
+caller functions.</p>
+<p>ACO’s call instructions take two stack-related operands: The current (caller) stack pointer and the caller’s stack size.
+When converting the call instruction to hardware instructions, ACO will add the caller stack size to the stack pointer
+for the duration of the call (and subtract it again afterwards). This allows us to re-use the same stack pointer after
+the call.</p>
+</section>
+<section id="implicit-system-parameters">
+<h2>Implicit/System Parameters<a class="headerlink" href="#implicit-system-parameters" title="Link to this heading">¶</a></h2>
+<p>In addition to parameters defined by the function signature, both RADV and ACO will insert additional parameters while
+lowering calls. This is an overview of which lowering passes add which parameters.</p>
+<p>Parameters added by <code class="docutils literal notranslate"><span class="pre">radv_nir_lower_call_abi</span></code> (see <a class="reference internal" href="#div-calls"><span class="std std-ref">Divergent calls</span></a>):
+- “Uniform”/Non-divergent callee pointer
+- Divergent function pointer</p>
+<p>Parameters added by ACO: (see <a class="reference internal" href="#stack"><span class="std std-ref">Stack</span></a>)
+- Stack pointer (uniform)</p>
+</section>
+<section id="abi-definition">
+<h2>ABI Definition<a class="headerlink" href="#abi-definition" title="Link to this heading">¶</a></h2>
+<p>The ABI (Application Binary Interface) defines specifics about the interaction between the function caller and the
+callee (e.g. assignment of registers to parameters or register preservation). In ACO, the primary purpose of the ABI is
+to define which register ranges are “preserved” (i.e. never overwritten by the callee) or “clobbered” (i.e. potentially
+overwritten by the callee).</p>
+<p>The caller can use preserved register ranges to store temporaries that are live across a call, and the callee can use
+clobbered register ranges to store its own temporaries. If the callee wants to use registers from a preserved range,
+then it needs to back up the value contained in the preserved register beforehand, and restore it when it’s done using
+the preserved register. Similarly, if there are not enough preserved registers for the caller to store all its
+temporaries, the caller will need to spill excess temporaries to the stack.</p>
+<p>ACO has to cater to different needs when defining ABIs: On one side, ray tracing traversal shaders demand to free up
+the entire register file for the callee (Ray traversal is a really hot loop, so we don’t want to spill anything at all).
+Besides some parameters like the invocation ID, these shaders should be able to overwrite almost anything. On the other
+side, RT traversal shaders should not be required to free up the register file when calling any-hit/intersection shaders
+as this would also cause spilling during traversal. GPGPU compute workloads could fall anywhere between these extremes,
+so a middle-ground solution is desirable for these.</p>
+<p>ACO’s way of defining an ABI divides the register file into “blocks” (<code class="docutils literal notranslate"><span class="pre">struct</span> <span class="pre">aco::ABI::RegisterBlock</span></code>). Each block
+consists of a fixed number of preserved and clobbered registers, and a boolean determining whether the preserved or
+clobbered registers come first in the block. Preserved and clobbered register ranges are defined by
+repeating these blocks for as long as there are unassigned registers.</p>
+<p>Some examples of preserved/clobbered register ranges using this approach:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>For all examples, there are 108 SGPRs and 128 VGPRs to assign.
+
+RegisterBlock:
+   clobbered_size: {16 sgpr, 16 vgpr}
+   preserved_size: {16 sgpr, 16 vgpr}
+   clobbered_first: false
+results in:
+   v0-v15:    preserved
+   v16-v31:   clobbered
+   v32-v47:   preserved
+   v48-v63:   clobbered
+   v64-v79:   preserved
+   v80-v95:   clobbered
+   v96-v111:  preserved
+   v112-v127: clobbered
+
+   s0-s15:   preserved
+   s16-s31:  clobbered
+   s32-s47:  preserved
+   s48-s63:  clobbered
+   s64-s79:  preserved
+   s80-s95:  clobbered
+   s96-s108: preserved
+
+RegisterBlock:
+   clobbered_size: {128 sgpr, 256 vgpr}
+   preserved_size: {80 sgpr, 80 vgpr}
+   clobbered_first: false
+results in:
+   v0-v79:   preserved
+   v80-v127: clobbered
+
+   s0-s79:   preserved
+   s80-s108: clobbered
+</pre></div>
+</div>
+<p>An alternating preserved-clobbered-preserved pattern is useful for generic compute workloads, because the ratio of
+preserved to clobbered registers is roughly the same, no matter how many registers are used by the shaders.</p>
+<p>The latter example where the lower part of the register file is preserved and only some registers high up in the
+register file are clobbered is suitable for any-hit/intersection shaders - traversal shader temporaries can live in the
+preserved part low in the register file.</p>
+<p>This block assignment is optional - if no <code class="docutils literal notranslate"><span class="pre">RegisterBlock</span></code> is given, the ABI defines the entire register range as
+clobbered-by-default, although parameters that are not marked as clobbered via <code class="docutils literal notranslate"><span class="pre">ACO_NIR_PARAM_ATTRIB_DISCARDABLE</span></code>
+will continue being preserved.</p>
+</section>
+<section id="parameter-register-assignment">
+<h2>Parameter Register Assignment<a class="headerlink" href="#parameter-register-assignment" title="Link to this heading">¶</a></h2>
+<p>If a <code class="docutils literal notranslate"><span class="pre">RegisterBlock</span></code> defines preserved and clobbered ranges, then parameters are assigned registers from either range
+depending on <code class="docutils literal notranslate"><span class="pre">ACO_NIR_PARAM_ATTRIB_DISCARDABLE</span></code> - if parameters are marked as clobbered with this attribute, then they
+are assigned a register in a clobbered range, otherwise they are assigned in a register in a preserved range. The order
+of the parameters in the register file is not necessarily the same order as in the function signature - they may get
+reordered if it’s beneficial to fill gaps or for alignment.</p>
+<p>If there is no <code class="docutils literal notranslate"><span class="pre">RegisterBlock</span></code>, then registers will be assigned based on alignment only.</p>
+<p>If there is no more space for a parameter in any of its corresponding register ranges, it will be moved to the stack.</p>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="../../search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/drivers/amd/function-calls.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

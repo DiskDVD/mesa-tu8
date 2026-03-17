@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Buffer mapping patterns &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="../_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="../_static/screen.css?v=10557b77" />
+
+    <script src="../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Gallium Post-processing" href="postprocess.html" />
+    <link rel="prev" title="Vertex Elements" href="cso/velems.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="../_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="../download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="../index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="buffer-mapping-patterns">
+<h1>Buffer mapping patterns<a class="headerlink" href="#buffer-mapping-patterns" title="Link to this heading">¶</a></h1>
+<p>There are two main strategies the driver has for CPU access to GL buffer
+objects. One is that the GL calls allocate temporary storage and blit to the GPU
+at
+<code class="docutils literal notranslate"><span class="pre">glBufferSubData()</span></code>/<code class="docutils literal notranslate"><span class="pre">glBufferData()</span></code>/<code class="docutils literal notranslate"><span class="pre">glFlushMappedBufferRange()</span></code>/<code class="docutils literal notranslate"><span class="pre">glUnmapBuffer()</span></code>
+time. This makes the behavior easily match. However, this may be more costly
+than direct mapping of the GL BO on some platforms, and is essentially not
+available to tiling GPUs (since tiling involves running through the command
+stream multiple times). Thus, GL has additional interfaces to help make it so
+apps can directly access memory while avoiding implicit blocking on the GPU
+rendering from those BOs.</p>
+<p>Rendering engines have a variety of knobs to set on those GL interfaces for data
+upload, and as a whole they seem to take just about every path available. Let’s
+look at some examples to see how they might constrain GL driver buffer upload
+behavior.</p>
+<section id="portal-2">
+<h2>Portal 2<a class="headerlink" href="#portal-2" title="Link to this heading">¶</a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>1030842 glXSwapBuffers(dpy = 0x82a8000, drawable = 20971540)
+1030876 glBufferDataARB(target = GL_ELEMENT_ARRAY_BUFFER, size = 65536, data = NULL, usage = GL_DYNAMIC_DRAW)
+1030877 glBufferSubData(target = GL_ELEMENT_ARRAY_BUFFER, offset = 0, size = 576, data = blob(576))
+1030896 glDrawRangeElementsBaseVertex(mode = GL_TRIANGLES, start = 0, end = 526, count = 252, type = GL_UNSIGNED_SHORT, indices = NULL, basevertex = 0)
+1030915 glDrawRangeElementsBaseVertex(mode = GL_TRIANGLES, start = 0, end = 19657, count = 36, type = GL_UNSIGNED_SHORT, indices = 0x1f8, basevertex = 0)
+1030917 glBufferDataARB(target = GL_ARRAY_BUFFER, size = 1572864, data = NULL, usage = GL_DYNAMIC_DRAW)
+1030918 glBufferSubData(target = GL_ARRAY_BUFFER, offset = 0, size = 128, data = blob(128))
+1030919 glBufferSubData(target = GL_ELEMENT_ARRAY_BUFFER, offset = 576, size = 12, data = blob(12))
+1030936 glDrawRangeElementsBaseVertex(mode = GL_TRIANGLES, start = 0, end = 3, count = 6, type = GL_UNSIGNED_SHORT, indices = 0x240, basevertex = 0)
+1030937 glBufferSubData(target = GL_ARRAY_BUFFER, offset = 128, size = 128, data = blob(128))
+1030938 glBufferSubData(target = GL_ELEMENT_ARRAY_BUFFER, offset = 588, size = 12, data = blob(12))
+1030940 glDrawRangeElementsBaseVertex(mode = GL_TRIANGLES, start = 4, end = 7, count = 6, type = GL_UNSIGNED_SHORT, indices = 0x24c, basevertex = 0)
+[... repeated draws at increasing offsets]
+1033097 glXSwapBuffers(dpy = 0x82a8000, drawable = 20971540)
+</pre></div>
+</div>
+<p>From this sequence, we can see that it is important that the driver either
+implement <code class="docutils literal notranslate"><span class="pre">glBufferSubData()</span></code> as a blit from a streaming uploader in sequence with
+the <code class="docutils literal notranslate"><span class="pre">glDraw*()</span></code> calls (a common behavior for non-tiled GPUs, particularly those with
+dedicated memory), or that you:</p>
+<ol class="arabic simple">
+<li><p>Track the valid range of the buffer so that you don’t have to flush the draws
+and synchronize on each following <code class="docutils literal notranslate"><span class="pre">glBufferSubData()</span></code>.</p></li>
+<li><p>Reallocate the buffer storage on <code class="docutils literal notranslate"><span class="pre">glBufferData</span></code> so that your first
+<code class="docutils literal notranslate"><span class="pre">glBufferSubData()</span></code> of the frame doesn’t stall on the last frame’s
+rendering completing.</p></li>
+</ol>
+<p>You can’t just empty your valid range on <code class="docutils literal notranslate"><span class="pre">glBufferData()</span></code> unless you know that
+the GPU access from the previous frame has completed. This pattern of
+incrementing <code class="docutils literal notranslate"><span class="pre">glBufferSubData()</span></code> offsets interleaved with draws from that data
+is common among newer Valve games.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[ during setup ]
+
+679259 glGenBuffersARB(n = 1, buffers = &amp;1314)
+679260 glBindBufferARB(target = GL_ELEMENT_ARRAY_BUFFER, buffer = 1314)
+679261 glBufferDataARB(target = GL_ELEMENT_ARRAY_BUFFER, size = 3072, data = NULL, usage = GL_STATIC_DRAW)
+679264 glMapBufferRange(target = GL_ELEMENT_ARRAY_BUFFER, offset = 0, length = 3072, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT) = 0xd7384000
+679269 glFlushMappedBufferRange(target = GL_ELEMENT_ARRAY_BUFFER, offset = 0, length = 3072)
+679270 glUnmapBuffer(target = GL_ELEMENT_ARRAY_BUFFER) = GL_TRUE
+
+[... setup of other buffers on this binding point]
+
+679343 glBindBufferARB(target = GL_ELEMENT_ARRAY_BUFFER, buffer = 1314)
+679344 glMapBufferRange(target = GL_ELEMENT_ARRAY_BUFFER, offset = 0, length = 768, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT) = 0xd7384000
+679346 glFlushMappedBufferRange(target = GL_ELEMENT_ARRAY_BUFFER, offset = 0, length = 768)
+679347 glUnmapBuffer(target = GL_ELEMENT_ARRAY_BUFFER) = GL_TRUE
+679348 glMapBufferRange(target = GL_ELEMENT_ARRAY_BUFFER, offset = 768, length = 768, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT) = 0xd7384300
+679350 glFlushMappedBufferRange(target = GL_ELEMENT_ARRAY_BUFFER, offset = 0, length = 768)
+679351 glUnmapBuffer(target = GL_ELEMENT_ARRAY_BUFFER) = GL_TRUE
+679352 glMapBufferRange(target = GL_ELEMENT_ARRAY_BUFFER, offset = 1536, length = 768, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT) = 0xd7384600
+679354 glFlushMappedBufferRange(target = GL_ELEMENT_ARRAY_BUFFER, offset = 0, length = 768)
+679355 glUnmapBuffer(target = GL_ELEMENT_ARRAY_BUFFER) = GL_TRUE
+679356 glMapBufferRange(target = GL_ELEMENT_ARRAY_BUFFER, offset = 2304, length = 768, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT) = 0xd7384900
+679358 glFlushMappedBufferRange(target = GL_ELEMENT_ARRAY_BUFFER, offset = 0, length = 768)
+679359 glUnmapBuffer(target = GL_ELEMENT_ARRAY_BUFFER) = GL_TRUE
+
+[... setup completes and we start drawing later]
+
+761845 glBindBufferARB(target = GL_ELEMENT_ARRAY_BUFFER, buffer = 1314)
+761846 glDrawRangeElementsBaseVertex(mode = GL_TRIANGLES, start = 0, end = 323, count = 384, type = GL_UNSIGNED_SHORT, indices = NULL, basevertex = 0)
+</pre></div>
+</div>
+<p>This suggests that, for non-blitting drivers, resetting your “might be used on
+the GPU” range after a stall could save you a bunch of additional GPU stalls
+during setup.</p>
+</section>
+<section id="terraria">
+<h2>Terraria<a class="headerlink" href="#terraria" title="Link to this heading">¶</a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>167581 glXSwapBuffers(dpy = 0x3004630, drawable = 25165844)
+
+167585 glBufferData(target = GL_ARRAY_BUFFER, size = 196608, data = NULL, usage = GL_STREAM_DRAW)
+167586 glBufferSubData(target = GL_ARRAY_BUFFER, offset = 0, size = 1728, data = blob(1728))
+167588 glDrawRangeElementsBaseVertex(mode = GL_TRIANGLES, start = 0, end = 71, count = 108, type = GL_UNSIGNED_SHORT, indices = NULL, basevertex = 0)
+167589 glBufferData(target = GL_ARRAY_BUFFER, size = 196608, data = NULL, usage = GL_STREAM_DRAW)
+167590 glBufferSubData(target = GL_ARRAY_BUFFER, offset = 0, size = 27456, data = blob(27456))
+167592 glDrawRangeElementsBaseVertex(mode = GL_TRIANGLES, start = 0, end = 7, count = 12, type = GL_UNSIGNED_SHORT, indices = NULL, basevertex = 0)
+167594 glDrawRangeElementsBaseVertex(mode = GL_TRIANGLES, start = 0, end = 3, count = 6, type = GL_UNSIGNED_SHORT, indices = NULL, basevertex = 8)
+167596 glDrawRangeElementsBaseVertex(mode = GL_TRIANGLES, start = 0, end = 3, count = 6, type = GL_UNSIGNED_SHORT, indices = NULL, basevertex = 12)
+[...]
+</pre></div>
+</div>
+<p>In this game, we can see <code class="docutils literal notranslate"><span class="pre">glBufferData()</span></code> being used on the same array buffer
+throughout, to get new storage so that the <code class="docutils literal notranslate"><span class="pre">glBufferSubData()</span></code> doesn’t cause
+synchronization.</p>
+</section>
+<section id="don-t-starve">
+<h2>Don’t Starve<a class="headerlink" href="#don-t-starve" title="Link to this heading">¶</a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>7251917 glGenBuffers(n = 1, buffers = &amp;115052)
+7251918 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 115052)
+7251919 glBufferData(target = GL_ARRAY_BUFFER, size = 144, data = blob(144), usage = GL_STREAM_DRAW)
+7251921 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 115052)
+7251928 glDrawArrays(mode = GL_TRIANGLES, first = 0, count = 6)
+7251930 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 114872)
+7251936 glDrawArrays(mode = GL_TRIANGLES, first = 0, count = 18)
+7251938 glGenBuffers(n = 1, buffers = &amp;115053)
+7251939 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 115053)
+7251940 glBufferData(target = GL_ARRAY_BUFFER, size = 144, data = blob(144), usage = GL_STREAM_DRAW)
+7251942 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 115053)
+7251949 glDrawArrays(mode = GL_TRIANGLES, first = 0, count = 6)
+7251973 glXSwapBuffers(dpy = 0x86dd860, drawable = 20971540)
+[... drawing next frame]
+7252388 glDeleteBuffers(n = 1, buffers = &amp;115052)
+7252389 glDeleteBuffers(n = 1, buffers = &amp;115053)
+7252390 glXSwapBuffers(dpy = 0x86dd860, drawable = 20971540)
+</pre></div>
+</div>
+<p>In this game we have a lot of tiny <code class="docutils literal notranslate"><span class="pre">glBufferData()</span></code> calls, suggesting that we
+could see working set wins and possibly CPU overhead reduction by packing small
+GL buffers in the same BO. Interestingly, the deletes of the temporary buffers
+always happen at the end of the next frame.</p>
+</section>
+<section id="euro-truck-simulator">
+<h2>Euro Truck Simulator<a class="headerlink" href="#euro-truck-simulator" title="Link to this heading">¶</a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>[usage of VBO 14,15]
+[...]
+885199 glXSwapBuffers(dpy = 0x379a3e0, drawable = 20971527)
+885203 glInvalidateBufferData(buffer = 14)
+885204 glInvalidateBufferData(buffer = 15)
+[...]
+889330 glXSwapBuffers(dpy = 0x379a3e0, drawable = 20971527)
+889334 glInvalidateBufferData(buffer = 12)
+889335 glInvalidateBufferData(buffer = 16)
+[...]
+893461 glXSwapBuffers(dpy = 0x379a3e0, drawable = 20971527)
+893462 glClientWaitSync(sync = 0x77eee10, flags = 0x0, timeout = 0) = GL_ALREADY_SIGNALED
+893463 glDeleteSync(sync = 0x780a630)
+893464 glFenceSync(condition = GL_SYNC_GPU_COMMANDS_COMPLETE, flags = 0) = 0x78ec730
+893465 glInvalidateBufferData(buffer = 13)
+893466 glInvalidateBufferData(buffer = 17)
+893505 glBindBuffer(target = GL_COPY_READ_BUFFER, buffer = 14)
+893506 glMapBufferRange(target = GL_COPY_READ_BUFFER, offset = 0, length = 788, access = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0x7b034efd1000
+893508 glUnmapBuffer(target = GL_COPY_READ_BUFFER) = GL_TRUE
+893509 glBindBuffer(target = GL_COPY_READ_BUFFER, buffer = 15)
+893510 glMapBufferRange(target = GL_COPY_READ_BUFFER, offset = 0, length = 32, access = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0x7b034e5df000
+893512 glUnmapBuffer(target = GL_COPY_READ_BUFFER) = GL_TRUE
+893532 glBindVertexBuffers(first = 0, count = 2, buffers = {10, 15}, offsets = {0, 0}, strides = {52, 16})
+893552 glDrawElementsInstancedBaseVertex(mode = GL_TRIANGLES, count = 18, type = GL_UNSIGNED_SHORT, indices = 0x13f280, instancecount = 1, basevertex = 25131)
+893609 glDrawArrays(mode = GL_TRIANGLES, first = 0, count = 6)
+893732 glBindVertexBuffers(first = 0, count = 1, buffers = &amp;14, offsets = &amp;0, strides = &amp;48)
+893733 glBindBuffer(target = GL_ELEMENT_ARRAY_BUFFER, buffer = 14)
+893744 glDrawElementsBaseVertex(mode = GL_TRIANGLES, count = 6, type = GL_UNSIGNED_SHORT, indices = 0xf0, basevertex = 0)
+893759 glDrawElementsBaseVertex(mode = GL_TRIANGLES, count = 24, type = GL_UNSIGNED_SHORT, indices = 0x2e0, basevertex = 6)
+893786 glDrawElementsBaseVertex(mode = GL_TRIANGLES, count = 600, type = GL_UNSIGNED_SHORT, indices = 0xe87b0, basevertex = 21515)
+893822 glDrawArrays(mode = GL_TRIANGLES, first = 0, count = 6)
+893845 glBindBuffer(target = GL_COPY_READ_BUFFER, buffer = 14)
+893846 glMapBufferRange(target = GL_COPY_READ_BUFFER, offset = 788, length = 788, access = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0x7b034efd1314
+893848 glUnmapBuffer(target = GL_COPY_READ_BUFFER) = GL_TRUE
+893886 glDrawElementsInstancedBaseVertex(mode = GL_TRIANGLES, count = 18, type = GL_UNSIGNED_SHORT, indices = 0x13f280, instancecount = 1, basevertex = 25131)
+893943 glDrawArrays(mode = GL_TRIANGLES, first = 0, count = 6)
+</pre></div>
+</div>
+<p>At the start of this frame, buffer 14 and 15 haven’t been used in the previous 2
+frames, and the <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_sync.txt">GL_ARB_sync</a> fence has ensured that the GPU has at least started
+frame n-1 as the CPU starts the current frame. The first map is <code class="docutils literal notranslate"><span class="pre">offset</span> <span class="pre">=</span> <span class="pre">0,</span>
+<span class="pre">INVALIDATE_BUFFER</span> <span class="pre">|</span> <span class="pre">UNSYNCHRONIZED</span></code>, which suggests that the driver should
+reallocate storage for the mapping even in the <code class="docutils literal notranslate"><span class="pre">UNSYNCHRONIZED</span></code> case, except
+that the buffer is definitely going to be idle, making reallocation unnecessary
+(you may need to empty your valid range, though, to prevent unnecessary batch
+flushes).</p>
+<p>Also note the use of a totally unrelated binding point for the mapping of the
+vertex array – you can’t effectively use it as a hint for any buffer placement
+in memory. The game does also use <code class="docutils literal notranslate"><span class="pre">glCopyBufferSubData()</span></code>, but only on a
+different buffer.</p>
+</section>
+<section id="plague-inc">
+<h2>Plague Inc<a class="headerlink" href="#plague-inc" title="Link to this heading">¶</a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>1640732 glXSwapBuffers(dpy = 0xb218f20, drawable = 23068674)
+1640733 glClientWaitSync(sync = 0xb4141430, flags = 0x0, timeout = 0) = GL_ALREADY_SIGNALED
+1640734 glDeleteSync(sync = 0xb4141430)
+1640735 glFenceSync(condition = GL_SYNC_GPU_COMMANDS_COMPLETE, flags = 0) = 0xb4141430
+
+1640780 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 78)
+1640787 glBindBuffer(target = GL_ELEMENT_ARRAY_BUFFER, buffer = 79)
+1640788 glDrawElements(mode = GL_TRIANGLES, count = 9636, type = GL_UNSIGNED_SHORT, indices = NULL)
+1640795 glDrawElements(mode = GL_TRIANGLES, count = 9636, type = GL_UNSIGNED_SHORT, indices = NULL)
+1640813 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 1096)
+1640814 glMapBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 67584, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0xbfef4000
+1640815 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 1091)
+1640816 glMapBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 12, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0xc3998000
+1640817 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 1096)
+1640819 glFlushMappedBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 352)
+1640820 glUnmapBuffer(target = GL_COPY_WRITE_BUFFER) = GL_TRUE
+1640821 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 1091)
+1640823 glFlushMappedBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 12)
+1640824 glUnmapBuffer(target = GL_COPY_WRITE_BUFFER) = GL_TRUE
+1640825 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 1096)
+1640831 glBindBuffer(target = GL_ELEMENT_ARRAY_BUFFER, buffer = 1091)
+1640832 glDrawElements(mode = GL_TRIANGLES, count = 6, type = GL_UNSIGNED_SHORT, indices = NULL)
+
+1640847 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 1096)
+1640848 glMapBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 352, length = 67584, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0xbfef4160
+1640849 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 1091)
+1640850 glMapBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 88, length = 12, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0xc3998058
+1640851 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 1096)
+1640853 glFlushMappedBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 352)
+1640854 glUnmapBuffer(target = GL_COPY_WRITE_BUFFER) = GL_TRUE
+1640855 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 1091)
+1640857 glFlushMappedBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 12)
+1640858 glUnmapBuffer(target = GL_COPY_WRITE_BUFFER) = GL_TRUE
+1640863 glDrawElementsBaseVertex(mode = GL_TRIANGLES, count = 6, type = GL_UNSIGNED_SHORT, indices = 0x58, basevertex = 4)
+</pre></div>
+</div>
+<p>At the start of this frame, the VBOs haven’t been used in about 6 frames, and
+the <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_sync.txt">GL_ARB_sync</a> fence has ensured that the GPU has started frame n-1.</p>
+<p>Note the use of <code class="docutils literal notranslate"><span class="pre">glFlushMappedBufferRange()</span></code> on a small fraction of the size
+of the VBO – it is important that a blitting driver make use of the flush
+ranges when in explicit mode.</p>
+</section>
+<section id="darkest-dungeon">
+<h2>Darkest Dungeon<a class="headerlink" href="#darkest-dungeon" title="Link to this heading">¶</a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>938384 glXSwapBuffers(dpy = 0x377fcd0, drawable = 23068692)
+
+938385 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 2)
+938386 glBufferData(target = GL_ARRAY_BUFFER, size = 1048576, data = NULL, usage = GL_STREAM_DRAW)
+938511 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 2)
+938512 glMapBufferRange(target = GL_ARRAY_BUFFER, offset = 0, length = 1048576, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0x7a73fcaa7000
+938514 glFlushMappedBufferRange(target = GL_ARRAY_BUFFER, offset = 0, length = 512)
+938515 glUnmapBuffer(target = GL_ARRAY_BUFFER) = GL_TRUE
+938523 glBindBuffer(target = GL_ELEMENT_ARRAY_BUFFER, buffer = 1)
+938524 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 2)
+938525 glDrawElements(mode = GL_TRIANGLES, count = 24, type = GL_UNSIGNED_SHORT, indices = NULL)
+938527 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 2)
+938528 glMapBufferRange(target = GL_ARRAY_BUFFER, offset = 0, length = 1048576, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0x7a73fcaa7000
+938530 glFlushMappedBufferRange(target = GL_ARRAY_BUFFER, offset = 512, length = 512)
+938531 glUnmapBuffer(target = GL_ARRAY_BUFFER) = GL_TRUE
+938539 glBindBuffer(target = GL_ELEMENT_ARRAY_BUFFER, buffer = 1)
+938540 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 2)
+938541 glDrawElements(mode = GL_TRIANGLES, count = 24, type = GL_UNSIGNED_SHORT, indices = 0x30)
+[... more maps and draws at increasing offsets]
+</pre></div>
+</div>
+<p>Interesting note for this game, after the initial <code class="docutils literal notranslate"><span class="pre">glBufferData()</span></code> in the
+frame to reallocate the storage, it unsync maps the whole buffer each time, and
+just changes which region it flushes. The same GL buffer name is used in every
+frame.</p>
+</section>
+<section id="tabletop-simulator">
+<h2>Tabletop Simulator<a class="headerlink" href="#tabletop-simulator" title="Link to this heading">¶</a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>1287594 glXSwapBuffers(dpy = 0x3e10810, drawable = 23068692)
+1287595 glClientWaitSync(sync = 0x7abf554e37b0, flags = 0x0, timeout = 0) = GL_ALREADY_SIGNALED
+1287596 glDeleteSync(sync = 0x7abf554e37b0)
+1287597 glFenceSync(condition = GL_SYNC_GPU_COMMANDS_COMPLETE, flags = 0) = 0x7abf56647490
+
+1287614 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 480)
+1287615 glMapBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 384, access = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_RANGE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0x7abf2e79a000
+1287642 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 614)
+1287650 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 5)
+1287651 glBufferSubData(target = GL_COPY_WRITE_BUFFER, offset = 0, size = 1088, data = blob(1088))
+1287652 glBindBuffer(target = GL_ELEMENT_ARRAY_BUFFER, buffer = 615)
+1287653 glDrawElements(mode = GL_TRIANGLES, count = 1788, type = GL_UNSIGNED_SHORT, indices = NULL)
+[... more draw calls]
+1289055 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 480)
+1289057 glFlushMappedBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 384)
+1289058 glUnmapBuffer(target = GL_COPY_WRITE_BUFFER) = GL_TRUE
+1289059 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 480)
+1289066 glDrawArrays(mode = GL_TRIANGLE_STRIP, first = 12, count = 4)
+1289068 glDrawArrays(mode = GL_TRIANGLE_STRIP, first = 8, count = 4)
+1289553 glXSwapBuffers(dpy = 0x3e10810, drawable = 23068692)
+</pre></div>
+</div>
+<p>In this app, buffer 480 gets used like this every other frame.  The <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_sync.txt">GL_ARB_sync</a>
+fence ensures that frame n-1 has started on the GPU before CPU work starts on
+the current frame, so the unsynchronized access to the buffers is safe.</p>
+</section>
+<section id="hollow-knight">
+<h2>Hollow Knight<a class="headerlink" href="#hollow-knight" title="Link to this heading">¶</a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>1873034 glXSwapBuffers(dpy = 0x28609d0, drawable = 23068692)
+1873035 glClientWaitSync(sync = 0x7b1a5ca6e130, flags = 0x0, timeout = 0) = GL_ALREADY_SIGNALED
+1873036 glDeleteSync(sync = 0x7b1a5ca6e130)
+1873037 glFenceSync(condition = GL_SYNC_GPU_COMMANDS_COMPLETE, flags = 0) = 0x7b1a5ca6e130
+1873038 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 29)
+1873039 glMapBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 8640, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0x7b1a04c7e000
+1873040 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 30)
+1873041 glMapBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 720, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0x7b1a07430000
+1873065 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 29)
+1873067 glFlushMappedBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 8640)
+1873068 glUnmapBuffer(target = GL_COPY_WRITE_BUFFER) = GL_TRUE
+1873069 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 30)
+1873071 glFlushMappedBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 720)
+1873072 glUnmapBuffer(target = GL_COPY_WRITE_BUFFER) = GL_TRUE
+1873073 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 29)
+1873074 glMapBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 8640, length = 576, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0x7b1a04c801c0
+1873075 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 30)
+1873076 glMapBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 720, length = 72, access = GL_MAP_WRITE_BIT | GL_MAP_FLUSH_EXPLICIT_BIT | GL_MAP_UNSYNCHRONIZED_BIT) = 0x7b1a074302d0
+1873077 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 29)
+1873079 glFlushMappedBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 576)
+1873080 glUnmapBuffer(target = GL_COPY_WRITE_BUFFER) = GL_TRUE
+1873081 glBindBuffer(target = GL_COPY_WRITE_BUFFER, buffer = 30)
+1873083 glFlushMappedBufferRange(target = GL_COPY_WRITE_BUFFER, offset = 0, length = 72)
+1873084 glUnmapBuffer(target = GL_COPY_WRITE_BUFFER) = GL_TRUE
+1873085 glBindBuffer(target = GL_ARRAY_BUFFER, buffer = 29)
+1873096 glBindBuffer(target = GL_ELEMENT_ARRAY_BUFFER, buffer = 30)
+1873097 glDrawElementsBaseVertex(mode = GL_TRIANGLES, count = 36, type = GL_UNSIGNED_SHORT, indices = 0x2d0, basevertex = 240)
+</pre></div>
+</div>
+<p>In this app, buffer 29/30 get used like this starting from offset 0 every other
+frame.  The <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_sync.txt">GL_ARB_sync</a> fence is used to make sure that the GPU has reached the
+start of the previous frame before we go unsynchronized writing over the n-2
+frame’s buffer.</p>
+</section>
+<section id="borderlands-2">
+<h2>Borderlands 2<a class="headerlink" href="#borderlands-2" title="Link to this heading">¶</a></h2>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>3561998 glFlush()
+3562004 glXSwapBuffers(dpy = 0xbaf0f90, drawable = 23068705)
+3562006 glClientWaitSync(sync = 0x231c2ab0, flags = GL_SYNC_FLUSH_COMMANDS_BIT, timeout = 10000000000) = GL_ALREADY_SIGNALED
+3562007 glDeleteSync(sync = 0x231c2ab0)
+3562008 glFenceSync(condition = GL_SYNC_GPU_COMMANDS_COMPLETE, flags = 0) = 0x231aadc0
+
+3562050 glBindBufferARB(target = GL_ARRAY_BUFFER, buffer = 1193)
+3562051 glMapBufferRange(target = GL_ARRAY_BUFFER, offset = 0, length = 1792, access = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT) = 0xde056000
+3562053 glUnmapBufferARB(target = GL_ARRAY_BUFFER) = GL_TRUE
+3562054 glBindBufferARB(target = GL_ARRAY_BUFFER, buffer = 1194)
+3562055 glMapBufferRange(target = GL_ARRAY_BUFFER, offset = 0, length = 1280, access = GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT) = 0xd9426000
+3562057 glUnmapBufferARB(target = GL_ARRAY_BUFFER) = GL_TRUE
+[... unrelated draws]
+3563051 glBindBufferARB(target = GL_ARRAY_BUFFER, buffer = 1193)
+3563064 glBindBufferARB(target = GL_ELEMENT_ARRAY_BUFFER, buffer = 875)
+3563065 glDrawElementsInstancedARB(mode = GL_TRIANGLES, count = 72, type = GL_UNSIGNED_SHORT, indices = NULL, instancecount = 28)
+</pre></div>
+</div>
+<p>The <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_sync.txt">GL_ARB_sync</a> fence ensures that the GPU has started frame n-1 before the CPU
+starts on the current frame.</p>
+<p>This sequence of buffer uploads appears in each frame with the same buffer
+names, so you do need to handle the <code class="docutils literal notranslate"><span class="pre">GL_MAP_INVALIDATE_BUFFER_BIT</span></code> as a
+reallocate if the buffer is GPU-busy (it wasn’t in this trace capture) to avoid
+stalls on the n-1 frame completing.</p>
+<p>Note that this is just one small buffer. Most of the vertex data goes through a
+<code class="docutils literal notranslate"><span class="pre">glBufferSubData()</span></code>/<code class="docutils literal notranslate"><span class="pre">glDraw*()</span></code> path with the VBO used across multiple
+frames, with a <code class="docutils literal notranslate"><span class="pre">glBufferData()</span></code> when needing to wrap.</p>
+</section>
+</section>
+<section id="buffer-mapping-conclusions">
+<h1>Buffer mapping conclusions<a class="headerlink" href="#buffer-mapping-conclusions" title="Link to this heading">¶</a></h1>
+<ul class="simple">
+<li><p>Non-blitting drivers must track the valid range of a freshly allocated buffer
+as it gets uploaded in <code class="docutils literal notranslate"><span class="pre">pipe_transfer_map()</span></code> and avoid stalling on the GPU
+when mapping an undefined portion of the buffer when <code class="docutils literal notranslate"><span class="pre">glBufferSubData()</span></code> is
+interleaved with drawing.</p></li>
+<li><p>Non-blitting drivers must reallocate storage on <code class="docutils literal notranslate"><span class="pre">glBufferData(NULL)</span></code> so that
+the following <code class="docutils literal notranslate"><span class="pre">glBufferSubData()</span></code> won’t stall. That <code class="docutils literal notranslate"><span class="pre">glBufferData(NULL)</span></code>
+call will appear in the driver as an <code class="docutils literal notranslate"><span class="pre">invalidate_resource()</span></code> call if
+<code class="docutils literal notranslate"><span class="pre">pipe_caps.invalidate_buffer</span></code> is available. (If that flag is not set, then
+mesa/st will create a new pipe_resource for you). Storage reallocation may be
+skipped if you for some reason know that the buffer is idle, in which case you
+can just empty the valid region.</p></li>
+<li><p>Blitting drivers must use the <code class="docutils literal notranslate"><span class="pre">transfer_flush_region()</span></code> region
+instead of the mapped range when <code class="docutils literal notranslate"><span class="pre">PIPE_MAP_FLUSH_EXPLICIT</span></code> is set, to avoid
+blitting too much data. (When that bit is unset, you just blit the whole
+mapped range at unmap time.)</p></li>
+<li><p>Buffer valid range tracking in non-blitting drivers must use the
+<code class="docutils literal notranslate"><span class="pre">transfer_flush_region()</span></code> region instead of the mapped range when
+<code class="docutils literal notranslate"><span class="pre">PIPE_MAP_FLUSH_EXPLICIT</span></code> is set, to avoid excess stalls.</p></li>
+<li><p>Buffer valid range tracking doesn’t need to be fancy, “number of bytes
+valid starting from 0” is sufficient for all examples found.</p></li>
+<li><p>Use the <code class="docutils literal notranslate"><span class="pre">util_debug_callback</span></code> to report stalls on buffer mapping to ease
+debug.</p></li>
+<li><p>Buffer binding points are not useful for tuning buffer placement (See all the
+<code class="docutils literal notranslate"><span class="pre">PIPE_COPY_WRITE_BUFFER</span></code> instances), you have to track the actual usage
+history of a GL BO name.  mesa/st does this for optimizing its state updates
+on reallocation in the <code class="docutils literal notranslate"><span class="pre">!pipe_caps.invalidate_buffer</span></code> case, and if you set
+<code class="docutils literal notranslate"><span class="pre">pipe_caps.invalidate_buffer</span></code> then you have to flag your own internal state
+updates (VBO addresses, XFB addresses, texture buffer addresses, etc.) on
+reallocation based on usage history.</p></li>
+</ul>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="../search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Gallium</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="intro.html">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="debugging.html">Debugging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tgsi.html">TGSI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="screen.html">Screen</a></li>
+<li class="toctree-l2"><a class="reference internal" href="resources.html">Resources and derived objects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="format.html">Formats in gallium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="context.html">Context</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cso.html">CSO</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Buffer mapping patterns</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#portal-2">Portal 2</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#terraria">Terraria</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#don-t-starve">Don’t Starve</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#euro-truck-simulator">Euro Truck Simulator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#plague-inc">Plague Inc</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#darkest-dungeon">Darkest Dungeon</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#tabletop-simulator">Tabletop Simulator</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hollow-knight">Hollow Knight</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#borderlands-2">Borderlands 2</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#buffer-mapping-conclusions">Buffer mapping conclusions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="postprocess.html">Gallium Post-processing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glossary.html">Glossary</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#indices-and-tables">Indices and tables</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/gallium/buffermapping.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

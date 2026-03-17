@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>KosmicKrisp workarounds &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="../../_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/screen.css?v=10557b77" />
+
+    <script src="../../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="../../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Lima" href="../lima.html" />
+    <link rel="prev" title="KosmicKrisp" href="../kosmickrisp.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="../../_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="../../download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="../../index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="kosmickrisp-workarounds">
+<h1>KosmicKrisp workarounds<a class="headerlink" href="#kosmickrisp-workarounds" title="Link to this heading">¶</a></h1>
+<p>This file documents the relevant issues found in either Metal, the MSL
+compiler or any other component we have no control over that needed to be
+worked around to accomplish Vulkan conformance.</p>
+<p>All workarounds must be documented here and no code comment info should be
+provided other than the name <code class="docutils literal notranslate"><span class="pre">KK_WORKAROUND_#</span></code>.</p>
+<p>Once a workaround was removed from the code, the code comment will be
+removed but the documentation here will be kept.</p>
+<section id="template">
+<h2>Template<a class="headerlink" href="#template" title="Link to this heading">¶</a></h2>
+<p>Use the following template to create documentation for a new workaround:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>KK_WORKAROUND_#
+---------------
+| macOS version:
+| Metal ticket:
+| Metal ticket status:
+| CTS test failure/crash:
+| Comments:
+| Log:
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">macOS</span> <span class="pre">version</span></code> needs to have the OS version with which it was found.</p>
+<p><code class="docutils literal notranslate"><span class="pre">Metal</span> <span class="pre">ticket</span></code> needs to be either the Metal ticket number with the GitLab
+handle of the user that reported the ticket or <code class="docutils literal notranslate"><span class="pre">Unreported</span></code>.</p>
+<p><code class="docutils literal notranslate"><span class="pre">Metal</span> <span class="pre">ticket</span> <span class="pre">status</span></code> needs to be either <code class="docutils literal notranslate"><span class="pre">Fixed</span> <span class="pre">in</span> <span class="pre">macOS</span> <span class="pre">#</span> <span class="pre">(Build</span> <span class="pre">hash)</span></code>,</p>
+<p><code class="docutils literal notranslate"><span class="pre">Waiting</span> <span class="pre">resolution</span></code> or empty if unreported. If Apple reported that the issue
+was fixed, but no user has verified the fix, append <code class="docutils literal notranslate"><span class="pre">[Untested]</span></code>.
+<code class="docutils literal notranslate"><span class="pre">CTS</span> <span class="pre">test</span> <span class="pre">failure/crash</span></code> (remove <code class="docutils literal notranslate"><span class="pre">failure</span></code> or <code class="docutils literal notranslate"><span class="pre">crash</span></code> based on test
+behavior) needs to be the name of the test or test family the issue can be
+reproduced with.</p>
+<p><code class="docutils literal notranslate"><span class="pre">Comments</span></code> needs to include as much information on the issue and how the
+workaround fixes it.</p>
+<p><code class="docutils literal notranslate"><span class="pre">Log</span></code> needs to have the dates (yyyy-mm-dd, the only correct date format) with
+info on what was updated.</p>
+</section>
+<section id="workarounds">
+<h2>Workarounds<a class="headerlink" href="#workarounds" title="Link to this heading">¶</a></h2>
+<section id="kk-workaround-6">
+<h3>KK_WORKAROUND_6<a class="headerlink" href="#kk-workaround-6" title="Link to this heading">¶</a></h3>
+<div class="line-block">
+<div class="line">macOS version: 26.0.1</div>
+<div class="line">Metal ticket: Not reported</div>
+<div class="line">Metal ticket status:</div>
+<div class="line">CTS test failure: <code class="docutils literal notranslate"><span class="pre">dEQP-VK.spirv_assembly.instruction.*.float16.opcompositeinsert.*</span></code></div>
+<div class="line">Comments:</div>
+</div>
+<p>Metal does not respect its own Memory Coherency Model (MSL spec 4.8). From
+the spec:
+<code class="docutils literal notranslate"><span class="pre">By</span> <span class="pre">default,</span> <span class="pre">memory</span> <span class="pre">in</span> <span class="pre">the</span> <span class="pre">device</span> <span class="pre">address</span> <span class="pre">space</span> <span class="pre">has</span> <span class="pre">threadgroup</span> <span class="pre">coherence.</span></code></p>
+<p>If we have a single thread compute dispatch so that we do (simplified version):</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="k">for</span><span class="w"> </span><span class="p">(...)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">   </span><span class="n">value</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">ssbo_data</span><span class="p">[</span><span class="mi">0</span><span class="p">];</span><span class="w"> </span><span class="c1">// ssbo_data is a device buffer</span>
+<span class="w">   </span><span class="p">...</span>
+<span class="w">   </span><span class="n">ssbo_data</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">new_value</span><span class="p">;</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">ssbo_data[0]</span></code> will not correctly store/load the values so the value
+written in iteration 0, will not be available in iteration 1. The workaround
+to this issue is marking the device memory pointer through which the memory
+is accessed as coherent so that the value is stored and loaded correctly.
+Hopefully this does not affect performance much.</p>
+<div class="line-block">
+<div class="line">Log:</div>
+<div class="line">2025-12-08: Workaround implemented and reported to Apple</div>
+</div>
+</section>
+<section id="kk-workaround-5">
+<h3>KK_WORKAROUND_5<a class="headerlink" href="#kk-workaround-5" title="Link to this heading">¶</a></h3>
+<div class="line-block">
+<div class="line">macOS version: 26.0.1</div>
+<div class="line">Metal ticket: Not reported</div>
+<div class="line">Metal ticket status:</div>
+<div class="line">CTS test failure: <code class="docutils literal notranslate"><span class="pre">dEQP-VK.fragment_operations.early_fragment.discard_no_early_fragment_tests_depth</span></code></div>
+<div class="line">Comments:</div>
+</div>
+<p>Fragment shaders that have side effects (like writing to a buffer) will be
+prematurely discarded if there is a <code class="docutils literal notranslate"><span class="pre">discard_fragment</span></code> that will always
+execute. To work around this, we just make the discard “optional” by moving
+it inside a run time conditional that will always be true (such as is the
+fragment a helper?). This tricks the MSL compiler into not optimizing it into
+a premature discard.</p>
+<div class="line-block">
+<div class="line">Log:</div>
+<div class="line">2025-12-01: Workaround implemented</div>
+</div>
+</section>
+<section id="kk-workaround-4">
+<h3>KK_WORKAROUND_4<a class="headerlink" href="#kk-workaround-4" title="Link to this heading">¶</a></h3>
+<div class="line-block">
+<div class="line">macOS version: 26.0.1</div>
+<div class="line">Metal ticket: FB21124215 (&#64;aitor)</div>
+<div class="line">Metal ticket status: Waiting resolution</div>
+<div class="line">CTS test failure: <code class="docutils literal notranslate"><span class="pre">dEQP-VK.draw.renderpass.shader_invocation.helper_invocation*</span></code> and few others</div>
+<div class="line">Comments:</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">simd_is_helper_thread()</span></code> will always return true if the shader was started
+as a non-helper thread, even after <code class="docutils literal notranslate"><span class="pre">discard_fragment()</span></code> is called. The
+workaround is to have a variable tracking this state and update it when the
+fragment is discarded. This issue is present in M1 and M2 chips.</p>
+<div class="line-block">
+<div class="line">Log:</div>
+<div class="line">2025-11-22: Workaround implemented and reported to Apple</div>
+</div>
+</section>
+<section id="kk-workaround-3">
+<h3>KK_WORKAROUND_3<a class="headerlink" href="#kk-workaround-3" title="Link to this heading">¶</a></h3>
+<div class="line-block">
+<div class="line">macOS version: 15.4.x</div>
+<div class="line">Metal ticket: FB20113490 (&#64;aitor)</div>
+<div class="line">Metal ticket status: Waiting resolution</div>
+<div class="line">CTS test failure: <code class="docutils literal notranslate"><span class="pre">dEQP-VK.subgroups.ballot_other.*.subgroupballotfindlsb</span></code></div>
+<div class="line">Comments:</div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">simd_is_first</span></code> does not seem to behave as documented in the MSL
+specification. The following code snippet misbehaves:</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">simd_is_first</span><span class="p">())</span>
+<span class="w">   </span><span class="n">temp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3u</span><span class="p">;</span>
+<span class="k">else</span>
+<span class="w">   </span><span class="n">temp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">simd_ballot</span><span class="p">(</span><span class="nb">true</span><span class="p">);</span><span class="w"> </span><span class="cm">/* &lt;- This will return all active threads... */</span>
+</pre></div>
+</div>
+<p>The way to fix this is by changing the conditional to:</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">simd_is_first</span><span class="p">()</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">(</span><span class="n">ulong</span><span class="p">)</span><span class="n">simd_ballot</span><span class="p">(</span><span class="nb">true</span><span class="p">))</span>
+<span class="w">   </span><span class="n">temp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3u</span><span class="p">;</span>
+<span class="k">else</span>
+<span class="w">   </span><span class="n">temp</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">(</span><span class="n">ulong</span><span class="p">)</span><span class="n">simd_ballot</span><span class="p">(</span><span class="nb">true</span><span class="p">);</span>
+</pre></div>
+</div>
+<div class="line-block">
+<div class="line">Log:</div>
+<div class="line">2025-09-09: Workaround implemented and reported to Apple</div>
+</div>
+</section>
+<section id="kk-workaround-2">
+<h3>KK_WORKAROUND_2<a class="headerlink" href="#kk-workaround-2" title="Link to this heading">¶</a></h3>
+<div class="line-block">
+<div class="line">macOS version: 15.4.x</div>
+<div class="line">Metal ticket: FB21065475 (&#64;aitor)</div>
+<div class="line">Metal ticket status: Waiting resolution</div>
+<div class="line">CTS test crash: <code class="docutils literal notranslate"><span class="pre">dEQP-VK.graphicsfuzz.cov-nested-loops-never-change-array-element-one</span></code> and <code class="docutils literal notranslate"><span class="pre">dEQP-VK.graphicsfuzz.disc-and-add-in-func-in-loop</span></code></div>
+<div class="line">Comments:</div>
+</div>
+<p>We need to loop to infinite since MSL compiler crashes if we have something
+like (simplified version):</p>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="k">while</span><span class="w"> </span><span class="p">(</span><span class="nb">true</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">   </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">some_conditional</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="n">break_loop</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">true</span><span class="p">;</span>
+<span class="w">   </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="n">break_loop</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="nb">false</span><span class="p">;</span>
+<span class="w">   </span><span class="p">}</span>
+<span class="w">   </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">break_loop</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<span class="w">      </span><span class="k">break</span><span class="p">;</span>
+<span class="w">   </span><span class="p">}</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+<p>The issue I believe is that <code class="docutils literal notranslate"><span class="pre">some_conditional</span></code> wouldn’t change the value no
+matter in which iteration we are (something like fetching the same value from
+a buffer) and the MSL compiler doesn’t seem to like that much to the point it
+crashes.</p>
+<p>The implemented solution is to change the <code class="docutils literal notranslate"><span class="pre">while(true)</span></code> loop with
+<code class="docutils literal notranslate"><span class="pre">for</span> <span class="pre">(uint64_t</span> <span class="pre">no_crash</span> <span class="pre">=</span> <span class="pre">0u;</span> <span class="pre">no_crash</span> <span class="pre">&lt;</span> <span class="pre">UINT64_MAX;</span> <span class="pre">++no_crash)</span></code>, which
+tricks the MSL compiler into believing we are not doing an infinite loop
+(wink wink).</p>
+<div class="line-block">
+<div class="line">Log:</div>
+<div class="line">2025-09-08: Workaround implemented</div>
+</div>
+</section>
+<section id="kk-workaround-1">
+<h3>KK_WORKAROUND_1<a class="headerlink" href="#kk-workaround-1" title="Link to this heading">¶</a></h3>
+<div class="line-block">
+<div class="line">macOS version: 15.4.x</div>
+<div class="line">Metal ticket: FB17604106 (&#64;aitor)</div>
+<div class="line">Metal ticket status: [Untested] Fixed in macOS 26 Beta (25A5279m)</div>
+<div class="line">CTS test crash: <code class="docutils literal notranslate"><span class="pre">dEQP-VK.glsl.indexing.tmp_array.vec3_dynamic_loop_write_dynamic_loop_read_fragment</span></code></div>
+<div class="line">Comments:</div>
+</div>
+<p>Uninitialized local scratch variable causes the MSL compiler to crash.
+Initialize scratch to avoid issue.</p>
+<div class="line-block">
+<div class="line">Log:</div>
+<div class="line">2025-05-14: Workaround implemented and reported to Apple</div>
+<div class="line">2025-06-14: Apple reported back saying it is now fixed in macOS 26 Beta (Build 25A5279m)</div>
+</div>
+</section>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="../../search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../freedreno.html">Freedreno</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../kosmickrisp.html">KosmicKrisp</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../kosmickrisp.html#building">Building</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../kosmickrisp.html#environment-variables">Environment variables</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../kosmickrisp.html#metal-workarounds">Metal workarounds</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">KosmicKrisp workarounds</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#template">Template</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#workarounds">Workarounds</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/drivers/kosmickrisp/workarounds.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

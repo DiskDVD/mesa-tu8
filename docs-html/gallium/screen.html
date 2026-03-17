@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Screen &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="../_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="../_static/screen.css?v=10557b77" />
+
+    <script src="../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Resources and derived objects" href="resources.html" />
+    <link rel="prev" title="TGSI" href="tgsi.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="../_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="../download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="../index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="screen">
+<span id="id1"></span><h1>Screen<a class="headerlink" href="#screen" title="Link to this heading">¶</a></h1>
+<p>A screen is an object representing the context-independent part of a device.</p>
+<section id="flags-and-enumerations">
+<h2>Flags and enumerations<a class="headerlink" href="#flags-and-enumerations" title="Link to this heading">¶</a></h2>
+<p>XXX some of these don’t belong in this section.</p>
+<section id="pipe-caps">
+<span id="id2"></span><h3>pipe_caps<a class="headerlink" href="#pipe-caps" title="Link to this heading">¶</a></h3>
+<p>Capability about the features and limits of the driver/GPU.</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.graphics</span></code>: Whether graphics is supported. If not, contexts can
+only be created with PIPE_CONTEXT_COMPUTE_ONLY.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.npot_textures</span></code>: Whether <a class="reference internal" href="glossary.html#term-NPOT"><span class="xref std std-term">NPOT</span></a> textures may have repeat modes,
+normalized coordinates, and mipmaps.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_dual_source_render_targets</span></code>: How many dual-source blend RTs are support.
+<a class="reference internal" href="cso/blend.html#blend"><span class="std std-ref">Blend</span></a> for more information.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.anisotropic_filter</span></code>: Whether textures can be filtered anisotropically.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_render_targets</span></code>: The maximum number of render targets that may be
+bound.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.occlusion_query</span></code>: Whether occlusion queries are available.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.query_time_elapsed</span></code>: Whether PIPE_QUERY_TIME_ELAPSED queries are available.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_shadow_map</span></code>: indicates whether the fragment shader hardware
+can do the depth texture / Z comparison operation in TEX instructions
+for shadow testing.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_swizzle</span></code>: Whether swizzling through sampler views is
+supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texture_2d_size</span></code>: The maximum size of 2D (and 1D) textures.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texture_3d_levels</span></code>: The maximum number of mipmap levels available
+for a 3D texture.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texture_cube_levels</span></code>: The maximum number of mipmap levels available
+for a cubemap.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_mirror_clamp_to_edge</span></code>: Whether mirrored texture coordinates are
+supported with the clamp-to-edge wrap mode.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_mirror_clamp</span></code>: Whether mirrored texture coordinates are supported
+with clamp or clamp-to-border wrap modes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.blend_equation_separate</span></code>: Whether alpha blend equations may be different
+from color blend equations, in <a class="reference internal" href="cso/blend.html#blend"><span class="std std-ref">Blend</span></a> state.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_stream_output_buffers</span></code>: The maximum number of stream buffers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.primitive_restart</span></code>: Whether primitive restart is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.primitive_restart_fixed_index</span></code>: Subset of
+PRIMITIVE_RESTART where the restart index is always the fixed maximum
+value for the index type.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.indep_blend_enable</span></code>: Whether per-rendertarget blend enabling and channel
+masks are supported. If 0, then the first rendertarget’s blend mask is
+replicated across all MRTs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.indep_blend_func</span></code>: Whether per-rendertarget blend functions are
+available. If 0, then the first rendertarget’s blend functions affect all
+MRTs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texture_array_layers</span></code>: The maximum number of texture array
+layers supported. If 0, the array textures are not supported at all and
+the ARRAY texture targets are invalid.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fs_coord_origin_upper_left</span></code>: Whether the upper-left origin
+fragment convention is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fs_coord_origin_lower_left</span></code>: Whether the lower-left origin
+fragment convention is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fs_coord_pixel_center_half_integer</span></code>: Whether the half-integer
+pixel-center fragment convention is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fs_coord_pixel_center_integer</span></code>: Whether the integer
+pixel-center fragment convention is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.depth_clip_disable</span></code>: Whether the driver is capable of disabling
+depth clipping (through pipe_rasterizer_state).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.depth_clip_disable_separate</span></code>: Whether the driver is capable of
+disabling depth clipping (through pipe_rasterizer_state) separately for
+the near and far plane. If not, depth_clip_near and depth_clip_far will be
+equal.
+<code class="docutils literal notranslate"><span class="pre">pipe_caps.depth_clamp_enable</span></code>: Whether the driver is capable of
+enabling depth clamping (through pipe_rasterizer_state) separately from depth
+clipping. If not, depth_clamp will be the inverse of depth_clip_far.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_stencil_export</span></code>: Whether a stencil reference value can be
+written from a fragment shader.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.vs_instanceid</span></code>: Whether <code class="docutils literal notranslate"><span class="pre">SYSTEM_VALUE_INSTANCE_ID</span></code> is
+supported in the vertex shader.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.vertex_element_instance_divisor</span></code>: Whether the driver supports
+per-instance vertex attribs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fragment_color_clamped</span></code>: Whether fragment color clamping is
+supported.  That is, is the pipe_rasterizer_state::clamp_fragment_color
+flag supported by the driver?  If not, gallium frontends will insert
+clamping code into the fragment shaders when needed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.mixed_colorbuffer_formats</span></code>: Whether mixed colorbuffer formats are
+supported, e.g. RGBA8 and RGBA32F as the first and second colorbuffer, resp.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.vertex_color_unclamped</span></code>: Whether the driver is capable of
+outputting unclamped vertex colors from a vertex shader. If unsupported,
+the vertex colors are always clamped. This is the default for DX9 hardware.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.vertex_color_clamped</span></code>: Whether the driver is capable of
+clamping vertex colors when they come out of a vertex shader, as specified
+by the pipe_rasterizer_state::clamp_vertex_color flag.  If unsupported,
+the vertex colors are never clamped. This is the default for DX10 hardware.
+If both clamped and unclamped CAPs are supported, the clamping can be
+controlled through pipe_rasterizer_state.  If the driver cannot do vertex
+color clamping, gallium frontends may insert clamping code into the vertex
+shader.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.glsl_feature_level</span></code>: Whether the driver supports features
+equivalent to a specific GLSL version. E.g. for GLSL 1.3, report 130.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.glsl_feature_level_compatibility</span></code>: Whether the driver supports
+features equivalent to a specific GLSL version including all legacy OpenGL
+features only present in the OpenGL compatibility profile.
+The only legacy features that Gallium drivers must implement are
+the legacy shader inputs and outputs (colors, texcoords, fog, clipvertex,
+edge flag).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.essl_feature_level</span></code>: An optional cap to allow drivers to
+report a higher GLSL version for GLES contexts.  This is useful when a
+driver does not support all the required features for a higher GL version,
+but does support the required features for a higher GLES version.  A driver
+is allowed to return <code class="docutils literal notranslate"><span class="pre">0</span></code> in which case <code class="docutils literal notranslate"><span class="pre">pipe_caps.glsl_feature_level</span></code> is
+used.
+Note that simply returning the same value as the GLSL feature level cap is
+incorrect.  For example, GLSL version 3.30 does not require
+<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/EXT/EXT_gpu_shader5.txt">GL_EXT_gpu_shader5</a>, but ESSL version 3.20 es does require
+<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/EXT/EXT_gpu_shader5.txt">GL_EXT_gpu_shader5</a></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.quads_follow_provoking_vertex_convention</span></code>: Whether quads adhere to
+the flatshade_first setting in <code class="docutils literal notranslate"><span class="pre">pipe_rasterizer_state</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.user_vertex_buffers</span></code>: Whether the driver supports user vertex
+buffers.  If not, gallium frontends must upload all data which is not in HW
+resources.  If user-space buffers are supported, the driver must also still
+accept HW resource buffers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.vertex_input_alignment</span></code>: This CAP describes a HW
+limitation.
+If <code class="docutils literal notranslate"><span class="pre">PIPE_VERTEX_INPUT_ALIGNMENT_4BYTE`</span></code>,
+pipe_vertex_buffer::buffer_offset must always be aligned
+to 4, and pipe_vertex_buffer::stride must always be aligned to 4,
+and pipe_vertex_element::src_offset must always be
+aligned to 4.
+If <code class="docutils literal notranslate"><span class="pre">PIPE_VERTEX_INPUT_ALIGNMENT_ELEMENT</span></code>,
+the sum of
+<code class="docutils literal notranslate"><span class="pre">pipe_vertex_element::src_offset</span> <span class="pre">+</span> <span class="pre">pipe_vertex_buffer::buffer_offset</span> <span class="pre">+</span> <span class="pre">pipe_vertex_buffer::stride</span></code>
+must always be aligned to the component size for the vertex attributes
+which access that buffer.
+If <code class="docutils literal notranslate"><span class="pre">PIPE_VERTEX_INPUT_ALIGNMENT_NONE</span></code>, there are no restrictions on these values.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.compute</span></code>: Whether the implementation supports the
+compute entry points defined in pipe_context and pipe_screen.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.constant_buffer_offset_alignment</span></code>: Describes the required
+alignment of pipe_constant_buffer::buffer_offset.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.start_instance</span></code>: Whether the driver supports
+pipe_draw_info::start_instance.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.query_timestamp</span></code>: Whether PIPE_QUERY_TIMESTAMP and
+the pipe_screen::get_timestamp hook are implemented.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.query_timestamp_bits</span></code>: How many bits the driver uses for the
+results of GL_TIMESTAMP queries.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.timer_resolution</span></code>: The resolution of the timer in nanos.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_multisample</span></code>: Whether all MSAA resources supported
+for rendering are also supported for texturing.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.min_map_buffer_alignment</span></code>: The minimum alignment that should be
+expected for a pointer returned by transfer_map if the resource is
+PIPE_BUFFER. In other words, the pointer returned by transfer_map is
+always aligned to this value.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_buffer_offset_alignment</span></code>: Describes the required
+alignment for pipe_sampler_view::u.buf.offset, in bytes.
+If a driver does not support offset/size, it should return 0.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.linear_image_pitch_alignment</span></code>: Describes the row pitch alignment
+size that pipe_sampler_view::u.tex2d_from_buf must be multiple of, in pixels.
+If a driver does not support images created from buffers, it should return 0.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.linear_image_base_address_alignment</span></code>: Describes the minimum alignment
+in pixels of the offset of a host pointer for images created from buffers.
+If a driver does not support images created from buffers, it should return 0.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.buffer_sampler_view_rgba_only</span></code>: Whether the driver only
+supports R, RG, RGB and RGBA formats for PIPE_BUFFER sampler views.
+When this is the case it should be assumed that the swizzle parameters
+in the sampler view have no effect.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.tgsi_texcoord</span></code>: This CAP describes a HW limitation.
+If true, the hardware cannot replace arbitrary shader inputs with sprite
+coordinates and hence the inputs that are desired to be replaceable must
+be declared with TGSI_SEMANTIC_TEXCOORD instead of TGSI_SEMANTIC_GENERIC.
+The rasterizer’s sprite_coord_enable state therefore also applies to the
+TEXCOORD semantic.
+Also, TGSI_SEMANTIC_PCOORD becomes available, which labels a fragment shader
+input that will always be replaced with sprite coordinates.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_transfer_modes</span></code>: The <code class="docutils literal notranslate"><span class="pre">pipe_texture_transfer_mode</span></code> modes
+that are supported for implementing a texture transfer which needs format conversions
+and swizzling in gallium frontends. Generally, all hardware drivers with
+dedicated memory should return PIPE_TEXTURE_TRANSFER_BLIT and all software rasterizers
+should return PIPE_TEXTURE_TRANSFER_DEFAULT. PIPE_TEXTURE_TRANSFER_COMPUTE requires drivers
+to support 8bit and 16bit shader storage buffer writes and to implement
+pipe_screen::is_compute_copy_faster.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.query_pipeline_statistics</span></code>: Whether PIPE_QUERY_PIPELINE_STATISTICS
+is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_border_color_quirk</span></code>: Bitmask indicating whether special
+considerations have to be given to the interaction between the border color
+in the sampler object and the sampler view used with it.
+If PIPE_QUIRK_TEXTURE_BORDER_COLOR_SWIZZLE_R600 is set, the border color
+may be affected in undefined ways for any kind of permutational swizzle
+(any swizzle XYZW where X/Y/Z/W are not ZERO, ONE, or R/G/B/A respectively)
+in the sampler view.
+If PIPE_QUIRK_TEXTURE_BORDER_COLOR_SWIZZLE_NV50 is set, the border color
+state should be swizzled manually according to the swizzle in the sampler
+view it is intended to be used with, or herein undefined results may occur
+for permutational swizzles.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texel_buffer_elements</span></code>: The maximum accessible number of
+elements within a sampler buffer view and image buffer view. This is unsigned
+integer with the maximum of 4G - 1.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_viewports</span></code>: The maximum number of viewports (and scissors
+since they are linked) a driver can support. Returning 0 is equivalent
+to returning 1 because every driver has to support at least a single
+viewport/scissor combination.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.endianness</span></code>:: The endianness of the device.  Either
+PIPE_ENDIAN_BIG or PIPE_ENDIAN_LITTLE.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.mixed_framebuffer_sizes</span></code>: Whether it is allowed to have
+different sizes for fb color/zs attachments. This controls whether
+<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_framebuffer_object.txt">GL_ARB_framebuffer_object</a> is provided.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.vs_layer_viewport</span></code>: Whether <code class="docutils literal notranslate"><span class="pre">VARYING_SLOT_LAYER</span></code> and
+<code class="docutils literal notranslate"><span class="pre">VARYING_SLOT_VIEWPORT</span></code> are supported as vertex shader outputs. Note that
+the viewport will only be used if multiple viewports are exposed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_geometry_output_vertices</span></code>: The maximum number of vertices
+output by a single invocation of a geometry shader.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_geometry_total_output_components</span></code>: The maximum number of
+vertex components output by a single invocation of a geometry shader.
+This is the product of the number of attribute components per vertex and
+the number of output vertices.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texture_gather_components</span></code>: Max number of components
+in format that texture gather can operate on. 1 == RED, ALPHA etc,
+4 == All formats.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_gather_sm5</span></code>: Whether the texture gather
+hardware implements the SM5 features, component selection,
+shadow comparison, and run-time offsets.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.buffer_map_persistent_coherent</span></code>: Whether
+PIPE_MAP_PERSISTENT and PIPE_MAP_COHERENT are supported
+for buffers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_query_lod</span></code>: Whether the <code class="docutils literal notranslate"><span class="pre">LODQ</span></code> instruction is
+supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.min_texture_gather_offset</span></code>: The minimum offset that can be used
+in conjunction with a texture gather opcode.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texture_gather_offset</span></code>: The maximum offset that can be used
+in conjunction with a texture gather opcode.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.sample_shading</span></code>: Whether there is support for per-sample
+shading. The context-&gt;set_min_samples function will be expected to be
+implemented.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_gather_offsets</span></code>: Whether the <code class="docutils literal notranslate"><span class="pre">TG4</span></code> instruction can
+accept 4 offsets.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.vs_window_space_position</span></code>: Whether window-space position is
+supported, which disables clipping and viewport transformation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_vertex_streams</span></code>: The maximum number of vertex streams
+supported by the geometry shader. If stream-out is supported, this should be
+at least 1. If stream-out is not supported, this should be 0.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.draw_indirect</span></code>: Whether the driver supports taking draw arguments
+{ count, instance_count, start, index_bias } from a PIPE_BUFFER resource.
+See pipe_draw_info.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.multi_draw_indirect</span></code>: Whether the driver supports
+pipe_draw_info::indirect_stride and ::indirect_count</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.multi_draw_indirect_params</span></code>: Whether the driver supports
+taking the number of indirect draws from a separate parameter
+buffer, see pipe_draw_indirect_info::indirect_draw_count.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.multi_draw_indirect_partial_stride</span></code>: Whether the driver supports
+indirect draws with an arbitrary stride.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fs_fine_derivative</span></code>: Whether the fragment shader supports
+the FINE versions of DDX/DDY.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.vendor_id</span></code>: The vendor ID of the underlying hardware. If it’s
+not available one should return 0xFFFFFFFF.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.device_id</span></code>: The device ID (PCI ID) of the underlying hardware.
+0xFFFFFFFF if not available.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.accelerated</span></code>: Whether the renderer is hardware accelerated. 0 means
+not accelerated (i.e. CPU rendering), 1 means accelerated (i.e. GPU rendering),
+-1 means unknown (i.e. an API translation driver which doesn’t known what kind of
+hardware it’s running above).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.video_memory</span></code>: The amount of video memory in megabytes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.uma</span></code>: If the device has a unified memory architecture or on-card
+memory and GART.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.conditional_render_inverted</span></code>: Whether the driver supports inverted
+condition for conditional rendering.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_vertex_attrib_stride</span></code>: The maximum supported vertex stride.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.sampler_view_target</span></code>: Whether the sampler view’s target can be
+different than the underlying resource’s, as permitted by
+<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_texture_view.txt">GL_ARB_texture_view</a>. For example a 2d array texture may be reinterpreted as a
+cube (array) texture and vice-versa.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.clip_halfz</span></code>: Whether the driver supports the
+pipe_rasterizer_state::clip_halfz being set to true. This is required
+for enabling <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_clip_control.txt">GL_ARB_clip_control</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.polygon_offset_clamp</span></code>: If true, the driver implements support
+for <code class="docutils literal notranslate"><span class="pre">pipe_rasterizer_state::offset_clamp</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.multisample_z_resolve</span></code>: Whether the driver supports blitting
+a multisampled depth buffer into a single-sampled texture (or depth buffer).
+Only the first sampled should be copied.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.resource_from_user_memory</span></code>: Whether the driver can create
+a pipe_resource where an already-existing piece of (malloc’d) user memory
+is used as its backing storage. In other words, whether the driver can map
+existing user memory into the device address space for direct device access.
+The create function is pipe_screen::resource_from_user_memory. The address
+and size must be page-aligned.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.resource_from_user_memory_compute_only</span></code>: Same as
+<code class="docutils literal notranslate"><span class="pre">pipe_caps.resource_from_user_memory</span></code> but indicates it is only supported from
+the compute engines.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.device_reset_status_query</span></code>:
+Whether pipe_context::get_device_reset_status is implemented.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_shader_patch_varyings</span></code>:
+How many per-patch outputs and inputs are supported between tessellation
+control and tessellation evaluation shaders, not counting in TESSINNER and
+TESSOUTER. The minimum allowed value for OpenGL is 30.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_float_linear</span></code>: Whether the linear minification and
+magnification filters are supported with single-precision floating-point
+textures.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_half_float_linear</span></code>: Whether the linear minification and
+magnification filters are supported with half-precision floating-point
+textures.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.depth_bounds_test</span></code>: Whether bounds_test, bounds_min, and
+bounds_max states of pipe_depth_stencil_alpha_state behave according
+to the <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/EXT/EXT_depth_bounds_test.txt">GL_EXT_depth_bounds_test</a> specification.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_query_samples</span></code>: Whether the <code class="docutils literal notranslate"><span class="pre">TXQS</span></code> opcode is supported</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.force_persample_interp</span></code>: If the driver can force per-sample
+interpolation for all fragment shader inputs if
+pipe_rasterizer_state::force_persample_interp is set. This is only used
+by GL3-level sample shading (<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_sample_shading.txt">GL_ARB_sample_shading</a>). GL4-level sample
+shading (<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_gpu_shader5.txt">GL_ARB_gpu_shader5</a>) doesn’t use this. While GL3 hardware has a
+state for it, GL4 hardware will likely need to emulate it with a shader
+variant, or by selecting the interpolation weights with a conditional
+assignment in the shader.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shareable_shaders</span></code>: Whether shader CSOs can be used by any
+pipe_context.  Important for reducing jank at draw time by letting GL shaders
+linked in one thread be used in another thread without recompiling.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.copy_between_compressed_and_plain_formats</span></code>:
+Whether copying between compressed and plain formats is supported where
+a compressed block is copied to/from a plain pixel of the same size.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.clear_scissored</span></code>: Whether <code class="docutils literal notranslate"><span class="pre">clear</span></code> can accept a scissored
+bounding box.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.draw_parameters</span></code>: Whether <code class="docutils literal notranslate"><span class="pre">TGSI_SEMANTIC_BASEVERTEX</span></code>,
+<code class="docutils literal notranslate"><span class="pre">TGSI_SEMANTIC_BASEINSTANCE</span></code>, and <code class="docutils literal notranslate"><span class="pre">TGSI_SEMANTIC_DRAWID</span></code> are
+supported in vertex shaders.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_pack_half_float</span></code>: Whether packed 16-bit float
+packing/unpacking opcodes are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fs_position_is_sysval</span></code>: If gallium frontends should use a
+system value for the POSITION fragment shader input.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fs_point_is_sysval</span></code>: If gallium frontends should use a system
+value for the POINT fragment shader input.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fs_face_is_integer_sysval</span></code>: If gallium frontends should use
+a system value for the FACE fragment shader input.
+Also, the FACE system value is integer, not float.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_buffer_offset_alignment</span></code>: Describes the required
+alignment for pipe_shader_buffer::buffer_offset, in bytes. Maximum
+value allowed is 256 (for GL conformance). 0 is only allowed if
+shader buffers are not supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.invalidate_buffer</span></code>: Whether the use of <code class="docutils literal notranslate"><span class="pre">invalidate_resource</span></code>
+for buffers is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.generate_mipmap</span></code>: Indicates whether pipe_context::generate_mipmap
+is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.string_marker</span></code>: Whether pipe-&gt;emit_string_marker() is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.surface_no_compress</span></code>: Indicates that
+pipe_context::create_surface does not support compression</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.surface_reinterpret_blocks</span></code>: Indicates whether
+pipe_context::create_surface supports reinterpreting a texture as a surface
+of a format with different block width/height (but same block size in bits).
+For example, a compressed texture image can be interpreted as a
+non-compressed surface whose texels are the same number of bits as the
+compressed blocks, and vice versa. The width and height of the surface is
+adjusted appropriately.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.compressed_surface_reinterpret_blocks_layered</span></code>: Same as
+<code class="docutils literal notranslate"><span class="pre">pipe_caps.surface_reinterpret_blocks</span></code> but for supporting multiple layers
+of a compressed texture.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.query_buffer_object</span></code>: Driver supports
+context::get_query_result_resource callback.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.pci_group</span></code>: Return the PCI segment group number.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.pci_bus</span></code>: Return the PCI bus number.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.pci_device</span></code>: Return the PCI device number.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.pci_function</span></code>: Return the PCI function number.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.framebuffer_no_attachment</span></code>:
+If non-zero, rendering to framebuffers with no surface attachments
+is supported. The context-&gt;is_format_supported function will be expected
+to be implemented with PIPE_FORMAT_NONE yielding the MSAA modes the hardware
+supports. N.B., The maximum number of layers supported for rasterizing a
+primitive on a layer is obtained from <code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texture_array_layers</span></code>
+even though it can be larger than the number of layers supported by either
+rendering or textures.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.robust_buffer_access_behavior</span></code>: Implementation uses bounds
+checking on resource accesses by shader if the context is created with
+PIPE_CONTEXT_ROBUST_BUFFER_ACCESS. See the
+<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_robust_buffer_access_behavior.txt">GL_ARB_robust_buffer_access_behavior</a> extension for information on the
+required behavior for out of bounds accesses and accesses to unbound
+resources.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.cull_distance</span></code>: Whether the driver supports the
+<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_cull_distance.txt">GL_ARB_cull_distance</a> extension and thus implements proper support for
+culling planes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.primitive_restart_for_patches</span></code>: Whether primitive restart is
+supported for patch primitives.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_group_vote</span></code>: Whether the <code class="docutils literal notranslate"><span class="pre">VOTE_*</span></code> ops can be used in
+shaders.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_window_rectangles</span></code>: The maximum number of window rectangles
+supported in <code class="docutils literal notranslate"><span class="pre">set_window_rectangles</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.viewport_subpixel_bits</span></code>: Number of bits of subpixel precision for
+floating point viewport bounds.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.rasterizer_subpixel_bits</span></code>: Number of bits of subpixel precision used
+by the rasterizer.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.mixed_color_depth_bits</span></code>: Whether there is non-fallback
+support for color/depth format combinations that use a different
+number of bits. For the purpose of this cap, Z24 is treated as
+32-bit. If set to off, that means that a B5G6R5 + Z24 or RGBA8 + Z16
+combination will require a driver fallback, and should not be
+advertised in the GLX/EGL config list.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_array_components</span></code>: If true, the driver interprets the
+UsageMask of input and output declarations and allows declaring arrays
+in overlapping ranges. The components must be a contiguous range, e.g. a
+UsageMask of  xy or yzw is allowed, but xz or yw isn’t. Declarations with
+overlapping locations must have matching semantic names and indices, and
+equal interpolation qualifiers.
+Components may overlap, notably when the gaps in an array of dvec3 are
+filled in.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.stream_output_pause_resume</span></code>: Whether
+<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_transform_feedback2.txt">GL_ARB_transform_feedback2</a> is supported, including pausing/resuming
+queries and having <code class="docutils literal notranslate"><span class="pre">count_from_stream_output</span></code> set on indirect draws to
+implement glDrawTransformFeedback.  Required for OpenGL 4.0.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.stream_output_interleave_buffers</span></code>: Whether interleaved stream
+output mode is able to interleave across buffers. This is required for
+<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_transform_feedback3.txt">GL_ARB_transform_feedback3</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fbfetch</span></code>: The number of render targets whose value in the
+current framebuffer can be read in the shader.  0 means framebuffer fetch
+is not supported.  1 means that only the first render target can be read,
+and a larger value would mean that multiple render targets are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fbfetch_coherent</span></code>: Whether framebuffer fetches from the fragment
+shader can be guaranteed to be coherent with framebuffer writes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fbfetch_zs</span></code>: Whether fragment shader can fetch current values of
+Z/S attachments. These fetches are always coherent with framebuffer writes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.legacy_math_rules</span></code>: Whether NIR shaders support the
+<code class="docutils literal notranslate"><span class="pre">shader_info.use_legacy_math_rules</span></code> flag (see documentation there), and
+TGSI shaders support the corresponding <code class="docutils literal notranslate"><span class="pre">TGSI_PROPERTY_LEGACY_MATH_RULES</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fp16</span></code>: Whether 16-bit float operations are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.doubles</span></code>: Whether double precision floating-point operations
+are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.int64</span></code>: Whether 64-bit integer operations are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.tgsi_tex_txf_lz</span></code>: Whether TEX_LZ and TXF_LZ opcodes are
+supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_clock</span></code>: Whether the CLOCK opcode is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.polygon_mode_fill_rectangle</span></code>: Whether the
+PIPE_POLYGON_MODE_FILL_RECTANGLE mode is supported for
+<code class="docutils literal notranslate"><span class="pre">pipe_rasterizer_state::fill_front</span></code> and
+<code class="docutils literal notranslate"><span class="pre">pipe_rasterizer_state::fill_back</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.sparse_buffer_page_size</span></code>: The page size of sparse buffers in
+bytes, or 0 if sparse buffers are not supported. The page size must be at
+most 64KB.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_ballot</span></code>: Whether the BALLOT and READ_* opcodes as well as
+the SUBGROUP_* semantics are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.tes_layer_viewport</span></code>: Whether <code class="docutils literal notranslate"><span class="pre">VARYING_SLOT_LAYER</span></code> and
+<code class="docutils literal notranslate"><span class="pre">VARYING_SLOT_VIEWPORT</span></code> are supported as tessellation evaluation
+shader outputs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.can_bind_const_buffer_as_vertex</span></code>: Whether a buffer with just
+PIPE_BIND_CONSTANT_BUFFER can be legally passed to set_vertex_buffers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.allow_mapped_buffers_during_execution</span></code>: As the name says.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.post_depth_coverage</span></code>: whether
+<code class="docutils literal notranslate"><span class="pre">TGSI_PROPERTY_FS_POST_DEPTH_COVERAGE</span></code> is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.bindless_texture</span></code>: Whether bindless texture operations are
+supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.nir_samplers_as_deref</span></code>: Whether NIR tex instructions should
+reference texture and sampler as NIR derefs instead of by indices.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.query_so_overflow</span></code>: Whether the
+<code class="docutils literal notranslate"><span class="pre">PIPE_QUERY_SO_OVERFLOW_PREDICATE</span></code> and
+<code class="docutils literal notranslate"><span class="pre">PIPE_QUERY_SO_OVERFLOW_ANY_PREDICATE</span></code> query types are supported. Note that
+for a driver that does not support multiple output streams (i.e.,
+<code class="docutils literal notranslate"><span class="pre">pipe_caps.max_vertex_streams</span></code> is 1), both query types are identical.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.memobj</span></code>: Whether operations on memory objects are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.load_constbuf</span></code>: True if the driver supports <code class="docutils literal notranslate"><span class="pre">TGSI_OPCODE_LOAD</span></code> use
+with constant buffers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.tile_raster_order</span></code>: Whether the driver supports
+<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/MESA/MESA_tile_raster_order.txt">GL_MESA_tile_raster_order</a>, using the tile_raster_order_* fields in
+pipe_rasterizer_state.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_combined_shader_output_resources</span></code>: Limit on combined shader
+output resources (images + buffers + fragment outputs). If 0 the state
+tracker works it out.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.framebuffer_msaa_constraints</span></code>: This determines limitations
+on the number of samples that framebuffer attachments can have.
+Possible values:</p>
+<blockquote>
+<div><ol class="arabic simple" start="0">
+<li><p>color.nr_samples == zs.nr_samples == color.nr_storage_samples
+(standard MSAA quality)</p></li>
+<li><p>color.nr_samples &gt;= zs.nr_samples == color.nr_storage_samples
+(enhanced MSAA quality)</p></li>
+<li><p>color.nr_samples &gt;= zs.nr_samples &gt;= color.nr_storage_samples
+(full flexibility in tuning MSAA quality and performance)</p></li>
+</ol>
+</div></blockquote>
+<p>All color attachments must have the same number of samples and the same
+number of storage samples.</p>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.signed_vertex_buffer_offset</span></code>:
+Whether pipe_vertex_buffer::buffer_offset is treated as signed. The u_vbuf
+module needs this for optimal performance in workstation applications.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.context_priority_mask</span></code>: For drivers that support per-context
+priorities, this returns a bitmask of <code class="docutils literal notranslate"><span class="pre">PIPE_CONTEXT_PRIORITY_x</span></code> for the
+supported priority levels.  A driver that does not support prioritized
+contexts can return 0.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fence_signal</span></code>: True if the driver supports signaling semaphores
+using fence_server_signal().</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.constbuf0_flags</span></code>: The bits of pipe_resource::flags that must be
+set when binding that buffer as constant buffer 0. If the buffer doesn’t have
+those bits set, pipe_context::set_constant_buffer(.., 0, ..) is ignored
+by the driver, and the driver can throw assertion failures.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.packed_uniforms</span></code>: True if the driver supports packed uniforms
+as opposed to padding to vec4s.  Requires <code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.integers</span></code> if
+<code class="docutils literal notranslate"><span class="pre">lower_uniforms_to_ubo</span></code> is set.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.conservative_raster_post_snap_triangles</span></code>: Whether the
+<code class="docutils literal notranslate"><span class="pre">PIPE_CONSERVATIVE_RASTER_POST_SNAP</span></code> mode is supported for triangles.
+The post-snap mode means the conservative rasterization occurs after
+the conversion from floating-point to fixed-point coordinates
+on the subpixel grid.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.conservative_raster_post_snap_points_lines</span></code>: Whether the
+<code class="docutils literal notranslate"><span class="pre">PIPE_CONSERVATIVE_RASTER_POST_SNAP</span></code> mode is supported for points and lines.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.conservative_raster_pre_snap_triangles</span></code>: Whether the
+<code class="docutils literal notranslate"><span class="pre">PIPE_CONSERVATIVE_RASTER_PRE_SNAP</span></code> mode is supported for triangles.
+The pre-snap mode means the conservative rasterization occurs before
+the conversion from floating-point to fixed-point coordinates.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.conservative_raster_pre_snap_points_lines</span></code>: Whether the
+<code class="docutils literal notranslate"><span class="pre">PIPE_CONSERVATIVE_RASTER_PRE_SNAP</span></code> mode is supported for points and lines.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.conservative_raster_post_depth_coverage</span></code>: Whether
+<code class="docutils literal notranslate"><span class="pre">pipe_caps.post_depth_coverage</span></code> works with conservative rasterization.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.conservative_raster_inner_coverage</span></code>: Whether
+inner_coverage from <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/INTEL/INTEL_conservative_rasterization.txt">GL_INTEL_conservative_rasterization</a> is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_conservative_raster_subpixel_precision_bias</span></code>: The maximum
+subpixel precision bias in bits during conservative rasterization.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.programmable_sample_locations</span></code>: True is the driver supports
+programmable sample location through <code class="docutils literal notranslate"><span class="pre">`get_sample_pixel_grid`</span></code> and
+<code class="docutils literal notranslate"><span class="pre">`set_sample_locations`</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_gs_invocations</span></code>: Maximum supported value of
+TGSI_PROPERTY_GS_INVOCATIONS.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_shader_buffer_size</span></code>: Maximum supported size for binding
+with set_shader_buffers. This is unsigned integer with the maximum of 4GB - 1.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_combined_shader_buffers</span></code>: Maximum total number of shader
+buffers. A value of 0 means the sum of all per-shader stage maximums (see
+<code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_shader_buffers</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_combined_hw_atomic_counters</span></code>: Maximum total number of atomic
+counters. A value of 0 means the default value (MAX_ATOMIC_COUNTERS = 4096).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_combined_hw_atomic_counter_buffers</span></code>: Maximum total number of
+atomic counter buffers. A value of 0 means the sum of all per-shader stage
+maximums (see <code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_hw_atomic_counter_buffers</span></code>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texture_upload_memory_budget</span></code>: Maximum recommend memory size
+for all active texture uploads combined. This is a performance hint.
+0 means no limit.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_vertex_element_src_offset</span></code>: The maximum supported value for
+of pipe_vertex_element::src_offset.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.surface_sample_count</span></code>: Whether the driver
+supports pipe_surface overrides of resource nr_samples. If set, will
+enable <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/EXT/EXT_multisampled_render_to_texture.txt">GL_EXT_multisampled_render_to_texture</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.image_atomic_float_add</span></code>: Atomic floating point adds are
+supported on images, buffers, and shared memory.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.glsl_tess_levels_as_inputs</span></code>: True if the driver wants TESSINNER and TESSOUTER to be inputs (rather than system values) for tessellation evaluation shaders.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.dest_surface_srgb_control</span></code>: Indicates whether the drivers
+supports switching the format between sRGB and linear for a surface that is
+used as destination in draw and blit calls.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_varyings</span></code>: The maximum number of fragment shader
+varyings. This will generally correspond to
+<code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_inputs</span></code> for the fragment shader, but in some
+cases may be a smaller number.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.compute_grid_info_last_block</span></code>: Whether pipe_grid_info::last_block
+is implemented by the driver. See struct pipe_grid_info for more details.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.compute_shader_derivative</span></code>: True if the driver supports derivatives (and texture lookups with implicit derivatives) in compute shaders.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.image_load_formatted</span></code>: True if a format for image loads does not need to be specified in the shader IR</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.image_store_formatted</span></code>: True if a format for image stores does not need to be specified in the shader IR</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.throttle</span></code>: Whether or not gallium frontends should throttle pipe_context
+execution. 0 = throttling is disabled.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.dmabuf</span></code>: Whether Linux DMABUF handles are supported by
+resource_from_handle and resource_get_handle.
+Possible bit field values:</p>
+<blockquote>
+<div><ol class="arabic simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">DRM_PRIME_CAP_IMPORT</span></code>: resource_from_handle is supported</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">DRM_PRIME_CAP_EXPORT</span></code>: resource_get_handle is supported</p></li>
+</ol>
+</div></blockquote>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.cl_gl_sharing</span></code>: True if driver supports everything required by a frontend implementing the CL extension, and
+also supports importing/exporting all of pipe_texture_target via dma buffers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.prefer_compute_for_multimedia</span></code>: Whether VAAPI
+should use a compute-based blit instead of pipe_context::blit and compute pipeline for compositing images.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fragment_shader_interlock</span></code>: True if fragment shader interlock
+functionality is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.atomic_float_minmax</span></code>: Atomic float point minimum,
+maximum, exchange and compare-and-swap support to buffer and shared variables.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.dithering</span></code>: Whether dithering is supported</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fragment_shader_texture_lod</span></code>: Whether texture lookups with
+explicit LOD is supported in the fragment shader.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.fragment_shader_derivatives</span></code>: True if the driver supports
+derivatives in fragment shaders.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_shadow_lod</span></code>: True if the driver supports shadow sampler
+types with texture functions having interaction with LOD of texture lookup.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_samples_identical</span></code>: True if the driver supports a shader query to tell whether all samples of a multisampled surface are definitely identical.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.image_atomic_inc_wrap</span></code>: Atomic increment/decrement + wrap around
+are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.prefer_imm_arrays_as_constbuf</span></code>: True if gallium frontends should
+turn arrays whose contents can be deduced at compile time into constant
+buffer loads, or false if the driver can handle such arrays itself in a more
+efficient manner (such as through nir_opt_large_constants() and nir-&gt;constant_data).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.gl_spirv</span></code>: True if the driver supports <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_gl_spirv.txt">GL_ARB_gl_spirv</a> extension.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.gl_spirv_variable_pointers</span></code>: True if the driver supports Variable Pointers in SPIR-V shaders.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.demote_to_helper_invocation</span></code>: True if driver supports demote keyword in GLSL programs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.tgsi_tg4_component_in_swizzle</span></code>: True if driver wants the TG4 component encoded in sampler swizzle rather than as a separate source.</p></li>
+<li><dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">pipe_caps.flatshade</span></code>: Driver supports pipe_rasterizer_state::flatshade.  Must be 1</dt><dd><p>for non-NIR drivers.</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">pipe_caps.alpha_test</span></code>: Driver supports alpha-testing.  Must be 1</dt><dd><p>for non-NIR drivers.  If set, frontend may set
+<code class="docutils literal notranslate"><span class="pre">pipe_depth_stencil_alpha_state-&gt;alpha_enabled</span></code> and <code class="docutils literal notranslate"><span class="pre">alpha_func</span></code>.
+Otherwise, alpha test will be lowered to a comparison and discard_if in the
+fragment shader.</p>
+</dd>
+</dl>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.point_size_fixed</span></code>: Driver supports point-sizes that are fixed,
+as opposed to writing gl_PointSize for every point.</p></li>
+<li><dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">pipe_caps.two_sided_color</span></code>: Driver supports two-sided coloring.  Must be 1</dt><dd><p>for non-NIR drivers.  If set, pipe_rasterizer_state may be set to indicate
+that back-facing primitives should use the back-side color as the FS input
+color.  If unset, mesa/st will lower it to gl_FrontFacing reads in the
+fragment shader.</p>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">pipe_caps.clip_planes</span></code>: Driver supports user-defined clip-planes. 0 denotes</dt><dd><p>none, 1 denotes MAX_CLIP_PLANES. &gt; 1 overrides MAX. When is 0,
+<code class="docutils literal notranslate"><span class="pre">set_clip_state()</span></code> will never be called.  Instead, user clip planes are
+lowered to clip distance writes to CLIP_DIST[] corresponding to
+pipe_rasterizer_state::clip_plane_enable bits.</p>
+</dd>
+</dl>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_vertex_buffers</span></code>: Number of supported vertex buffers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.opencl_integer_functions</span></code>: Driver supports extended OpenCL-style integer functions.  This includes average, saturating addition, saturating subtraction, absolute difference, count leading zeros, and count trailing zeros.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.integer_multiply_32x16</span></code>: Driver supports integer multiplication between a 32-bit integer and a 16-bit integer.  If the second operand is 32-bits, the upper 16-bits are ignored, and the low 16-bits are possibly sign extended as necessary.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.nir_images_as_deref</span></code>: Whether NIR image load/store intrinsics should be nir_intrinsic_image_deref_* instead of nir_intrinsic_image_*.  Defaults to true.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.packed_stream_output</span></code>: Driver supports packing optimization for stream output (e.g. GL transform feedback captured variables). Defaults to true.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.viewport_transform_lowered</span></code>: Driver needs the nir_lower_viewport_transform pass to be enabled. This also means that the gl_Position value is modified and should be lowered for transform feedback, if needed. Defaults to false.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.psiz_clamped</span></code>: Driver needs for the point size to be clamped. Additionally, the gl_PointSize has been modified and its value should be lowered for transform feedback, if needed. Defaults to false.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.gl_begin_end_buffer_size</span></code>: Buffer size used to upload vertices for glBegin/glEnd.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.viewport_swizzle</span></code>: Whether pipe_viewport_state::swizzle can be used to specify pre-clipping swizzling of coordinates (see <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/NV/NV_viewport_swizzle.txt">GL_NV_viewport_swizzle</a>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.system_svm</span></code>: True if all application memory can be shared with the GPU without explicit mapping.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.viewport_mask</span></code>: Whether <code class="docutils literal notranslate"><span class="pre">TGSI_SEMANTIC_VIEWPORT_MASK</span></code> and <code class="docutils literal notranslate"><span class="pre">TGSI_PROPERTY_LAYER_VIEWPORT_RELATIVE</span></code> are supported (see <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/NV/NV_viewport_array2.txt">GL_NV_viewport_array2</a>).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.map_unsynchronized_thread_safe</span></code>: Whether mapping a buffer as unsynchronized from any thread is safe.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.glsl_zero_init</span></code>: Choose a default zero initialization some GLSL variables. If <code class="docutils literal notranslate"><span class="pre">1</span></code>, then all GLSL shader variables and gl_FragColor are initialized to zero. If <code class="docutils literal notranslate"><span class="pre">2</span></code>, then shader out variables are not initialized but function out variables are.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.blend_equation_advanced</span></code>: Driver supports blend equation advanced without necessarily supporting FBFETCH.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.nir_atomics_as_deref</span></code>: Whether NIR atomics instructions should reference atomics as NIR derefs instead of by indices.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.no_clip_on_copy_tex</span></code>: Driver doesn’t want x/y/width/height clipped based on src size when doing a copy texture operation (e.g.: may want out-of-bounds reads that produce 0 instead of leaving the texture content undefined)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texture_mb</span></code>: Maximum texture size in MB (default is 1024)</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.device_protected_surface</span></code>: Whether the device support protected / encrypted content.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.prefer_real_buffer_in_constbuf0</span></code>: The state tracker is encouraged to upload constants into a real buffer and bind it into constant buffer 0 instead of binding a user pointer. This may enable a faster code-path in a gallium frontend for drivers that really prefer a real buffer.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.gl_clamp</span></code>: Driver natively supports GL_CLAMP.  Required for non-NIR drivers with the GL frontend.  NIR drivers with the cap unavailable will have GL_CLAMP lowered to txd/txl with a saturate on the coordinates.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texrect</span></code>: Driver supports rectangle textures.  Required for OpenGL on <code class="docutils literal notranslate"><span class="pre">!prefers_nir</span></code> drivers.  If this cap is not present, st/mesa will lower the NIR to use normal 2D texture sampling by using either <code class="docutils literal notranslate"><span class="pre">txs</span></code> or <code class="docutils literal notranslate"><span class="pre">nir_intrinsic_load_texture_scaling</span></code> to normalize the texture coordinates.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.sampler_reduction_minmax</span></code>: Driver supports EXT min/max sampler reduction.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.sampler_reduction_minmax_arb</span></code>: Driver supports ARB min/max sampler reduction with format queries.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.emulate_nonfixed_primitive_restart</span></code>: Driver requests all draws using a non-fixed restart index to be rewritten to use a fixed restart index.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.supported_prim_modes</span></code>: A bitmask of the <code class="docutils literal notranslate"><span class="pre">mesa_prim</span></code> enum values that the driver can natively support.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.supported_prim_modes_with_restart</span></code>: A bitmask of the <code class="docutils literal notranslate"><span class="pre">mesa_prim</span></code> enum values that the driver can natively support for primitive restart. Only useful if <code class="docutils literal notranslate"><span class="pre">pipe_caps.primitive_restart</span></code> is also exported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.prefer_back_buffer_reuse</span></code>: Only applies to DRI_PRIME. If 1, the driver prefers that DRI3 tries to use the same back buffer each frame. If 0, this means DRI3 will at least use 2 back buffers and ping-pong between them to allow the tiled-&gt;linear copy to run in parallel.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.draw_vertex_state</span></code>: Driver supports <code class="docutils literal notranslate"><span class="pre">pipe_screen::create_vertex_state/vertex_state_destroy</span></code> and <code class="docutils literal notranslate"><span class="pre">pipe_context::draw_vertex_state</span></code>. Only used by display lists and designed to serve vbo_save.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.prefer_pot_aligned_varyings</span></code>: Driver prefers varyings to be aligned to power of two in a slot. If this cap is enabled, vec4 varying will be placed in .xyzw components of the varying slot, vec3 in .xyz and vec2 in .xy or .zw</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_sparse_texture_size</span></code>: Maximum 1D/2D/rectangle texture image dimension for a sparse texture.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_sparse_3d_texture_size</span></code>: Maximum 3D texture image dimension for a sparse texture.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_sparse_array_texture_layers</span></code>: Maximum number of layers in a sparse array texture.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.sparse_texture_full_array_cube_mipmaps</span></code>: TRUE if there are no restrictions on the allocation of mipmaps in sparse textures and FALSE otherwise. See SPARSE_TEXTURE_FULL_ARRAY_CUBE_MIPMAPS_ARB description in <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_sparse_texture.txt">GL_ARB_sparse_texture</a> extension spec.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.query_sparse_texture_residency</span></code>: TRUE if shader sparse texture sample instruction could also return the residency information.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.clamp_sparse_texture_lod</span></code>: TRUE if shader sparse texture sample instruction support clamp the minimal lod to prevent read from uncommitted pages.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.allow_draw_out_of_order</span></code>: TRUE if the driver allows the “draw out of order” optimization to be enabled. See _mesa_update_allow_draw_out_of_order for more details.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_constant_buffer_size</span></code>: Maximum bound constant buffer size in bytes. This is unsigned integer with the maximum of 4GB - 1. This applies to all constant buffers used by UBOs, unlike <code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_const_buffer0_size</span></code>, which is specifically for GLSL uniforms.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.hardware_gl_select</span></code>: Enable hardware accelerated GL_SELECT for this driver.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.device_protected_context</span></code>: Whether the device supports protected / encrypted context which can manipulate protected / encrypted content (some devices might need protected contexts to access protected content, whereas <code class="docutils literal notranslate"><span class="pre">pipe_caps.device_protected_surface</span></code> does not require any particular context to do so).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.allow_glthread_buffer_subdata_opt</span></code>: Whether to allow glthread to convert glBufferSubData to glCopyBufferSubData. This may improve or worsen performance depending on your driver.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.null_textures</span></code> : Whether the driver supports sampling from NULL textures.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.astc_void_extents_need_denorm_flush</span></code> : True if the driver/hardware needs denormalized values in ASTC void extent blocks flushed to zero.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.validate_all_dirty_states</span></code> : Whether state validation must also validate the state changes for resources types used in the previous shader but not in the current shader.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.has_const_bw</span></code>: Whether the driver only supports non-data-dependent layouts (ie. not bandwidth compressed formats like AFBC, UBWC, etc), or supports <code class="docutils literal notranslate"><span class="pre">PIPE_BIND_CONST_BW</span></code> to disable data-dependent layouts on requested resources.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.performance_monitor</span></code>: Whether GL_AMD_performance_monitor should be exposed.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.texture_sampler_independent</span></code>: Whether sampler views and sampler states are independent objects, meaning both can be freely mixed and matched by the frontend. This isn’t required for OpenGL where on the shader level those are the same object. However for proper OpenCL support this is required.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.astc_decode_mode</span></code>: Whether the driver supports ASTC decode precision. The <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/EXT/EXT_texture_compression_astc_decode_mode.txt">GL_EXT_texture_compression_astc_decode_mode</a> extension will only get exposed if <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/KHR/KHR_texture_compression_astc_hdr.txt">GL_KHR_texture_compression_astc_ldr</a> is also supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_subgroup_size</span></code>: A fixed subgroup size shader runs on GPU when GLSL GL_KHR_shader_subgroup_* extensions are enabled.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_subgroup_supported_stages</span></code>: Bitmask of shader stages which support GL_KHR_shader_subgroup_* intrinsics.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_subgroup_supported_features</span></code>: Bitmask of shader subgroup features listed in <a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/KHR/KHR_shader_subgroup.txt">GL_KHR_shader_subgroup</a>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.shader_subgroup_quad_all_stages</span></code>: Whether shader subgroup quad operations are supported by shader stages other than fragment shader.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.multiview</span></code>: Whether multiview rendering of array textures is supported. A return of <code class="docutils literal notranslate"><span class="pre">1</span></code> indicates support for OVR_multiview, and <code class="docutils literal notranslate"><span class="pre">2</span></code> additionally supports OVR_multiview2.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.call_finalize_nir_in_linker</span></code>: Whether <code class="docutils literal notranslate"><span class="pre">pipe_screen::finalize_nir</span></code> can be called in the GLSL linker before the NIR is stored in the shader cache. It’s always called again after st/mesa adds code for shader variants. It must be 1 if the driver wants to report compile failures to the GLSL linker. It must be 0 if two consecutive <code class="docutils literal notranslate"><span class="pre">finalize_nir</span></code> calls on the same shader can break it, or if <code class="docutils literal notranslate"><span class="pre">finalize_nir</span></code> can’t handle NIR that isn’t fully lowered for the driver, or if <code class="docutils literal notranslate"><span class="pre">finalize_nir</span></code> breaks passes that st/mesa runs after it. Setting it to 1 is generally safe for drivers that expose nir_io_has_intrinsics and that don’t enable any optional shader variants in st/mesa. Since it’s difficult to support, any future refactoring can change it to 0.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.representative_fragment_test</span></code>: Support for GL_NV_representative_fragment_test.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.min_line_width</span></code>: The minimum width of a regular line.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.min_line_width_aa</span></code>: The minimum width of a smoothed line.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_line_width</span></code>: The maximum width of a regular line.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_line_width_aa</span></code>: The maximum width of a smoothed line.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.line_width_granularity</span></code>: The line width is rounded to a multiple of this number.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.min_point_size</span></code>: The minimum width and height of a point.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.min_point_size_aa</span></code>: The minimum width and height of a smoothed point.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_point_size</span></code>: The maximum width and height of a point.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_point_size_aa</span></code>: The maximum width and height of a smoothed point.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.point_size_granularity</span></code>: The point size is rounded to a multiple of this number.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texture_anisotropy</span></code>: The maximum level of anisotropy that can be
+applied to anisotropically filtered textures.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_texture_lod_bias</span></code>: The maximum <a class="reference internal" href="glossary.html#term-LOD"><span class="xref std std-term">LOD</span></a> bias that may be applied
+to filtered textures.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.min_conservative_raster_dilate</span></code>: The minimum conservative rasterization
+dilation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.max_conservative_raster_dilate</span></code>: The maximum conservative rasterization
+dilation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.conservative_raster_dilate_granularity</span></code>: The conservative rasterization
+dilation granularity for values relative to the minimum dilation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.clear_masked</span></code>: Whether <code class="docutils literal notranslate"><span class="pre">clear</span></code> can accept a color_clear_mask for all color buffers and stencil_clear_mask.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_caps.prefer_persp</span></code>: Whether the driver prefers perspective correct
+or linear interpolation. This is a performance hint.</p></li>
+</ul>
+</section>
+<section id="pipe-shader-caps">
+<span id="id3"></span><h3>pipe_shader_caps<a class="headerlink" href="#pipe-shader-caps" title="Link to this heading">¶</a></h3>
+<p>These are per-shader-stage capabitity queries. Different shader stages may
+support different features.</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_instructions</span></code>: The maximum number of instructions.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_alu_instructions</span></code>: The maximum number of arithmetic instructions.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_tex_instructions</span></code>: The maximum number of texture instructions.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_tex_indirections</span></code>: The maximum number of texture indirections.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_control_flow_depth</span></code>: The maximum nested control flow depth.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_inputs</span></code>: The maximum number of input registers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_outputs</span></code>: The maximum number of output registers.
+This is valid for all shaders except the fragment shader.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_const_buffer0_size</span></code>: The maximum size of constant buffer 0 in bytes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_const_buffers</span></code>: Maximum number of constant buffers that can be bound
+to any shader stage using <code class="docutils literal notranslate"><span class="pre">set_constant_buffer</span></code>. If 0 or 1, the pipe will
+only permit binding one constant buffer per shader.</p>
+<p>If a value greater than 0 is returned, the driver can have multiple
+constant buffers bound to shader stages. The CONST register file is
+accessed with two-dimensional indices, like in the example below.</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>DCL CONST[0][0..7]       # declare first 8 vectors of constbuf 0
+DCL CONST[3][0]          # declare first vector of constbuf 3
+MOV OUT[0], CONST[0][3]  # copy vector 3 of constbuf 0
+</pre></div>
+</div>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_temps</span></code>: The maximum number of temporary registers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.cont_supported</span></code>: Whether continue is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.indirect_temp_addr</span></code>: Whether indirect addressing
+of the temporary file is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.indirect_const_addr</span></code>: Whether indirect addressing
+of the constant file is supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.subroutines</span></code>: Whether subroutines are supported, i.e.
+BGNSUB, ENDSUB, CAL, and RET, including RET in the main block.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.integers</span></code>: Whether integer opcodes are supported.
+If unsupported, only float opcodes are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.int64_atomics</span></code>: Whether int64 atomic opcodes are supported. The device needs to support add, sub, swap, cmpswap, and, or, xor, min, and max.</p></li>
+<li><dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.fp16</span></code>: Whether half precision floating-point opcodes are supported.</dt><dd><p>If unsupported, half precision ops need to be lowered to full precision.</p>
+</dd>
+</dl>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.fp16_derivatives</span></code>: Whether half precision floating-point
+DDX and DDY opcodes are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.fp16_const_buffers</span></code>: Whether half precision floating-point
+constant buffer loads are supported. Drivers are recommended to report 0
+if x86 F16C is not supported by the CPU (or an equivalent instruction set
+on other CPU architectures), otherwise they could be impacted by emulated
+FP16 conversions in glUniform.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.int16</span></code>: Whether 16-bit signed and unsigned integer types
+are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.glsl_16bit_consts</span></code>: Lower mediump constants to 16-bit.
+Note that 16-bit constants are not lowered to uniforms in GLSL.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_texture_samplers</span></code>: The maximum number of texture
+samplers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_sampler_views</span></code>: The maximum number of texture
+sampler views. Must not be lower than pipe_shader_caps.max_texture_samplers.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.tgsi_any_inout_decl_range</span></code>: Whether the driver doesn’t
+ignore tgsi_declaration_range::Last for shader inputs and outputs.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_shader_buffers</span></code>: Maximum number of memory buffers
+(also used to implement atomic counters). Having this be non-0 also
+implies support for the <code class="docutils literal notranslate"><span class="pre">LOAD</span></code>, <code class="docutils literal notranslate"><span class="pre">STORE</span></code>, and <code class="docutils literal notranslate"><span class="pre">ATOM*</span></code> TGSI
+opcodes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.supported_irs</span></code>: Supported representations of the
+program.  It should be a mask of <code class="docutils literal notranslate"><span class="pre">pipe_shader_ir</span></code> bits.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_shader_images</span></code>: Maximum number of image units.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_hw_atomic_counters</span></code>: If atomic counters are separate,
+how many HW counters are available for this stage. (0 uses SSBO atomics).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_shader_caps.max_hw_atomic_counter_buffers</span></code>: If atomic counters are
+separate, how many atomic counter buffers are available for this stage.</p></li>
+</ul>
+</section>
+<section id="pipe-compute-caps">
+<span id="id4"></span><h3>pipe_compute_caps<a class="headerlink" href="#pipe-compute-caps" title="Link to this heading">¶</a></h3>
+<p>Compute-specific capabilities. They can be queried using
+pipe_screen::get_compute_param.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.grid_dimension</span></code>: Number of supported dimensions
+for grid and block coordinates.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.max_grid_size</span></code>: Maximum grid size in block
+units.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.max_block_size</span></code>: Maximum block size in thread
+units.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.max_threads_per_block</span></code>: Maximum number of threads that
+a single block can contain.
+This may be less than the product of the components of MAX_BLOCK_SIZE and is
+usually limited by the number of threads that can be resident simultaneously
+on a compute unit.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.max_global_size</span></code>: Maximum size of the GLOBAL
+resource.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.max_local_size</span></code>: Maximum size of the LOCAL
+resource.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.max_mem_alloc_size</span></code>: Maximum size of a memory object
+allocation in bytes.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.max_clock_frequency</span></code>: Maximum frequency of the GPU
+clock in MHz</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.max_compute_units</span></code>: Maximum number of compute units</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.max_subgroups</span></code>: The max amount of subgroups there can be
+inside a block. Non 0 indicates support for OpenCL subgroups including
+implementing <code class="docutils literal notranslate"><span class="pre">get_compute_state_subgroup_size</span></code> if multiple subgroup sizes
+are supported.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.subgroup_sizes</span></code>: Ored power of two sizes of a basic execution
+unit in threads. Also known as wavefront size, warp size or SIMD width.
+E.g. <code class="docutils literal notranslate"><span class="pre">64</span> <span class="pre">|</span> <span class="pre">32</span></code>.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.address_bits</span></code>: The default compute device address space
+size specified as an unsigned integer value in bits.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">pipe_compute_caps.max_variable_threads_per_block</span></code>: Maximum variable number
+of threads that a single block can contain. This is similar to
+pipe_compute_caps.max_threads_per_block, except that the variable size is not
+known a compile-time but at dispatch-time.</p></li>
+</ul>
+</section>
+<section id="pipe-bind">
+<span id="id5"></span><h3>PIPE_BIND_*<a class="headerlink" href="#pipe-bind" title="Link to this heading">¶</a></h3>
+<p>These flags indicate how a resource will be used and are specified at resource
+creation time. Resources may be used in different roles
+during their life cycle. Bind flags are cumulative and may be combined to create
+a resource which can be used for multiple things.
+Depending on the pipe driver’s memory management and these bind flags,
+resources might be created and handled quite differently.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_RENDER_TARGET</span></code>: A color buffer or pixel buffer which will be
+rendered to.  Any surface/resource attached to pipe_framebuffer_state::cbufs
+must have this flag set.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_DEPTH_STENCIL</span></code>: A depth (Z) buffer and/or stencil buffer. Any
+depth/stencil surface/resource attached to pipe_framebuffer_state::zsbuf must
+have this flag set.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_BLENDABLE</span></code>: Used in conjunction with PIPE_BIND_RENDER_TARGET to
+query whether a device supports blending for a given format.
+If this flag is set, surface creation may fail if blending is not supported
+for the specified format. If it is not set, a driver may choose to ignore
+blending on surfaces with formats that would require emulation.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_DISPLAY_TARGET</span></code>: A surface that can be presented to screen. Arguments to
+pipe_screen::flush_front_buffer must have this flag set.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_SAMPLER_VIEW</span></code>: A texture that may be sampled from in a fragment
+or vertex shader.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_SAMPLER_VIEW_SUBOPTIMAL</span></code>: A hint to go along with <code class="docutils literal notranslate"><span class="pre">PIPE_BIND_SAMPLER_VIEW</span></code>
+that we’d like to use a particular format (ie. for zero-copy import) even if
+it is not optimal from a hw standpoint.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_VERTEX_BUFFER</span></code>: A vertex buffer.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_INDEX_BUFFER</span></code>: An vertex index/element buffer.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_CONSTANT_BUFFER</span></code>: A buffer of shader constants.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_STREAM_OUTPUT</span></code>: A stream output buffer.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_CUSTOM</span></code>:</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_SCANOUT</span></code>: A front color buffer or scanout buffer.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_SHARED</span></code>: A shareable buffer that can be given to another
+process.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_GLOBAL</span></code>: A buffer that can be mapped into the global
+address space of a compute program.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_SHADER_BUFFER</span></code>: A buffer without a format that can be bound
+to a shader and can be used with load, store, and atomic instructions.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_SHADER_IMAGE</span></code>: A buffer or texture with a format that can be
+bound to a shader and can be used with load, store, and atomic instructions.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_BIND_COMMAND_ARGS_BUFFER</span></code>: A buffer that may be sourced by the
+GPU command processor. It can contain, for example, the arguments to
+indirect draw calls.</p></li>
+</ul>
+</section>
+<section id="pipe-usage">
+<span id="id6"></span><h3>PIPE_USAGE_*<a class="headerlink" href="#pipe-usage" title="Link to this heading">¶</a></h3>
+<p>The PIPE_USAGE enums are hints about the expected usage pattern of a resource.
+Note that drivers must always support read and write CPU access at any time
+no matter which hint they got.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_USAGE_DEFAULT</span></code>: Optimized for fast GPU access.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_USAGE_IMMUTABLE</span></code>: Optimized for fast GPU access and the resource is
+not expected to be mapped or changed (even by the GPU) after the first upload.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_USAGE_DYNAMIC</span></code>: Expect frequent write-only CPU access. What is
+uploaded is expected to be used at least several times by the GPU.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_USAGE_STREAM</span></code>: Expect frequent write-only CPU access. What is
+uploaded is expected to be used only once by the GPU.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_USAGE_STAGING</span></code>: Optimized for fast CPU access.</p></li>
+</ul>
+</section>
+</section>
+<section id="methods">
+<h2>Methods<a class="headerlink" href="#methods" title="Link to this heading">¶</a></h2>
+<p>XXX to-do</p>
+<section id="get-name">
+<h3>get_name<a class="headerlink" href="#get-name" title="Link to this heading">¶</a></h3>
+<p>Returns an identifying name for the screen.</p>
+<p>The returned string should remain valid and immutable for the lifetime of
+pipe_screen.</p>
+</section>
+<section id="get-vendor">
+<h3>get_vendor<a class="headerlink" href="#get-vendor" title="Link to this heading">¶</a></h3>
+<p>Returns the screen vendor.</p>
+<p>The returned string should remain valid and immutable for the lifetime of
+pipe_screen.</p>
+</section>
+<section id="get-device-vendor">
+<h3>get_device_vendor<a class="headerlink" href="#get-device-vendor" title="Link to this heading">¶</a></h3>
+<p>Returns the actual vendor of the device driving the screen
+(as opposed to the driver vendor).</p>
+<p>The returned string should remain valid and immutable for the lifetime of
+pipe_screen.</p>
+</section>
+<section id="context-create">
+<h3>context_create<a class="headerlink" href="#context-create" title="Link to this heading">¶</a></h3>
+<p>Create a pipe_context.</p>
+<p><strong>priv</strong> is private data of the caller, which may be put to various
+unspecified uses, typically to do with implementing swapbuffers
+and/or front-buffer rendering.</p>
+</section>
+<section id="is-format-supported">
+<h3>is_format_supported<a class="headerlink" href="#is-format-supported" title="Link to this heading">¶</a></h3>
+<p>Determine if a resource in the given format can be used in a specific manner.</p>
+<p><strong>format</strong> the resource format</p>
+<p><strong>target</strong> one of the PIPE_TEXTURE_x flags</p>
+<p><strong>sample_count</strong> the number of samples. 0 and 1 mean no multisampling,
+the maximum allowed legal value is 32.</p>
+<p><strong>storage_sample_count</strong> the number of storage samples. This must be &lt;=
+sample_count. See the documentation of <code class="docutils literal notranslate"><span class="pre">pipe_resource::nr_storage_samples</span></code>.</p>
+<p><strong>bindings</strong> is a bitmask of <a class="reference internal" href="#pipe-bind"><span class="std std-ref">PIPE_BIND_*</span></a> flags.</p>
+<p>Returns TRUE if all usages can be satisfied.</p>
+</section>
+<section id="can-create-resource">
+<h3>can_create_resource<a class="headerlink" href="#can-create-resource" title="Link to this heading">¶</a></h3>
+<p>Check if a resource can actually be created (but don’t actually allocate any
+memory).  This is used to implement OpenGL’s proxy textures.  Typically, a
+driver will simply check if the total size of the given resource is less than
+some limit.</p>
+<p>For PIPE_TEXTURE_CUBE, the pipe_resource::array_size field should be 6.</p>
+</section>
+<section id="resource-create">
+<span id="id7"></span><h3>resource_create<a class="headerlink" href="#resource-create" title="Link to this heading">¶</a></h3>
+<p>Create a new resource from a template.
+The following fields of the pipe_resource must be specified in the template:</p>
+<p><strong>target</strong> one of the pipe_texture_target enums.
+Note that PIPE_BUFFER and PIPE_TEXTURE_X are not really fundamentally different.
+Modern APIs allow using buffers as shader resources.</p>
+<p><strong>format</strong> one of the pipe_format enums.</p>
+<p><strong>width0</strong> the width of the base mip level of the texture or size of the buffer.</p>
+<p><strong>height0</strong> the height of the base mip level of the texture
+(1 for 1D or 1D array textures).</p>
+<p><strong>depth0</strong> the depth of the base mip level of the texture
+(1 for everything else).</p>
+<p><strong>array_size</strong> the array size for 1D and 2D array textures.
+For cube maps this must be 6, for other textures 1.</p>
+<p><strong>last_level</strong> the last mip map level present.</p>
+<p><strong>nr_samples</strong>: Number of samples determining quality, driving the rasterizer,
+shading, and framebuffer. It is the number of samples seen by the whole
+graphics pipeline. 0 and 1 specify a resource which isn’t multisampled.</p>
+<p><strong>nr_storage_samples</strong>: Only color buffers can set this lower than nr_samples.
+Multiple samples within a pixel can have the same color. <code class="docutils literal notranslate"><span class="pre">nr_storage_samples</span></code>
+determines how many slots for different colors there are per pixel.
+If there are not enough slots to store all sample colors, some samples will
+have an undefined color (called “undefined samples”).</p>
+<p>The resolve blit behavior is driver-specific, but can be one of these two:</p>
+<ol class="arabic simple">
+<li><p>Only defined samples will be averaged. Undefined samples will be ignored.</p></li>
+<li><p>Undefined samples will be approximated by looking at surrounding defined
+samples (even in different pixels).</p></li>
+</ol>
+<p>Blits and MSAA texturing: If the sample being fetched is undefined, one of
+the defined samples is returned instead.</p>
+<p>Sample shading (<code class="docutils literal notranslate"><span class="pre">set_min_samples</span></code>) will operate at a sample frequency that
+is at most <code class="docutils literal notranslate"><span class="pre">nr_storage_samples</span></code>. Greater <code class="docutils literal notranslate"><span class="pre">min_samples</span></code> values will be
+replaced by <code class="docutils literal notranslate"><span class="pre">nr_storage_samples</span></code>.</p>
+<p><strong>usage</strong> one of the <a class="reference internal" href="#pipe-usage"><span class="std std-ref">PIPE_USAGE_*</span></a> flags.</p>
+<p><strong>bind</strong> bitmask of the <a class="reference internal" href="#pipe-bind"><span class="std std-ref">PIPE_BIND_*</span></a> flags.</p>
+<p><strong>flags</strong> bitmask of PIPE_RESOURCE_FLAG flags.</p>
+<p><strong>next</strong>: Pointer to the next plane for resources that consist of multiple
+memory planes.</p>
+<p>As a corollary, this mean resources for an image with multiple planes have
+to be created starting from the highest plane.</p>
+</section>
+<section id="resource-changed">
+<h3>resource_changed<a class="headerlink" href="#resource-changed" title="Link to this heading">¶</a></h3>
+<p>Mark a resource as changed so derived internal resources will be recreated
+on next use.</p>
+<p>When importing external images that can’t be directly used as texture sampler
+source, internal copies may have to be created that the hardware can sample
+from. When those resources are reimported, the image data may have changed, and
+the previously derived internal resources must be invalidated to avoid sampling
+from old copies.</p>
+</section>
+<section id="resource-destroy">
+<h3>resource_destroy<a class="headerlink" href="#resource-destroy" title="Link to this heading">¶</a></h3>
+<p>Destroy a resource. A resource is destroyed if it has no more references.</p>
+</section>
+<section id="resource-get-address">
+<h3>resource_get_address<a class="headerlink" href="#resource-get-address" title="Link to this heading">¶</a></h3>
+<p>Returns the address of <strong>resource</strong> created with
+<code class="docutils literal notranslate"><span class="pre">PIPE_RESOURCE_FLAG_FIXED_ADDRESS</span></code>.</p>
+</section>
+<section id="get-timestamp">
+<h3>get_timestamp<a class="headerlink" href="#get-timestamp" title="Link to this heading">¶</a></h3>
+<p>Query a timestamp in nanoseconds. The returned value should match
+PIPE_QUERY_TIMESTAMP. This function returns immediately and doesn’t
+wait for rendering to complete (which cannot be achieved with queries).</p>
+</section>
+<section id="get-driver-query-info">
+<h3>get_driver_query_info<a class="headerlink" href="#get-driver-query-info" title="Link to this heading">¶</a></h3>
+<p>Return a driver-specific query. If the <strong>info</strong> parameter is NULL,
+the number of available queries is returned.  Otherwise, the driver
+query at the specified <strong>index</strong> is returned in <strong>info</strong>.
+The function returns non-zero on success.
+The driver-specific query is described with the pipe_driver_query_info
+structure.</p>
+</section>
+<section id="get-driver-query-group-info">
+<h3>get_driver_query_group_info<a class="headerlink" href="#get-driver-query-group-info" title="Link to this heading">¶</a></h3>
+<p>Return a driver-specific query group. If the <strong>info</strong> parameter is NULL,
+the number of available groups is returned.  Otherwise, the driver
+query group at the specified <strong>index</strong> is returned in <strong>info</strong>.
+The function returns non-zero on success.
+The driver-specific query group is described with the
+pipe_driver_query_group_info structure.</p>
+</section>
+<section id="get-disk-shader-cache">
+<h3>get_disk_shader_cache<a class="headerlink" href="#get-disk-shader-cache" title="Link to this heading">¶</a></h3>
+<p>Returns a pointer to a driver-specific on-disk shader cache. If the driver
+failed to create the cache or does not support an on-disk shader cache NULL is
+returned. The callback itself may also be NULL if the driver doesn’t support
+an on-disk shader cache.</p>
+</section>
+<section id="is-dmabuf-modifier-supported">
+<h3>is_dmabuf_modifier_supported<a class="headerlink" href="#is-dmabuf-modifier-supported" title="Link to this heading">¶</a></h3>
+<p>Query whether the driver supports a <strong>modifier</strong> in combination with a
+<strong>format</strong>, and whether it is only supported with “external” texture targets.
+If the combination is supported in any fashion, true is returned.  If the
+<strong>external_only</strong> parameter is not NULL, the bool it points to is set to
+false if non-external texture targets are supported with the specified modifier+
+format, or true if only external texture targets are supported.</p>
+</section>
+<section id="get-dmabuf-modifier-planes">
+<h3>get_dmabuf_modifier_planes<a class="headerlink" href="#get-dmabuf-modifier-planes" title="Link to this heading">¶</a></h3>
+<p>Query the number of planes required by the image layout specified by the
+<strong>modifier</strong> and <strong>format</strong> parameters.  The value returned includes both planes
+dictated by <strong>format</strong> and any additional planes required for driver-specific
+auxiliary data necessary for the layout defined by <strong>modifier</strong>.
+If the proc is NULL, no auxiliary planes are required for any layout supported by
+<strong>screen</strong> and the number of planes can be derived directly from <strong>format</strong>.</p>
+</section>
+</section>
+<section id="thread-safety">
+<h2>Thread safety<a class="headerlink" href="#thread-safety" title="Link to this heading">¶</a></h2>
+<p>Screen methods are required to be thread safe. While gallium rendering
+contexts are not required to be thread safe, it is required to be safe to use
+different contexts created with the same screen in different threads without
+locks. It is also required to be safe using screen methods in a thread, while
+using one of its contexts in another (without locks).</p>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="../search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Gallium</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="intro.html">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="debugging.html">Debugging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="tgsi.html">TGSI</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Screen</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#flags-and-enumerations">Flags and enumerations</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#pipe-caps">pipe_caps</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#pipe-shader-caps">pipe_shader_caps</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#pipe-compute-caps">pipe_compute_caps</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#pipe-bind">PIPE_BIND_*</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#pipe-usage">PIPE_USAGE_*</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#methods">Methods</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#get-name">get_name</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#get-vendor">get_vendor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#get-device-vendor">get_device_vendor</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#context-create">context_create</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#is-format-supported">is_format_supported</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#can-create-resource">can_create_resource</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#resource-create">resource_create</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#resource-changed">resource_changed</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#resource-destroy">resource_destroy</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#resource-get-address">resource_get_address</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#get-timestamp">get_timestamp</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#get-driver-query-info">get_driver_query_info</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#get-driver-query-group-info">get_driver_query_group_info</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#get-disk-shader-cache">get_disk_shader_cache</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#is-dmabuf-modifier-supported">is_dmabuf_modifier_supported</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#get-dmabuf-modifier-planes">get_dmabuf_modifier_planes</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#thread-safety">Thread safety</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="resources.html">Resources and derived objects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="format.html">Formats in gallium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="context.html">Context</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cso.html">CSO</a></li>
+<li class="toctree-l2"><a class="reference internal" href="buffermapping.html">Buffer mapping patterns</a></li>
+<li class="toctree-l2"><a class="reference internal" href="buffermapping.html#buffer-mapping-conclusions">Buffer mapping conclusions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="postprocess.html">Gallium Post-processing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glossary.html">Glossary</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#indices-and-tables">Indices and tables</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/gallium/screen.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Freedreno &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="../_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="../_static/screen.css?v=10557b77" />
+
+    <script src="../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Low Resolution Z Buffer" href="freedreno/hw/lrz.html" />
+    <link rel="prev" title="D3D12" href="d3d12.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="../_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="../download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="../index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="freedreno">
+<h1>Freedreno<a class="headerlink" href="#freedreno" title="Link to this heading">¶</a></h1>
+<p>Freedreno GLES and GL driver for Adreno 2xx-6xx GPUs.  It implements up to
+OpenGL ES 3.2 and desktop OpenGL 4.5.</p>
+<p>See the <a class="reference external" href="https://gitlab.freedesktop.org/freedreno/freedreno/-/wikis/home">Freedreno Wiki</a> for more
+details.</p>
+<section id="turnip">
+<h2>Turnip<a class="headerlink" href="#turnip" title="Link to this heading">¶</a></h2>
+<p>Turnip is a Vulkan 1.3 driver for Adreno 6xx GPUs.</p>
+<p>The current set of specific chip versions supported can be found in
+<code class="file docutils literal notranslate"><span class="pre">src/freedreno/common/freedreno_devices.py</span></code>.  The current set of features
+supported can be found rendered at <a class="reference external" href="https://mesamatrix.net/">Mesa Matrix</a>.
+There are no plans to port to a5xx or earlier GPUs.</p>
+</section>
+<section id="hardware-architecture">
+<h2>Hardware architecture<a class="headerlink" href="#hardware-architecture" title="Link to this heading">¶</a></h2>
+<p>Adreno is a mostly tile-mode renderer, but with the option to bypass tiling
+(“gmem”) and render directly to system memory (“sysmem”).  It is UMA, using
+mostly write combined memory but with the ability to map some buffers as cache
+coherent with the CPU.</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="freedreno/hw/lrz.html">Low Resolution Z Buffer</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/hw/lrz.html#limitations">Limitations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/hw/lrz.html#pre-a650-before-gen3">Pre-a650 (before gen3)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/hw/lrz.html#a650-gen3">A650+ (gen3+)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/hw/lrz.html#a7xx">A7XX</a></li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/hw/lrz.html#lrz-fast-clear">LRZ Fast-Clear</a></li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/hw/lrz.html#lrz-feedback">LRZ Feedback</a></li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/hw/lrz.html#lrz-precision">LRZ Precision</a></li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/hw/lrz.html#lrz-caches">LRZ Caches</a></li>
+</ul>
+</li>
+</ul>
+</div>
+<section id="hardware-acronyms">
+<h3>Hardware acronyms<a class="headerlink" href="#hardware-acronyms" title="Link to this heading">¶</a></h3>
+<dl class="simple glossary">
+<dt id="term-Cluster">Cluster<a class="headerlink" href="#term-Cluster" title="Link to this term">¶</a></dt><dd><p>A group of hardware registers, often with multiple copies to allow
+pipelining.  There is an M:N relationship between hardware blocks that do
+work and the clusters of registers for the state that hardware blocks use.</p>
+</dd>
+<dt id="term-CP">CP<a class="headerlink" href="#term-CP" title="Link to this term">¶</a></dt><dd><p>Command Processor.  Reads the stream of state changes and draw commands
+generated by the driver.</p>
+</dd>
+<dt id="term-PFP">PFP<a class="headerlink" href="#term-PFP" title="Link to this term">¶</a></dt><dd><p>Prefetch Parser.  Adreno 2xx-4xx CP component.</p>
+</dd>
+<dt id="term-ME">ME<a class="headerlink" href="#term-ME" title="Link to this term">¶</a></dt><dd><p>Micro Engine. Adreno 2xx-4xx CP component after PFP, handles most PM4 commands.</p>
+</dd>
+<dt id="term-SQE">SQE<a class="headerlink" href="#term-SQE" title="Link to this term">¶</a></dt><dd><p>a6xx+ replacement for PFP/ME.  This is the microcontroller that runs the
+microcode (loaded from Linux) which actually processes the command stream
+and writes to the hardware registers.  See <a class="reference external" href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/src/freedreno/afuc/README.rst">afuc</a>.</p>
+</dd>
+<dt id="term-ROQ">ROQ<a class="headerlink" href="#term-ROQ" title="Link to this term">¶</a></dt><dd><p>DMA engine used by the SQE for reading memory, with some prefetch buffering.
+Mostly reads in the command stream, but also serves for
+<code class="docutils literal notranslate"><span class="pre">CP_MEMCPY</span></code>/<code class="docutils literal notranslate"><span class="pre">CP_MEM_TO_REG</span></code> and visibility stream reads.</p>
+</dd>
+<dt id="term-SP">SP<a class="headerlink" href="#term-SP" title="Link to this term">¶</a></dt><dd><p>Shader Processor.  Unified, scalar shader engine.  One or more, depending on
+GPU and tier.</p>
+</dd>
+<dt id="term-TP">TP<a class="headerlink" href="#term-TP" title="Link to this term">¶</a></dt><dd><p>Texture Processor.</p>
+</dd>
+<dt id="term-UCHE">UCHE<a class="headerlink" href="#term-UCHE" title="Link to this term">¶</a></dt><dd><p>Unified L2 Cache.  32KB on A330, unclear how big now.</p>
+</dd>
+<dt id="term-CCU">CCU<a class="headerlink" href="#term-CCU" title="Link to this term">¶</a></dt><dd><p>Color Cache Unit.</p>
+</dd>
+<dt id="term-VSC">VSC<a class="headerlink" href="#term-VSC" title="Link to this term">¶</a></dt><dd><p>Visibility Stream Compressor</p>
+</dd>
+<dt id="term-PVS">PVS<a class="headerlink" href="#term-PVS" title="Link to this term">¶</a></dt><dd><p>Primitive Visibility Stream</p>
+</dd>
+<dt id="term-FE">FE<a class="headerlink" href="#term-FE" title="Link to this term">¶</a></dt><dd><p>Front End?  Index buffer and vertex attribute fetch cluster.  Includes PC,
+VFD, VPC.</p>
+</dd>
+<dt id="term-VFD">VFD<a class="headerlink" href="#term-VFD" title="Link to this term">¶</a></dt><dd><p>Vertex Fetch and Decode</p>
+</dd>
+<dt id="term-VPC">VPC<a class="headerlink" href="#term-VPC" title="Link to this term">¶</a></dt><dd><p>Varying/Position Cache?  Hardware block that stores shaded vertex data for
+primitive assembly.</p>
+</dd>
+<dt id="term-HLSQ">HLSQ<a class="headerlink" href="#term-HLSQ" title="Link to this term">¶</a></dt><dd><p>High Level Sequencer.  Manages state for the SPs, batches up PS invocations
+between primitives, is involved in preemption.</p>
+</dd>
+<dt id="term-PC_VS">PC_VS<a class="headerlink" href="#term-PC_VS" title="Link to this term">¶</a></dt><dd><p>Cluster where varyings are read from VPC and assembled into primitives to
+feed GRAS.</p>
+</dd>
+<dt id="term-VS">VS<a class="headerlink" href="#term-VS" title="Link to this term">¶</a></dt><dd><p>Vertex Shader. Responsible for generating VS/GS/tess invocations</p>
+</dd>
+<dt id="term-GRAS">GRAS<a class="headerlink" href="#term-GRAS" title="Link to this term">¶</a></dt><dd><p>Rasterizer. Responsible for generating PS invocations from primitives, also
+does LRZ</p>
+</dd>
+<dt id="term-PS">PS<a class="headerlink" href="#term-PS" title="Link to this term">¶</a></dt><dd><p>Pixel Shader.</p>
+</dd>
+<dt id="term-RB">RB<a class="headerlink" href="#term-RB" title="Link to this term">¶</a></dt><dd><p>Render Backend.  Performs both early and late Z testing, blending, and
+attachment stores of output of the PS.</p>
+</dd>
+<dt id="term-GMEM">GMEM<a class="headerlink" href="#term-GMEM" title="Link to this term">¶</a></dt><dd><p>Roughly 128KB-1MB of memory on the GPU (SKU-dependent), used to store
+attachments during tiled rendering</p>
+</dd>
+<dt id="term-LRZ">LRZ<a class="headerlink" href="#term-LRZ" title="Link to this term">¶</a></dt><dd><p>Low Resolution Z.  A low resolution area of the depth buffer that can be
+initialized during the binning pass to contain the worst-case (farthest) Z
+values in a block, and then used to early reject fragments during
+rasterization.</p>
+</dd>
+</dl>
+</section>
+<section id="cache-hierarchy">
+<h3>Cache hierarchy<a class="headerlink" href="#cache-hierarchy" title="Link to this heading">¶</a></h3>
+<p>The a6xx GPUs have two main caches: CCU and UCHE.</p>
+<p>UCHE (Unified L2 Cache) is the cache behind the vertex fetch, VSC writes,
+texture L1, LRZ, and storage image accesses (<code class="docutils literal notranslate"><span class="pre">ldib</span></code>/<code class="docutils literal notranslate"><span class="pre">stib</span></code>).  Misses and
+flushes access system memory.</p>
+<p>The CCU is the separate cache used by 2D blits and sysmem render target access
+(and also for resolves to system memory when in GMEM mode).  Its memory comes
+from a carveout of GMEM controlled by <code class="docutils literal notranslate"><span class="pre">RB_CCU_CNTL</span></code>, with a varying amount
+reserved based on whether we’re in a render pass using GMEM for attachment
+storage, or we’re doing sysmem rendering.  Cache entries have the attachment
+number and layer mixed into the cache tag in some way, likely so that a
+fragment’s access is spread through the cache even if the attachments are the
+same size and alignments in address space.  This means that the cache must be
+flushed and invalidated between memory being used for one attachment and another
+(notably depth vs color, but also MRT color).</p>
+<p>The Texture Processors (TP) additionally have a small L1 cache (1KB on A330,
+unclear how big now) before accessing UCHE. This cache is used for normal
+sampling like <code class="docutils literal notranslate"><span class="pre">sam`</span></code> and <code class="docutils literal notranslate"><span class="pre">isam</span></code> (and the compiler will make read-only
+storage image access through it as well).  It is not coherent with UCHE (may get
+stale results when you <code class="docutils literal notranslate"><span class="pre">sam</span></code> after <code class="docutils literal notranslate"><span class="pre">stib</span></code>), but must get flushed per draw or
+something because you don’t need a manual invalidate between draws storing to an
+image and draws sampling from a texture.</p>
+<p>The command processor (CP) does not read from either of these caches, and
+instead uses FIFOs in the ROQ to avoid stalls reading from system memory.</p>
+</section>
+<section id="draw-states">
+<h3>Draw states<a class="headerlink" href="#draw-states" title="Link to this heading">¶</a></h3>
+<p>Since the SQE is not a fast processor, and tiled rendering means that many draws
+won’t even be used in many bins, since a5xx state updates can be batched up into
+“draw states” that point to a fragment of CP packets.  At draw time, if the draw
+call is going to actually execute (some primitive is visible in the current
+tile), the SQE goes through the <code class="docutils literal notranslate"><span class="pre">GROUP_ID</span></code>s and for any with an update since
+the last time they were executed, it executes the corresponding fragment.</p>
+<p>Starting with a6xx, states can be tagged with whether they should be executed
+at draw time for any of sysmem, binning, or tile rendering.  This allows a
+single command stream to be generated which can be executed in any of the modes,
+unlike pre-a6xx where we had to generate separate command lists for the binning
+and rendering phases.</p>
+<p>Note that this means that the generated draw state has to always update all of
+the state you have chosen to pack into that <code class="docutils literal notranslate"><span class="pre">GROUP_ID</span></code>, since any of your
+previous state changes in a previous draw state command may have been skipped.</p>
+</section>
+<section id="pipelining-a6xx">
+<h3>Pipelining (a6xx+)<a class="headerlink" href="#pipelining-a6xx" title="Link to this heading">¶</a></h3>
+<p>Most CP commands write to registers.  In a6xx+, the registers are located in
+clusters corresponding to the stage of the pipeline they are used from (see
+<code class="docutils literal notranslate"><span class="pre">enum</span> <span class="pre">tu_stage</span></code> for a list). To pipeline state updates and drawing, registers
+generally have two copies (“contexts”) in their cluster, so previous draws can
+be working on the previous set of register state while the next draw’s state is
+being set up. You can find what registers go into which clusters by looking at
+<strong class="command">crashdec</strong> output in the <code class="docutils literal notranslate"><span class="pre">regs-name:</span> <span class="pre">CP_MEMPOOL</span></code> section.</p>
+<p>As SQE processes register writes in the command stream, it sends them into a
+per-cluster queue stored in <code class="docutils literal notranslate"><span class="pre">CP_MEMPOOL</span></code>.  This allows the pipeline stages to
+process their stream of register updates and events independent of each other
+(so even with just 2 contexts in a stage, earlier stages can proceed on to later
+draws before later stages have caught up).</p>
+<p>Each cluster has a per-context bit indicating that the context is done/free.
+Register writes will stall on the context being done.</p>
+<p>During a 3D draw command, SQE generates several internal events flow through the
+pipeline:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">CP_EVENT_START</span></code> clears the done bit for the context when written to the
+cluster</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PC_EVENT_CMD</span></code>/<code class="docutils literal notranslate"><span class="pre">PC_DRAW_CMD</span></code>/<code class="docutils literal notranslate"><span class="pre">HLSQ_EVENT_CMD</span></code>/<code class="docutils literal notranslate"><span class="pre">HLSQ_DRAW_CMD</span></code> kick off
+the actual event/drawing.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CONTEXT_DONE</span></code> event completes after the event/draw is complete and sets the
+done flag.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">CP_EVENT_END</span></code> waits for the done flag on the next context, then copies all
+the registers that were dirtied in this context to that one.</p></li>
+</ul>
+<p>The 2D blit engine has its own <code class="docutils literal notranslate"><span class="pre">CP_2D_EVENT_START</span></code>, <code class="docutils literal notranslate"><span class="pre">CP_2D_EVENT_END</span></code>,
+<code class="docutils literal notranslate"><span class="pre">CONTEXT_DONE_2D</span></code>, so 2D and 3D register contexts can do separate context
+rollover.</p>
+<p>Because the clusters proceed independently of each other even across draws, if
+you need to synchronize an earlier cluster to the output of a later one, then
+you will need to <code class="docutils literal notranslate"><span class="pre">CP_WAIT_FOR_IDLE</span></code> after flushing and invalidating any
+necessary caches.</p>
+<p>Also, note that some registers are not banked at all, and will require a
+<code class="docutils literal notranslate"><span class="pre">CP_WAIT_FOR_IDLE</span></code> for any previous usage of the register to complete.</p>
+<p>In a2xx-a4xx, there weren’t per-stage clusters, and instead there were two
+register banks that were flipped between per draw.</p>
+</section>
+<section id="bindless-bindful-descriptors-a6xx">
+<h3>Bindless/Bindful Descriptors (a6xx+)<a class="headerlink" href="#bindless-bindful-descriptors-a6xx" title="Link to this heading">¶</a></h3>
+<p>Starting with a6xx++, cat5 (texture) and cat6 (image/SSBO/UBO) instructions are
+extended to support bindless descriptors.</p>
+<p>In the old bindful model, descriptors are separate for textures, samplers,
+UBOs, and IBOs (combined descriptor for images and SSBOs), with separate
+registers for the memory containing the array of descriptors, and/or different
+<code class="docutils literal notranslate"><span class="pre">STATE_TYPE</span></code> and <code class="docutils literal notranslate"><span class="pre">STATE_BLOCK</span></code> for <code class="docutils literal notranslate"><span class="pre">CP_LOAD_STATE</span></code>/<code class="docutils literal notranslate"><span class="pre">_FRAG</span></code>/<code class="docutils literal notranslate"><span class="pre">_GEOM</span></code>
+to pre-load the descriptors into cache.</p>
+<ul class="simple">
+<li><dl class="simple">
+<dt>textures - per-shader-stage</dt><dd><ul>
+<li><p>registers: <code class="docutils literal notranslate"><span class="pre">SP_xS_TEX_CONST</span></code>/<code class="docutils literal notranslate"><span class="pre">SP_xS_TEX_COUNT</span></code></p></li>
+<li><p>state-type: <code class="docutils literal notranslate"><span class="pre">ST6_CONSTANTS</span></code></p></li>
+<li><p>state-block: <code class="docutils literal notranslate"><span class="pre">SB6_xS_TEX</span></code></p></li>
+</ul>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>samplers - per-shader-stage</dt><dd><ul>
+<li><p>registers: <code class="docutils literal notranslate"><span class="pre">SP_xS_TEX_SAMP</span></code></p></li>
+<li><p>state-type: <code class="docutils literal notranslate"><span class="pre">ST6_SHADER</span></code></p></li>
+<li><p>state-block: <code class="docutils literal notranslate"><span class="pre">SB6_xS_TEX</span></code></p></li>
+</ul>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>UBOs - per-shader-stage</dt><dd><ul>
+<li><p>registers: none</p></li>
+<li><p>state-type: <code class="docutils literal notranslate"><span class="pre">ST6_UBO</span></code></p></li>
+<li><p>state-block: <code class="docutils literal notranslate"><span class="pre">SB6_xS_SHADER</span></code></p></li>
+</ul>
+</dd>
+</dl>
+</li>
+<li><dl class="simple">
+<dt>IBOs - global across shader 3d stages, separate for compute shader</dt><dd><ul>
+<li><p>registers: <code class="docutils literal notranslate"><span class="pre">SP_IBO</span></code>/<code class="docutils literal notranslate"><span class="pre">SP_IBO_COUNT</span></code> or <code class="docutils literal notranslate"><span class="pre">SP_CS_IBO</span></code>/<code class="docutils literal notranslate"><span class="pre">SP_CS_IBO_COUNT</span></code></p></li>
+<li><p>state-type: <code class="docutils literal notranslate"><span class="pre">ST6_SHADER</span></code></p></li>
+<li><p>state-block: <code class="docutils literal notranslate"><span class="pre">ST6_IBO</span></code> or <code class="docutils literal notranslate"><span class="pre">ST6_CS_IBO</span></code> for compute shaders</p></li>
+<li><p>Note, unlike per-shader-stage descriptors, <code class="docutils literal notranslate"><span class="pre">CP_LOAD_STATE6</span></code> is used,
+as opposed to <code class="docutils literal notranslate"><span class="pre">CP_LOAD_STATE6_GEOM</span></code> or <code class="docutils literal notranslate"><span class="pre">CP_LOAD_STATE6_FRAG</span></code>
+depending on shader stage.</p></li>
+</ul>
+</dd>
+</dl>
+</li>
+</ul>
+<div class="alert alert-info">
+<div class="h5">Note</div><p>For the per-shader-stage registers and state-blocks the <code class="docutils literal notranslate"><span class="pre">xS</span></code> notation
+refers to per-shader-stage names, ex. <code class="docutils literal notranslate"><span class="pre">SP_FS_TEX_CONST</span></code> or <code class="docutils literal notranslate"><span class="pre">SB6_DS_TEX</span></code></p>
+</div>
+<p>Textures and IBOs (images) use <em>basically</em> the same 64byte descriptor format
+with some exceptions (for ex, for IBOs cubemaps are handles as 2d array).
+SSBOs are just untyped buffers, but otherwise use the same descriptors and
+instructions as images.  Samplers use a 16byte descriptor, and UBOs use an
+8byte descriptor which packs the size in the upper 15 bits of the UBO address.</p>
+<p>In the bindless model, descriptors are split into 5 descriptor sets, which are
+global across shader stages (but as with bindful IBO descriptors, separate for
+3d stages vs compute stage).  Each HW descriptor is an array of descriptors
+of configurable size (each descriptor set can be configured for a descriptor
+pitch of 8bytes or 64bytes).  Each descriptor can be of arbitrary format (ie.
+UBOs/IBOs/textures/samplers interleaved), it’s interpretation by the HW is
+determined by the instruction that references the descriptor.  Each descriptor
+set can contain at least 2^^16 descriptors.</p>
+<p>The HW is configured with the base address of the descriptor set via an array
+of “BINDLESS_BASE” registers, ie <code class="docutils literal notranslate"><span class="pre">SP_BINDLESS_BASE[n]</span></code>/<code class="docutils literal notranslate"><span class="pre">HLSQ_BINDLESS_BASE[n]</span></code>
+for 3d shader stages, or <code class="docutils literal notranslate"><span class="pre">SP_CS_BINDLESS_BASE[n]</span></code>/<code class="docutils literal notranslate"><span class="pre">HLSQ_CS_BINDLESS_BASE[n]</span></code>
+for compute shaders, with the descriptor pitch encoded in the low bits.
+Which of the descriptor sets is referenced is encoded via three bits in the
+instruction.  The address of the descriptor is calculated as:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>descriptor_addr = (BINDLESS_BASE[n] &amp; ~0x3) +
+                  (idx * 4 * (2 &lt;&lt; BINDLESS_BASE[n] &amp; 0x3))
+</pre></div>
+</div>
+<div class="alert alert-info">
+<div class="h5">Note</div><p>Turnip reserves one descriptor set for internal use and exposes the other
+four for the application via the Vulkan API.</p>
+</div>
+</section>
+</section>
+<section id="software-architecture">
+<h2>Software Architecture<a class="headerlink" href="#software-architecture" title="Link to this heading">¶</a></h2>
+<p>Freedreno and Turnip use a shared core for shader compiler, image layout, and
+register and command stream definitions.  They implement separate state
+management and command stream generation.</p>
+<div class="toctree-wrapper compound">
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="freedreno/fdm.html">Fragment Density Map</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/fdm.html#coordinate-space-soup">Coordinate Space Soup</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/fdm.html#framebuffer-space">Framebuffer space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/fdm.html#gmem-space">GMEM Space</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/fdm.html#rendering-space">Rendering space</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/fdm.html#viewport-and-scissor-patching">Viewport and Scissor Patching</a></li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/fdm.html#fragment-density-map-offset">Fragment density map offset</a></li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/fdm.html#bin-merging">Bin merging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/fdm.html#hardware-scaling-registers-and-lrz">Hardware scaling registers and LRZ</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="freedreno/ir3-notes.html">IR3 NOTES</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/ir3-notes.html#external-structure">External Structure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/ir3-notes.html#the-ir">The IR</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html#internal-structure">Internal Structure</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html#meta-instructions">Meta Instructions</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html#flow-control">Flow Control</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html#register-groups">Register Groups</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html#relative-addressing">Relative Addressing</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="freedreno/ir3-notes.html#shader-passes">Shader Passes</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html#flatten">Flatten</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html#copy-propagation">Copy Propagation</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html#grouping">Grouping</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html#depth">Depth</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html#scheduling">Scheduling</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html#register-assignment">Register Assignment</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</div>
+<section id="gpu-devcoredump">
+<span id="freedreno-gpu-devcoredump"></span><h3>GPU devcoredump<a class="headerlink" href="#gpu-devcoredump" title="Link to this heading">¶</a></h3>
+<p>A kernel message from DRM of “gpu fault” can mean any sort of error reported by
+the GPU (including its internal hang detection).  If a fault in GPU address
+space happened, you should expect to find a message from the iommu, with the
+faulting address and a hardware unit involved:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>*** gpu fault: ttbr0=000000001c941000 iova=000000010066a000 dir=READ type=TRANSLATION source=TP|VFD (0,0,0,1)
+</pre></div>
+</div>
+<p>On a GPU fault or hang, a GPU core dump is taken by the DRM driver and saved to
+<code class="docutils literal notranslate"><span class="pre">/sys/devices/virtual/devcoredump/**/data</span></code>.  You can cp that file to a
+<code class="file docutils literal notranslate"><span class="pre">crash.devcore</span></code> to save it, otherwise the kernel will expire it
+eventually. Echo 1 to the file to free the core early, as another core won’t be
+taken until then.</p>
+<p>Once you have your core file, you can use <strong class="command">crashdec -f crash.devcore</strong>
+to decode it.  The output will have <code class="docutils literal notranslate"><span class="pre">ESTIMATED</span> <span class="pre">CRASH</span> <span class="pre">LOCATION</span></code> where we
+estimate the CP to have stopped.  Note that it is expected that this will be
+some distance past whatever state triggered the fault, given GPU pipelining, and
+will often be at some <code class="docutils literal notranslate"><span class="pre">CP_REG_TO_MEM</span></code> (which waits on previous WFIs) or
+<code class="docutils literal notranslate"><span class="pre">CP_WAIT_FOR_ME</span></code> (which waits for all register writes to land) or similar
+event. You can try running the workload with <code class="docutils literal notranslate"><span class="pre">TU_DEBUG=flushall</span></code> or
+<code class="docutils literal notranslate"><span class="pre">FD_MESA_DEBUG=flush</span></code> to try to close in on the failing commands.</p>
+<p>You can also find what commands were queued up to each cluster in the
+<code class="docutils literal notranslate"><span class="pre">regs-name:</span> <span class="pre">CP_MEMPOOL</span></code> section.</p>
+<p>If <code class="docutils literal notranslate"><span class="pre">ESTIMATED</span> <span class="pre">CRASH</span> <span class="pre">LOCATION</span></code> doesn’t exist you could find <code class="docutils literal notranslate"><span class="pre">CP_SQE_STAT</span></code>,
+though going here is the last resort and likely won’t be helpful.</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>indexed-registers:
+  - regs-name: CP_SQE_STAT
+    dwords: 51
+       PC: 00d7                                &lt;-------------
+      PKT: CP_LOAD_STATE6_FRAG
+      $01: 70348003           $11: 00000000
+      $02: 20000000           $12: 00000022
+</pre></div>
+</div>
+<p>The <code class="docutils literal notranslate"><span class="pre">PC</span></code> value is an instruction address in the current firmware.
+You would need to disassemble the firmware (/lib/firmware/qcom/aXXX_sqe.fw) via:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>afuc-disasm<span class="w"> </span>-v<span class="w"> </span>a650_sqe.fw<span class="w"> </span>&gt;<span class="w"> </span>a650_sqe.fw.disasm
+</pre></div>
+</div>
+<p>Now you should search for PC value in the disassembly, e.g.:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>l018: 00d1: 08dd0001  add $addr, $06, 0x0001
+      00d2: 981ff806  mov $data, $data
+      00d3: 8a080001  mov $08, 0x0001 &lt;&lt; 16
+      00d4: 3108ffff  or $08, $08, 0xffff
+      00d5: 9be8f805  and $data, $data, $08
+      00d6: 9806e806  mov $addr, $06
+      00d7: 9803f806  mov $data, $03           &lt;------------- HERE
+      00d8: d8000000  waitin
+      00d9: 981f0806  mov $01, $data
+</pre></div>
+</div>
+</section>
+<section id="command-stream-capture">
+<h3>Command Stream Capture<a class="headerlink" href="#command-stream-capture" title="Link to this heading">¶</a></h3>
+<p>During Mesa development, it’s often useful to look at the command streams we
+send to the kernel.  We have an interface for the kernel to capture all
+submitted command streams:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>cat<span class="w"> </span>/sys/kernel/debug/dri/0/rd<span class="w"> </span>&gt;<span class="w"> </span>cmdstream<span class="w"> </span><span class="p">&amp;</span>
+</pre></div>
+</div>
+<p>By default, command stream capture does not capture texture/vertex/etc. data.
+You can enable capturing all the BOs with:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">echo</span><span class="w"> </span>Y<span class="w"> </span>&gt;<span class="w"> </span>/sys/module/msm/parameters/rd_full
+</pre></div>
+</div>
+<p>Note that, since all command streams get captured, it is easy to run the system
+out of memory doing this, so you probably don’t want to enable it during play of
+a heavyweight game.  Instead, to capture a command stream within a game, you
+probably want to cause a crash in the GPU during a frame of interest so that a
+single GPU core dump is generated.  Emitting <code class="docutils literal notranslate"><span class="pre">0xdeadbeef</span></code> in the CS should be
+enough to cause a fault.</p>
+<p><code class="docutils literal notranslate"><span class="pre">fd_rd_output</span></code> facilities provide support for generating the command stream
+capture from inside Mesa. Different <code class="docutils literal notranslate"><span class="pre">FD_RD_DUMP</span></code> options are available:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">enable</span></code> simply enables dumping the command stream on each submit for a
+given logical device. When a more advanced option is specified, <code class="docutils literal notranslate"><span class="pre">enable</span></code> is
+implied as specified.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">combine</span></code> will combine all dumps into a single file instead of writing the
+dump for each submit into a standalone file.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">full</span></code> will dump every buffer object, which is necessary for replays of
+command streams (see below).</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">trigger</span></code> will establish a trigger file through which dumps can be better
+controlled. Writing a positive integer value into the file will enable dumping
+of that many subsequent submits. Writing -1 will enable dumping of submits
+until disabled. Writing 0 (or any other value) will disable dumps.</p></li>
+</ul>
+<p>Output dump files and trigger file (when enabled) are hard-coded to be placed
+under <code class="docutils literal notranslate"><span class="pre">/tmp</span></code>, or <code class="docutils literal notranslate"><span class="pre">/data/local/tmp</span></code> under Android. <span class="c-expr sig sig-inline c"><span class="n">FD_RD_DUMP_TESTNAME</span></span> can
+be used to specify a more descriptive prefix for the output or trigger files.</p>
+<p>Dumping can be limited to specific ranges of frames or submits. For example,
+<code class="docutils literal notranslate"><span class="pre">FD_RD_DUMP_SUBMITS=120-140,160,165</span></code> will dump command streams only for the
+specified submits. Similarly, <code class="docutils literal notranslate"><span class="pre">FD_RD_DUMP_FRAMES</span></code> can be set to specify for
+which frames any submitted command stream should be dumped.</p>
+<p>Functionality is generic to any Freedreno-based backend, but is currently only
+integrated in the MSM backend of Turnip. Using the existing <code class="docutils literal notranslate"><span class="pre">TU_DEBUG=rd</span></code>
+option will translate to <code class="docutils literal notranslate"><span class="pre">FD_RD_DUMP=enable</span></code>.</p>
+<section id="capturing-hang-rd">
+<h4>Capturing Hang RD<a class="headerlink" href="#capturing-hang-rd" title="Link to this heading">¶</a></h4>
+<p>Devcore file doesn’t contain all submitted command streams, only the hanging one.
+Additionally it is geared towards analyzing the GPU state at the moment of the crash.</p>
+<p>Alternatively, it’s possible to obtain the whole submission with all command
+streams via <code class="docutils literal notranslate"><span class="pre">/sys/kernel/debug/dri/0/hangrd</span></code>:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>sudo<span class="w"> </span>cat<span class="w"> </span>/sys/kernel/debug/dri/0/hangrd<span class="w"> </span>&gt;<span class="w"> </span>logfile.rd<span class="w"> </span>//<span class="w"> </span>Do<span class="w"> </span>the<span class="w"> </span>cat<span class="w"> </span>_before_<span class="w"> </span>the<span class="w"> </span>expected<span class="w"> </span>hang
+</pre></div>
+</div>
+<p>The format of hangrd is the same as in ordinary command stream capture.
+<code class="docutils literal notranslate"><span class="pre">rd_full</span></code> also has the same effect on it.</p>
+</section>
+</section>
+<section id="replaying-command-stream">
+<h3>Replaying Command Stream<a class="headerlink" href="#replaying-command-stream" title="Link to this heading">¶</a></h3>
+<p><code class="docutils literal notranslate"><span class="pre">replay</span></code> tool allows capturing and replaying <code class="docutils literal notranslate"><span class="pre">rd</span></code> to reproduce GPU faults.
+Especially useful for transient GPU issues since it has much higher chances to
+reproduce them.</p>
+<p>Dumping rendering results or even just memory is currently unsupported.</p>
+<ul class="simple">
+<li><p>Replaying command streams requires kernel with <code class="docutils literal notranslate"><span class="pre">MSM_INFO_SET_IOVA</span></code> support.</p></li>
+<li><p>Requires <code class="docutils literal notranslate"><span class="pre">rd</span></code> capture to have full snapshots of the memory (<code class="docutils literal notranslate"><span class="pre">rd_full</span></code> is enabled).</p></li>
+</ul>
+<p>Replaying is done via <code class="docutils literal notranslate"><span class="pre">replay</span></code> tool:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>./replay<span class="w"> </span>test_replay.rd
+</pre></div>
+</div>
+<p>More examples:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>./replay<span class="w"> </span>--first<span class="o">=</span>start_submit_n<span class="w"> </span>--last<span class="o">=</span>last_submit_n<span class="w"> </span>test_replay.rd
+</pre></div>
+</div>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>./replay<span class="w"> </span>--override<span class="o">=</span><span class="m">0</span><span class="w"> </span>test_replay.rd
+</pre></div>
+</div>
+</section>
+<section id="editing-command-stream-a6xx">
+<span id="freedreno-editing-command-stream"></span><h3>Editing Command Stream (a6xx+)<a class="headerlink" href="#editing-command-stream-a6xx" title="Link to this heading">¶</a></h3>
+<p>While replaying a fault is useful in itself, modifying the capture to
+understand what causes the fault could be even more useful.</p>
+<p><code class="docutils literal notranslate"><span class="pre">rddecompiler</span></code> decompiles a single cmdstream from <code class="docutils literal notranslate"><span class="pre">rd</span></code> into compilable C source.
+Given the address space bounds the generated program creates a new <code class="docutils literal notranslate"><span class="pre">rd</span></code> which
+could be used to override cmdstream with ‘replay’. Generated <code class="docutils literal notranslate"><span class="pre">rd</span></code> is not replayable
+on its own and depends on buffers provided by the source <code class="docutils literal notranslate"><span class="pre">rd</span></code>.</p>
+<p>C source could be compiled by putting it into src/freedreno/decode/generate-rd.cc.</p>
+<p>The workflow would look like this:</p>
+<ol class="arabic simple">
+<li><p>Find the cmdstream № you want to edit;</p></li>
+<li><p>Decompile it:</p></li>
+</ol>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>./rddecompiler<span class="w"> </span>-s<span class="w"> </span>%cmd_stream_n%<span class="w"> </span>example.rd<span class="w"> </span>&gt;<span class="w"> </span>src/freedreno/decode/generate-rd.cc
+</pre></div>
+</div>
+<ol class="arabic simple" start="3">
+<li><p>Edit the command stream;;</p></li>
+<li><p>Compile and deploy freedreno tools;</p></li>
+<li><p>Plug the generator into cmdstream replay:</p></li>
+</ol>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>./replay<span class="w"> </span>--override<span class="o">=</span>%cmd_stream_№%
+</pre></div>
+</div>
+<ol class="arabic simple" start="6">
+<li><p>Repeat 3-5.</p></li>
+</ol>
+</section>
+<section id="gpu-hang-debugging">
+<h3>GPU Hang Debugging<a class="headerlink" href="#gpu-hang-debugging" title="Link to this heading">¶</a></h3>
+<p>Not a guide for how to do it but mostly an enumeration of methods.</p>
+<p>Useful <code class="docutils literal notranslate"><span class="pre">TU_DEBUG</span></code> (for Turnip) options to narrow down the hang cause:</p>
+<p><code class="docutils literal notranslate"><span class="pre">sysmem</span></code>, <code class="docutils literal notranslate"><span class="pre">gmem</span></code>, <code class="docutils literal notranslate"><span class="pre">nobin</span></code>, <code class="docutils literal notranslate"><span class="pre">forcebin</span></code>, <code class="docutils literal notranslate"><span class="pre">noubwc</span></code>, <code class="docutils literal notranslate"><span class="pre">nolrz</span></code>, <code class="docutils literal notranslate"><span class="pre">flushall</span></code>, <code class="docutils literal notranslate"><span class="pre">syncdraw</span></code>, <code class="docutils literal notranslate"><span class="pre">rast_order</span></code></p>
+<p>Useful <code class="docutils literal notranslate"><span class="pre">FD_MESA_DEBUG</span></code> (for Freedreno) options:</p>
+<p><code class="docutils literal notranslate"><span class="pre">sysmem</span></code>, <code class="docutils literal notranslate"><span class="pre">gmem</span></code>, <code class="docutils literal notranslate"><span class="pre">nobin</span></code>, <code class="docutils literal notranslate"><span class="pre">noubwc</span></code>, <code class="docutils literal notranslate"><span class="pre">nolrz</span></code>, <code class="docutils literal notranslate"><span class="pre">notile</span></code>, <code class="docutils literal notranslate"><span class="pre">dclear</span></code>, <code class="docutils literal notranslate"><span class="pre">ddraw</span></code>, <code class="docutils literal notranslate"><span class="pre">flush</span></code>, <code class="docutils literal notranslate"><span class="pre">inorder</span></code>, <code class="docutils literal notranslate"><span class="pre">noblit</span></code></p>
+<p>Useful <code class="docutils literal notranslate"><span class="pre">IR3_SHADER_DEBUG</span></code> options:</p>
+<p><code class="docutils literal notranslate"><span class="pre">nouboopt</span></code>, <code class="docutils literal notranslate"><span class="pre">spillall</span></code>, <code class="docutils literal notranslate"><span class="pre">nopreamble</span></code>, <code class="docutils literal notranslate"><span class="pre">nofp16</span></code></p>
+<p>Use Graphics Flight Recorder to narrow down the place which hangs,
+use our own breadcrumbs implementation in case of unrecoverable hangs.</p>
+<p>In case of faults use RenderDoc to find the problematic command. If it’s
+a draw call, edit shader in RenderDoc to find whether it culprit is a shader.
+If yes, bisect it.</p>
+<p>If editing the shader messes the assembly too much and the issue becomes unreproducible
+try editing the assembly itself via <code class="docutils literal notranslate"><span class="pre">IR3_SHADER_OVERRIDE_PATH</span></code>.</p>
+<p>If fault or hang is transient try capturing an <code class="docutils literal notranslate"><span class="pre">rd</span></code> and replay it. If issue
+is reproduced - bisect the GPU packets until the culprit is found.</p>
+<p>Do the above if culprit is not a shader.</p>
+<p>The hang recovery mechanism in Kernel is not perfect, in case of unrecoverable
+hangs check whether the kernel is up to date and look for unmerged patches
+which could improve the recovery.</p>
+<section id="gpu-breadcrumbs">
+<h4>GPU Breadcrumbs<a class="headerlink" href="#gpu-breadcrumbs" title="Link to this heading">¶</a></h4>
+<p>Breadcrumbs described below are available only in Turnip.</p>
+<p>Freedreno has simpler breadcrumbs, in debug build writes breadcrumbs
+into <code class="docutils literal notranslate"><span class="pre">CP_SCRATCH_REG[6]</span></code> and per-tile breadcrumbs into <code class="docutils literal notranslate"><span class="pre">CP_SCRATCH_REG[7]</span></code>,
+in this way they are available in the devcoredump. TODO: generalize Tunip’s
+breadcrumbs implementation.</p>
+<p>This is a simple implementations of breadcrumbs tracking of GPU progress
+intended to be a last resort when debugging unrecoverable hangs.
+For best results use Vulkan traces to have a predictable place of hang.</p>
+<p>For ordinary hangs as a more user-friendly solution use GFR
+“Graphics Flight Recorder”.</p>
+<p>Or breadcrumbs implementation aims to handle cases where nothing can be done
+after the hang. In-driver breadcrumbs also allow more precise tracking since
+we could target a single GPU packet.</p>
+<p>While breadcrumbs support gmem, try to reproduce the hang in a sysmem mode
+because it would require much less breadcrumb writes and syncs.</p>
+<p>Breadcrumbs settings:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nv">TU_BREADCRUMBS</span><span class="o">=</span>%IP%:%PORT%,break<span class="o">=</span>%BREAKPOINT%:%BREAKPOINT_HITS%
+</pre></div>
+</div>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">BREAKPOINT</span></code></dt><dd><p>The breadcrumb starting from which we require explicit ack.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">BREAKPOINT_HITS</span></code></dt><dd><p>How many times breakpoint should be reached for break to occur.
+Necessary for a gmem mode and re-usable cmdbuffers in both of which
+the same cmdstream could be executed several times.</p>
+</dd>
+</dl>
+<p>A typical work flow would be:</p>
+<ul class="simple">
+<li><p>Start listening for breadcrumbs on a remote host:</p></li>
+</ul>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>nc<span class="w"> </span>-lkvup<span class="w"> </span><span class="nv">$PORT</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>stdbuf<span class="w"> </span>-o0<span class="w"> </span>xxd<span class="w"> </span>-pc<span class="w"> </span>-c<span class="w"> </span><span class="m">4</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>awk<span class="w"> </span>-Wposix<span class="w"> </span><span class="s1">&#39;{printf(&quot;%u:%u\n&quot;, &quot;0x&quot; $0, a[$0]++)}&#39;</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Start capturing command stream;</p></li>
+<li><p>Replay the hanging trace with:</p></li>
+</ul>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nv">TU_BREADCRUMBS</span><span class="o">=</span><span class="nv">$IP</span>:<span class="nv">$PORT</span>,break<span class="o">=</span>-1:0
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Increase hangcheck period:</p></li>
+</ul>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nb">echo</span><span class="w"> </span>-n<span class="w"> </span><span class="m">60000</span><span class="w"> </span>&gt;<span class="w"> </span>/sys/kernel/debug/dri/0/hangcheck_period_ms
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>After GPU hang note the last breadcrumb and relaunch trace with:</p></li>
+</ul>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nv">TU_BREADCRUMBS</span><span class="o">=</span>%IP%:%PORT%,break<span class="o">=</span>%LAST_BREADCRUMB%:%HITS%
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>After the breakpoint is reached each breadcrumb would require
+explicit ack from the user. This way it’s possible to find
+the last packet which didn’t hang.</p></li>
+<li><p>Find the packet in the decoded cmdstream.</p></li>
+</ul>
+</section>
+</section>
+<section id="debugging-random-failures">
+<h3>Debugging random failures<a class="headerlink" href="#debugging-random-failures" title="Link to this heading">¶</a></h3>
+<p>In most cases random GPU faults and rendering artifacts are caused by some kind
+of undefined behavior that falls under the following categories:</p>
+<ul class="simple">
+<li><p>Usage of a stale reg value;</p></li>
+<li><p>Usage of stale memory (e.g. expecting it to be zeroed when it is not);</p></li>
+<li><p>Lack of the proper synchronization.</p></li>
+</ul>
+<section id="finding-instances-of-stale-reg-reads">
+<h4>Finding instances of stale reg reads<a class="headerlink" href="#finding-instances-of-stale-reg-reads" title="Link to this heading">¶</a></h4>
+<p>Turnip has a debug option to stomp the registers with invalid values to catch
+the cases where stale data is read.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nv">MESA_VK_ABORT_ON_DEVICE_LOSS</span><span class="o">=</span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
+<span class="nv">TU_DEBUG_STALE_REGS_RANGE</span><span class="o">=</span>0x00000c00,0x0000be01<span class="w"> </span><span class="se">\</span>
+<span class="nv">TU_DEBUG_STALE_REGS_FLAGS</span><span class="o">=</span>cmdbuf,renderpass<span class="w"> </span><span class="se">\</span>
+./app
+</pre></div>
+</div>
+<dl class="std envvar">
+<dt class="sig sig-object std" id="envvar-TU_DEBUG_STALE_REGS_RANGE">
+<span class="sig-name descname"><span class="pre">TU_DEBUG_STALE_REGS_RANGE</span></span><a class="headerlink" href="#envvar-TU_DEBUG_STALE_REGS_RANGE" title="Link to this definition">¶</a></dt>
+<dd><p>the reg range in which registers would be stomped. Add <code class="docutils literal notranslate"><span class="pre">inverse</span></code> to the
+flags in order for this range to specify which registers NOT to stomp.</p>
+</dd></dl>
+
+<dl class="std envvar">
+<dt class="sig sig-object std" id="envvar-TU_DEBUG_STALE_REGS_FLAGS">
+<span class="sig-name descname"><span class="pre">TU_DEBUG_STALE_REGS_FLAGS</span></span><a class="headerlink" href="#envvar-TU_DEBUG_STALE_REGS_FLAGS" title="Link to this definition">¶</a></dt>
+<dd><dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">cmdbuf</span></code></dt><dd><p>stomp registers at the start of each command buffer.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">renderpass</span></code></dt><dd><p>stomp registers before each render pass.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">inverse</span></code></dt><dd><p>changes <code class="docutils literal notranslate"><span class="pre">TU_DEBUG_STALE_REGS_RANGE</span></code> meaning to
+“regs that should NOT be stomped”.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p>The best way to pinpoint the reg which causes a failure is to bisect the regs
+range. In case when a fail is caused by combination of several registers
+the <code class="docutils literal notranslate"><span class="pre">inverse</span></code> flag may be set to find the reg which prevents the failure.</p>
+</section>
+</section>
+<section id="runtime-toggling-of-tu-debug-options">
+<h3>Runtime toggling of <code class="docutils literal notranslate"><span class="pre">TU_DEBUG</span></code> options<a class="headerlink" href="#runtime-toggling-of-tu-debug-options" title="Link to this heading">¶</a></h3>
+<p>In some cases, it is useful to toggle <code class="docutils literal notranslate"><span class="pre">TU_DEBUG</span></code> options at runtime, such as
+when assessing the performance impact of a particular option. This can be done
+by setting the <code class="docutils literal notranslate"><span class="pre">TU_DEBUG_FILE</span></code> environment variable to a file path, and writing
+the desired <code class="docutils literal notranslate"><span class="pre">TU_DEBUG</span></code> options to that file. The driver will check the file at
+startup and apply all debug options (runtime and non-runtime) but then will
+continue to monitor the file for changes and only apply runtime options.</p>
+<p>The folder containing the file should exist prior to running the application, and
+deleting the folder during runtime will result in the driver no longer picking up
+any changes even if the folder is recreated.</p>
+<p>Additionally, not all <code class="docutils literal notranslate"><span class="pre">TU_DEBUG</span></code> options can be toggled at runtime, the following
+are supported at the moment: <code class="docutils literal notranslate"><span class="pre">nir</span></code>, <code class="docutils literal notranslate"><span class="pre">nobin</span></code>, <code class="docutils literal notranslate"><span class="pre">sysmem</span></code>, <code class="docutils literal notranslate"><span class="pre">gmem</span></code>, <code class="docutils literal notranslate"><span class="pre">forcebin</span></code>,
+<code class="docutils literal notranslate"><span class="pre">layout</span></code>, <code class="docutils literal notranslate"><span class="pre">nolrz</span></code>, <code class="docutils literal notranslate"><span class="pre">nolrzfc</span></code>, <code class="docutils literal notranslate"><span class="pre">perf</span></code>, <code class="docutils literal notranslate"><span class="pre">flushall</span></code>, <code class="docutils literal notranslate"><span class="pre">syncdraw</span></code>,
+<code class="docutils literal notranslate"><span class="pre">rast_order</span></code>, <code class="docutils literal notranslate"><span class="pre">unaligned_store</span></code>, <code class="docutils literal notranslate"><span class="pre">log_skip_gmem_ops</span></code>, <code class="docutils literal notranslate"><span class="pre">3d_load</span></code>, <code class="docutils literal notranslate"><span class="pre">fdm</span></code>,
+<code class="docutils literal notranslate"><span class="pre">noconcurrentresolves</span></code>, <code class="docutils literal notranslate"><span class="pre">noconcurrentunresolves</span></code>, <code class="docutils literal notranslate"><span class="pre">nobinmerging</span></code>.</p>
+<p>Some of these options will behave differently when toggled at runtime, for example:
+<code class="docutils literal notranslate"><span class="pre">nolrz</span></code> will still result in LRZ allocation which would not happen if the option
+was set in the environment variable.</p>
+</section>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="../search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="d3d12.html">D3D12</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Freedreno</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#turnip">Turnip</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hardware-architecture">Hardware architecture</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/hw/lrz.html">Low Resolution Z Buffer</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#hardware-acronyms">Hardware acronyms</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#cache-hierarchy">Cache hierarchy</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#draw-states">Draw states</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#pipelining-a6xx">Pipelining (a6xx+)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#bindless-bindful-descriptors-a6xx">Bindless/Bindful Descriptors (a6xx+)</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#software-architecture">Software Architecture</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/fdm.html">Fragment Density Map</a></li>
+<li class="toctree-l3"><a class="reference internal" href="freedreno/ir3-notes.html">IR3 NOTES</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#gpu-devcoredump">GPU devcoredump</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#command-stream-capture">Command Stream Capture</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#capturing-hang-rd">Capturing Hang RD</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#replaying-command-stream">Replaying Command Stream</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#editing-command-stream-a6xx">Editing Command Stream (a6xx+)</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#gpu-hang-debugging">GPU Hang Debugging</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#gpu-breadcrumbs">GPU Breadcrumbs</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#debugging-random-failures">Debugging random failures</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#finding-instances-of-stale-reg-reads">Finding instances of stale reg reads</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#runtime-toggling-of-tu-debug-options">Runtime toggling of <code class="docutils literal notranslate"><span class="pre">TU_DEBUG</span></code> options</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/drivers/freedreno.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

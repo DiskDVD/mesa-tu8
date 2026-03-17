@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>EGL &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="_static/screen.css?v=10557b77" />
+
+    <script src="_static/documentation_options.js?v=91d07486"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="_static/favicon.ico"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="OpenGL ES" href="opengles.html" />
+    <link rel="prev" title="Shading Language" href="shading.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="egl">
+<h1>EGL<a class="headerlink" href="#egl" title="Link to this heading">¶</a></h1>
+<p>The current version of EGL in Mesa implements EGL 1.5. More information
+about EGL can be found at <a class="reference external" href="https://www.khronos.org/egl/">https://www.khronos.org/egl/</a>.</p>
+<p>The Mesa’s implementation of EGL uses a driver architecture. The main
+library (<code class="docutils literal notranslate"><span class="pre">libEGL</span></code>) is window system neutral. It provides the EGL API
+entry points and helper functions for use by the drivers. Drivers are
+dynamically loaded by the main library and most of the EGL API calls are
+directly dispatched to the drivers.</p>
+<p>The driver in use decides the window system to support.</p>
+<section id="build-egl">
+<h2>Build EGL<a class="headerlink" href="#build-egl" title="Link to this heading">¶</a></h2>
+<ol class="arabic">
+<li><p>Configure your build with the desired client APIs and enable the
+driver for your hardware. For example:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>$<span class="w"> </span>meson<span class="w"> </span>configure<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-D<span class="w"> </span><span class="nv">egl</span><span class="o">=</span>enabled<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-D<span class="w"> </span><span class="nv">gles1</span><span class="o">=</span>enabled<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-D<span class="w"> </span><span class="nv">gles2</span><span class="o">=</span>enabled<span class="w"> </span><span class="se">\</span>
+<span class="w">        </span>-D<span class="w"> </span>gallium-drivers<span class="o">=</span>...
+</pre></div>
+</div>
+<p>The main EGL library and OpenGL are enabled by default. The two
+<code class="docutils literal notranslate"><span class="pre">gles*</span></code> options after enable <a class="reference internal" href="opengles.html"><span class="doc">OpenGL ES 1.x and 2.x+</span></a>. The last option enables the listed Gallium drivers.</p>
+</li>
+<li><p>Build and install Mesa as usual.</p></li>
+</ol>
+<p>In the given example, it will build and install <code class="docutils literal notranslate"><span class="pre">libEGL</span></code>, <code class="docutils literal notranslate"><span class="pre">libGL</span></code>,
+<code class="docutils literal notranslate"><span class="pre">libGLESv1_CM</span></code>, <code class="docutils literal notranslate"><span class="pre">libGLESv2</span></code>, and one or more EGL drivers.</p>
+<section id="configure-options">
+<h3>Configure Options<a class="headerlink" href="#configure-options" title="Link to this heading">¶</a></h3>
+<p>There are several options that control the build of EGL at configuration
+time</p>
+<dl>
+<dt><code class="docutils literal notranslate"><span class="pre">-D</span> <span class="pre">egl=enabled</span></code></dt><dd><p>By default, EGL is enabled. When disabled, the main library and the
+drivers will not be built.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">-D</span> <span class="pre">platforms=...</span></code></dt><dd><p>List the platforms (window systems) to support. Its argument is a
+comma separated string such as <code class="docutils literal notranslate"><span class="pre">-D</span> <span class="pre">platforms=x11,wayland</span></code>. It decides
+the platforms a driver may support. The first listed platform is also
+used by the main library to decide the native platform.</p>
+<p>The available platforms are <code class="docutils literal notranslate"><span class="pre">x11</span></code>, <code class="docutils literal notranslate"><span class="pre">wayland</span></code>,
+<code class="docutils literal notranslate"><span class="pre">android</span></code>, and <code class="docutils literal notranslate"><span class="pre">haiku</span></code>. The <code class="docutils literal notranslate"><span class="pre">android</span></code> platform
+can either be built as a system component, part of AOSP, using
+<code class="docutils literal notranslate"><span class="pre">Android.mk</span></code> files, or cross-compiled using appropriate options.
+Unless for special needs, the build system should select the right
+platforms automatically.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">-D</span> <span class="pre">gles1=enabled</span></code> and <code class="docutils literal notranslate"><span class="pre">-D</span> <span class="pre">gles2=enabled</span></code></dt><dd><p>These options enable OpenGL ES support in OpenGL. The result is one
+big internal library that supports multiple APIs.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">-D</span> <span class="pre">shared-glapi=enabled</span></code></dt><dd><p>By default, <code class="docutils literal notranslate"><span class="pre">libGL</span></code> has its own copy of <code class="docutils literal notranslate"><span class="pre">libglapi</span></code>. This options
+makes <code class="docutils literal notranslate"><span class="pre">libGL</span></code> use the shared <code class="docutils literal notranslate"><span class="pre">libglapi</span></code>. This is required if
+applications mix OpenGL and OpenGL ES.</p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="use-egl">
+<h2>Use EGL<a class="headerlink" href="#use-egl" title="Link to this heading">¶</a></h2>
+<section id="demos">
+<h3>Demos<a class="headerlink" href="#demos" title="Link to this heading">¶</a></h3>
+<p>There are demos for the client APIs supported by EGL. They can be found
+in mesa/demos repository.</p>
+</section>
+<section id="environment-variables">
+<h3>Environment Variables<a class="headerlink" href="#environment-variables" title="Link to this heading">¶</a></h3>
+<p>There are several environment variables that control the behavior of EGL
+at runtime</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">EGL_PLATFORM</span></code></dt><dd><p>This variable specifies the native platform. The valid values are the
+same as those for <code class="docutils literal notranslate"><span class="pre">-D</span> <span class="pre">platforms=...</span></code>. When the variable is not set,
+the main library uses the first platform listed in
+<code class="docutils literal notranslate"><span class="pre">-D</span> <span class="pre">platforms=...</span></code> as the native platform.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">EGL_LOG_LEVEL</span></code></dt><dd><p>This changes the log level of the main library and the drivers. The
+valid values are: <code class="docutils literal notranslate"><span class="pre">debug</span></code>, <code class="docutils literal notranslate"><span class="pre">info</span></code>, <code class="docutils literal notranslate"><span class="pre">warning</span></code>, and <code class="docutils literal notranslate"><span class="pre">fatal</span></code>.</p>
+</dd>
+</dl>
+</section>
+</section>
+<section id="packaging">
+<h2>Packaging<a class="headerlink" href="#packaging" title="Link to this heading">¶</a></h2>
+<p>The ABI between the main library and its drivers are not stable. Nor is
+there a plan to stabilize it at the moment.</p>
+</section>
+<section id="developers">
+<h2>Developers<a class="headerlink" href="#developers" title="Link to this heading">¶</a></h2>
+<p>The sources of the main library and drivers can be found at
+<code class="docutils literal notranslate"><span class="pre">src/egl/</span></code>.</p>
+<p>The code basically consists of two things:</p>
+<ol class="arabic simple">
+<li><p>An EGL API dispatcher. This directly routes all the <code class="docutils literal notranslate"><span class="pre">eglFooBar()</span></code>
+API calls into driver-specific functions.</p></li>
+<li><p>Two EGL drivers (<code class="docutils literal notranslate"><span class="pre">dri2</span></code> and <code class="docutils literal notranslate"><span class="pre">haiku</span></code>), implementing the API
+functions handling the platforms’ specifics.</p></li>
+</ol>
+<p>Two of API functions are optional (<code class="docutils literal notranslate"><span class="pre">eglQuerySurface()</span></code> and
+<code class="docutils literal notranslate"><span class="pre">eglSwapInterval()</span></code>); the former provides fallback for all the
+platform-agnostic attributes (i.e. everything except <code class="docutils literal notranslate"><span class="pre">EGL_WIDTH</span></code>
+&amp; <code class="docutils literal notranslate"><span class="pre">EGL_HEIGHT</span></code>), and the latter just silently pretends the API call
+succeeded (as per EGL spec).</p>
+<p>A driver _could_ implement all the other EGL API functions, but several of
+them are only needed for extensions, like <code class="docutils literal notranslate"><span class="pre">eglSwapBuffersWithDamageEXT()</span></code>.
+See <code class="docutils literal notranslate"><span class="pre">src/egl/main/egldriver.h</span></code> to see which driver hooks are only
+required by extensions.</p>
+<section id="bootstrapping">
+<h3>Bootstrapping<a class="headerlink" href="#bootstrapping" title="Link to this heading">¶</a></h3>
+<p>When the apps calls <code class="docutils literal notranslate"><span class="pre">eglInitialize()</span></code>, the driver’s <code class="docutils literal notranslate"><span class="pre">Initialize()</span></code>
+function is called. If the first driver initialization attempt fails,
+a second one is tried using only software components (this can be forced
+using the <code class="docutils literal notranslate"><span class="pre">LIBGL_ALWAYS_SOFTWARE</span></code> environment variable). Typically,
+this function takes care of setting up visual configs, creating EGL
+devices, etc.</p>
+</section>
+<section id="teardown">
+<h3>Teardown<a class="headerlink" href="#teardown" title="Link to this heading">¶</a></h3>
+<p>When <code class="docutils literal notranslate"><span class="pre">eglTerminate()</span></code> is called, the <code class="docutils literal notranslate"><span class="pre">driver-&gt;Terminate()</span></code> function
+is called. The driver should clean up after itself.</p>
+</section>
+<section id="subclassing">
+<h3>Subclassing<a class="headerlink" href="#subclassing" title="Link to this heading">¶</a></h3>
+<p>The internal libEGL data structures such as <code class="docutils literal notranslate"><span class="pre">_EGLDisplay</span></code>,
+<code class="docutils literal notranslate"><span class="pre">_EGLContext</span></code>, <code class="docutils literal notranslate"><span class="pre">_EGLSurface</span></code>, etc. should be considered base classes
+from which drivers will derive subclasses.</p>
+</section>
+</section>
+<section id="egl-drivers">
+<h2>EGL Drivers<a class="headerlink" href="#egl-drivers" title="Link to this heading">¶</a></h2>
+<dl>
+<dt><code class="docutils literal notranslate"><span class="pre">egl_dri2</span></code></dt><dd><p>This driver supports several platforms: <code class="docutils literal notranslate"><span class="pre">android</span></code>, <code class="docutils literal notranslate"><span class="pre">device</span></code>,
+<code class="docutils literal notranslate"><span class="pre">drm</span></code>, <code class="docutils literal notranslate"><span class="pre">surfaceless</span></code>, <code class="docutils literal notranslate"><span class="pre">wayland</span></code> and <code class="docutils literal notranslate"><span class="pre">x11</span></code>. It functions as
+a DRI driver loader. For <code class="docutils literal notranslate"><span class="pre">x11</span></code> support, it talks to the X server
+directly using (XCB-)DRI3 protocol when available.</p>
+<p>This driver can share DRI drivers with <code class="docutils literal notranslate"><span class="pre">libGL</span></code>.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">haiku</span></code></dt><dd><p>This driver supports only the <a class="reference external" href="https://www.haiku-os.org/">Haiku</a>
+platform. It is also much less feature-complete than <code class="docutils literal notranslate"><span class="pre">egl_dri2</span></code>,
+supporting only part of EGL 1.4 and none of the extensions beyond it.</p>
+</dd>
+</dl>
+<section id="lifetime-of-display-resources">
+<h3>Lifetime of Display Resources<a class="headerlink" href="#lifetime-of-display-resources" title="Link to this heading">¶</a></h3>
+<p>Contexts and surfaces are examples of display resources. They might live
+longer than the display that creates them.</p>
+<p>In EGL, when a display is terminated through <code class="docutils literal notranslate"><span class="pre">eglTerminate</span></code>, all
+display resources should be destroyed. Similarly, when a thread is
+released through <code class="docutils literal notranslate"><span class="pre">eglReleaseThread</span></code>, all current display resources
+should be released. Another way to destroy or release resources is
+through functions such as <code class="docutils literal notranslate"><span class="pre">eglDestroySurface</span></code> or <code class="docutils literal notranslate"><span class="pre">eglMakeCurrent</span></code>.</p>
+<p>When a resource that is current to some thread is destroyed, the
+resource should not be destroyed immediately. EGL requires the resource
+to live until it is no longer current. A driver usually calls
+<code class="docutils literal notranslate"><span class="pre">eglIs&lt;Resource&gt;Bound</span></code> to check if a resource is bound (current) to
+any thread in the destroy callbacks. If it is still bound, the resource
+is not destroyed.</p>
+<p>The main library will mark destroyed current resources as unlinked. In a
+driver’s <code class="docutils literal notranslate"><span class="pre">MakeCurrent</span></code> callback, <code class="docutils literal notranslate"><span class="pre">eglIs&lt;Resource&gt;Linked</span></code> can then be
+called to check if a newly released resource is linked to a display. If
+it is not, the last reference to the resource is removed and the driver
+should destroy the resource. But it should be careful here because
+<code class="docutils literal notranslate"><span class="pre">MakeCurrent</span></code> might be called with an uninitialized display.</p>
+<p>This is the only mechanism provided by the main library to help manage
+the resources. The drivers are responsible to the correct behavior as
+defined by EGL.</p>
+</section>
+<section id="egl-render-buffer">
+<h3><code class="docutils literal notranslate"><span class="pre">EGL_RENDER_BUFFER</span></code><a class="headerlink" href="#egl-render-buffer" title="Link to this heading">¶</a></h3>
+<p>In EGL, the color buffer a context should try to render to is decided by
+the binding surface. It should try to render to the front buffer if the
+binding surface has <code class="docutils literal notranslate"><span class="pre">EGL_RENDER_BUFFER</span></code> set to <code class="docutils literal notranslate"><span class="pre">EGL_SINGLE_BUFFER</span></code>;
+If the same context is later bound to a surface with
+<code class="docutils literal notranslate"><span class="pre">EGL_RENDER_BUFFER</span></code> set to <code class="docutils literal notranslate"><span class="pre">EGL_BACK_BUFFER</span></code>, the context should try
+to render to the back buffer. However, the context is allowed to make
+the final decision as to which color buffer it wants to or is able to
+render to.</p>
+<p>For pbuffer surfaces, the render buffer is always <code class="docutils literal notranslate"><span class="pre">EGL_BACK_BUFFER</span></code>.
+And for pixmap surfaces, the render buffer is always
+<code class="docutils literal notranslate"><span class="pre">EGL_SINGLE_BUFFER</span></code>. Unlike window surfaces, EGL spec requires their
+<code class="docutils literal notranslate"><span class="pre">EGL_RENDER_BUFFER</span></code> values to be honored. As a result, a driver should
+never set <code class="docutils literal notranslate"><span class="pre">EGL_PIXMAP_BIT</span></code> or <code class="docutils literal notranslate"><span class="pre">EGL_PBUFFER_BIT</span></code> bits of a config if
+the contexts created with the config won’t be able to honor the
+<code class="docutils literal notranslate"><span class="pre">EGL_RENDER_BUFFER</span></code> of pixmap or pbuffer surfaces.</p>
+<p>It should also be noted that pixmap and pbuffer surfaces are assumed to
+be single-buffered, in that <code class="docutils literal notranslate"><span class="pre">eglSwapBuffers</span></code> has no effect on them. It
+is desirable that a driver allocates a private color buffer for each
+pbuffer surface created. If the window system the driver supports has
+native pbuffers, or if the native pixmaps have more than one color
+buffers, the driver should carefully attach the native color buffers to
+the EGL surfaces, re-route them if required.</p>
+<p>There is no defined behavior as to, for example, how <code class="docutils literal notranslate"><span class="pre">glDrawBuffer</span></code>
+interacts with <code class="docutils literal notranslate"><span class="pre">EGL_RENDER_BUFFER</span></code>. Right now, it is desired that the
+draw buffer in a client API be fixed for pixmap and pbuffer surfaces.
+Therefore, the driver is responsible to guarantee that the client API
+renders to the specified render buffer for pixmap and pbuffer surfaces.</p>
+</section>
+<section id="egldisplay-mutex">
+<h3><code class="docutils literal notranslate"><span class="pre">EGLDisplay</span></code> Mutex<a class="headerlink" href="#egldisplay-mutex" title="Link to this heading">¶</a></h3>
+<p>The <code class="docutils literal notranslate"><span class="pre">EGLDisplay</span></code> will be locked before calling any of the dispatch
+functions (well, except for GetProcAddress which does not take an
+<code class="docutils literal notranslate"><span class="pre">EGLDisplay</span></code>). This guarantees that the same dispatch function will
+not be called with the same display at the same time. If a driver has
+access to an <code class="docutils literal notranslate"><span class="pre">EGLDisplay</span></code> without going through the EGL APIs, the
+driver should as well lock the display before using it.</p>
+</section>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="shading.html">Shading Language</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">EGL</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#build-egl">Build EGL</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#configure-options">Configure Options</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#use-egl">Use EGL</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#demos">Demos</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#environment-variables">Environment Variables</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#packaging">Packaging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#developers">Developers</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#bootstrapping">Bootstrapping</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#teardown">Teardown</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#subclassing">Subclassing</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#egl-drivers">EGL Drivers</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#lifetime-of-display-resources">Lifetime of Display Resources</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#egl-render-buffer"><code class="docutils literal notranslate"><span class="pre">EGL_RENDER_BUFFER</span></code></a></li>
+<li class="toctree-l3"><a class="reference internal" href="#egldisplay-mutex"><code class="docutils literal notranslate"><span class="pre">EGLDisplay</span></code> Mutex</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="drivers/anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/egl.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

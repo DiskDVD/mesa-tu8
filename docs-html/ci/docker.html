@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Docker CI &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="../_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="../_static/screen.css?v=10557b77" />
+
+    <script src="../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Running traces on a local machine" href="local-traces.html" />
+    <link rel="prev" title="LAVA CI" href="LAVA.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="../_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="../download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="../index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="docker-ci">
+<h1>Docker CI<a class="headerlink" href="#docker-ci" title="Link to this heading">¶</a></h1>
+<p>For LLVMpipe and Softpipe CI, we run tests in a container containing
+VK-GL-CTS, on the shared GitLab runners provided by <a class="reference external" href="https://www.freedesktop.org">freedesktop</a></p>
+<section id="software-architecture">
+<h2>Software architecture<a class="headerlink" href="#software-architecture" title="Link to this heading">¶</a></h2>
+<p>The Docker containers are rebuilt using the shell scripts under
+.gitlab-ci/container/ when the FDO_DISTRIBUTION_TAG changes in
+.gitlab-ci.yml. The resulting images are around 1 GB, and are
+expected to change approximately weekly (though an individual
+developer working on them may produce many more images while trying to
+come up with a working MR!).</p>
+<p>gitlab-runner is a client that polls gitlab.freedesktop.org for
+available jobs, with no inbound networking requirements.  Jobs can
+have tags, so we can have DUT-specific jobs that only run on runners
+with that tag marked in the GitLab UI.</p>
+<p>Since dEQP takes a long time to run, we mark the job as “parallel” at
+some level, which spawns multiple jobs from one definition, and then
+deqp-runner.sh takes the corresponding fraction of the test list for
+that job.</p>
+<p>To reduce dEQP runtime (or avoid tests with unreliable results), a
+deqp-runner.sh invocation can provide a list of tests to skip.  If
+your driver is not yet conformant, you can pass a list of expected
+failures, and the job will only fail on tests that aren’t listed (look
+at the job’s log for which specific tests failed).</p>
+</section>
+<section id="dut-requirements">
+<h2>DUT requirements<a class="headerlink" href="#dut-requirements" title="Link to this heading">¶</a></h2>
+<p>In addition to the general <a class="reference internal" href="index.html#ci-job-user-expectations"><span class="std std-ref">CI job user expectations</span></a>, using
+Docker requires:</p>
+<ul class="simple">
+<li><p>DUTs must have a stable kernel and GPU reset (if applicable).</p></li>
+</ul>
+<p>If the system goes down during a test run, that job will eventually
+time out and fail (default 1 hour).  However, if the kernel can’t
+reliably reset the GPU on failure, bugs in one MR may leak into
+spurious failures in another MR.  This would be an unacceptable impact
+on Mesa developers working on other drivers.</p>
+<ul class="simple">
+<li><p>DUTs must be able to run Docker</p></li>
+</ul>
+<p>The Mesa gitlab-runner based test architecture is built around Docker,
+so that we can cache the Debian package installation and CTS build
+step across multiple test runs.  Since the images are large and change
+approximately weekly, the DUTs also need to be running some script to
+prune stale Docker images periodically in order to not run out of disk
+space as we rev those containers (perhaps <a class="reference external" href="https://gitlab.com/gitlab-org/gitlab-runner/-/issues/2980#note_169233611">this script</a>).</p>
+<p>Note that Docker doesn’t allow containers to be stored on NFS, and
+doesn’t allow multiple Docker daemons to interact with the same
+network block device, so you will probably need some sort of physical
+storage on your DUTs.</p>
+<ul class="simple">
+<li><p>DUTs must be public</p></li>
+</ul>
+<p>By including your device in .gitlab-ci.yml, you’re effectively letting
+anyone on the internet run code on your device.  Docker containers may
+provide some limited protection, but how much you trust that and what
+you do to mitigate hostile access is up to you.</p>
+<ul class="simple">
+<li><p>DUTs must expose the DRI device nodes to the containers.</p></li>
+</ul>
+<p>Obviously, to get access to the HW, we need to pass the render node
+through.  This is done by adding <code class="docutils literal notranslate"><span class="pre">devices</span> <span class="pre">=</span> <span class="pre">[&quot;/dev/dri&quot;]</span></code> to the
+<code class="docutils literal notranslate"><span class="pre">runners.docker</span></code> section of /etc/gitlab-runner/config.toml.</p>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="../search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../conform.html">Conformance Testing</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="index.html">Continuous Integration</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="index.html#gitlab-ci">GitLab CI</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="bare-metal.html">Bare-metal CI</a></li>
+<li class="toctree-l3"><a class="reference internal" href="LAVA.html">LAVA CI</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Docker CI</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#software-architecture">Software architecture</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dut-requirements">DUT requirements</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#farm-management">Farm management</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#application-traces-replay">Application traces replay</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#intel-ci">Intel CI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#ci-job-user-expectations">CI job user expectations</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#personal-runners">Personal runners</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#docker-caching">Docker caching</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#building-locally-using-ci-docker-images">Building locally using CI docker images</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#running-specific-ci-jobs">Running specific CI jobs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#marge-queue">Marge queue</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#conformance-tests">Conformance Tests</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#updating-gitlab-ci-linux-kernel">Updating GitLab CI Linux Kernel</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#structured-tagging">Structured tagging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="index.html#reusing-ci-scripts-for-other-projects">Reusing CI scripts for other projects</a></li>
+</ul>
+</li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/ci/docker.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

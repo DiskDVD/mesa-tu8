@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Compiling and Installing &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="_static/screen.css?v=10557b77" />
+
+    <script src="_static/documentation_options.js?v=91d07486"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="_static/favicon.ico"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Compilation and Installation Using Meson" href="meson.html" />
+    <link rel="prev" title="Downloading and Unpacking" href="download.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="compiling-and-installing">
+<h1>Compiling and Installing<a class="headerlink" href="#compiling-and-installing" title="Link to this heading">¶</a></h1>
+<div class="toctree-wrapper compound">
+</div>
+<section id="prerequisites-for-building">
+<h2>1. Prerequisites for building<a class="headerlink" href="#prerequisites-for-building" title="Link to this heading">¶</a></h2>
+<section id="general">
+<h3>1.1 General<a class="headerlink" href="#general" title="Link to this heading">¶</a></h3>
+<section id="build-system">
+<h4>Build system<a class="headerlink" href="#build-system" title="Link to this heading">¶</a></h4>
+<ul class="simple">
+<li><p><a class="reference external" href="https://mesonbuild.com">Meson</a> is required when building on *nix
+platforms and on Windows.</p></li>
+<li><p>Android Build system when building as native Android component. Meson
+is used when building ARC.</p></li>
+</ul>
+</section>
+<section id="compiler">
+<h4>Compiler<a class="headerlink" href="#compiler" title="Link to this heading">¶</a></h4>
+<p>The following compilers are known to work, if you know of others or
+you’re willing to maintain support for other compiler get in touch.</p>
+<ul class="simple">
+<li><p>GCC 8.0.0 or later (some parts of Mesa may require later versions)</p></li>
+<li><p>Clang 5.0 or later (some parts of Mesa may require later versions)</p></li>
+<li><p>Microsoft Visual C++ compiler
+- Windows SDK of at least 20348 is required
+- Visual Studio 2022 version 17.9 or later for (ARM, AARCH64, ARM64EC, X86, X64)</p></li>
+</ul>
+</section>
+<section id="third-party-extra-tools">
+<h4>Third party/extra tools.<a class="headerlink" href="#third-party-extra-tools" title="Link to this heading">¶</a></h4>
+<ul>
+<li><p><a class="reference external" href="https://www.python.org/">Python</a> - Python 3.9 or newer is required.</p></li>
+<li><p>Python package <code class="docutils literal notranslate"><span class="pre">packaging</span></code> is required on Python 3.12+:
+<code class="docutils literal notranslate"><span class="pre">pip</span> <span class="pre">install</span> <span class="pre">packaging</span></code></p></li>
+<li><p><a class="reference external" href="https://www.makotemplates.org/">Python Mako module</a> - Python Mako
+module is required. Version 0.8.0 or later should work.</p></li>
+<li><p>Lex / Yacc - for building the Mesa IR and GLSL compiler.</p>
+<blockquote>
+<div><p>On Linux systems, Flex and Bison versions 2.5.35 and 2.4.1,
+respectively, (or later) should work. On Windows with MinGW, install
+Flex and Bison with:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>mingw-get<span class="w"> </span>install<span class="w"> </span>msys-flex<span class="w"> </span>msys-bison
+</pre></div>
+</div>
+<p>For MSVC on Windows, install <a class="reference external" href="https://sourceforge.net/projects/winflexbison/">Win
+flex-bison</a>.</p>
+</div></blockquote>
+</li>
+</ul>
+<div class="alert alert-info">
+<div class="h5">Note</div><p>Some versions can be buggy (e.g. Flex 2.6.2) so do try others
+if things fail.</p>
+</div>
+</section>
+</section>
+<section id="requirements">
+<h3>1.2 Requirements<a class="headerlink" href="#requirements" title="Link to this heading">¶</a></h3>
+<p>The requirements depends on the features selected at configure stage.
+Check/install the respective development package as prompted by the
+configure error message.</p>
+<p>Here are some common ways to retrieve most/all of the dependencies based
+on the packaging tool used by your distribution.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>zypper<span class="w"> </span>source-install<span class="w"> </span>--build-deps-only<span class="w"> </span>Mesa<span class="w"> </span><span class="c1"># openSUSE/SLED/SLES</span>
+yum-builddep<span class="w"> </span>mesa<span class="w"> </span><span class="c1"># yum Fedora, OpenSuse(?)</span>
+dnf<span class="w"> </span>builddep<span class="w"> </span>mesa<span class="w"> </span><span class="c1"># dnf Fedora</span>
+apt-get<span class="w"> </span>build-dep<span class="w"> </span>mesa<span class="w"> </span><span class="c1"># Debian and derivatives</span>
+...<span class="w"> </span><span class="c1"># others</span>
+</pre></div>
+</div>
+</section>
+</section>
+<section id="building-with-meson">
+<h2>2. Building with meson<a class="headerlink" href="#building-with-meson" title="Link to this heading">¶</a></h2>
+<p>Meson is the latest build system in mesa, it is currently able to build
+for *nix systems like Linux and BSD, macOS, Haiku, and Windows.</p>
+<p>The general approach is:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>meson<span class="w"> </span>setup<span class="w"> </span>builddir/
+meson<span class="w"> </span>compile<span class="w"> </span>-C<span class="w"> </span>builddir/
+sudo<span class="w"> </span>meson<span class="w"> </span>install<span class="w"> </span>-C<span class="w"> </span>builddir/
+</pre></div>
+</div>
+<p>On Windows you can also use the Visual Studio backend</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>meson<span class="w"> </span>setup<span class="w"> </span>builddir<span class="w"> </span>--backend<span class="o">=</span>vs
+<span class="nb">cd</span><span class="w"> </span>builddir
+msbuild<span class="w"> </span>mesa.sln<span class="w"> </span>/m
+</pre></div>
+</div>
+<p>Please read the <a class="reference internal" href="meson.html"><span class="doc">detailed meson instructions</span></a> for more
+information</p>
+</section>
+<section id="running-against-a-local-build-easy-way">
+<h2>3. Running against a local build (easy way)<a class="headerlink" href="#running-against-a-local-build-easy-way" title="Link to this heading">¶</a></h2>
+<p>It’s often necessary or useful when debugging driver issues or testing new
+branches to run against a local build of Mesa without doing a system-wide
+install. Meson has built-in support for this with its <code class="docutils literal notranslate"><span class="pre">devenv</span></code> subcommand:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>meson<span class="w"> </span>devenv<span class="w"> </span>-C<span class="w"> </span>builddir<span class="w"> </span>glxinfo
+</pre></div>
+</div>
+<p>This will run the given command against the build in <code class="docutils literal notranslate"><span class="pre">builddir</span></code>. Note that meson
+will <code class="docutils literal notranslate"><span class="pre">chdir</span></code> into the directory first, so any relative paths in the command line
+will be relative to <code class="docutils literal notranslate"><span class="pre">builddir</span></code> which may not be what you expect.</p>
+</section>
+<section id="running-against-a-local-build-hard-way">
+<h2>4. Running against a local build (hard way)<a class="headerlink" href="#running-against-a-local-build-hard-way" title="Link to this heading">¶</a></h2>
+<p>If you prefer you can configure your test environment manually. To do this,
+choose a temporary location for the install.  A directory called <code class="docutils literal notranslate"><span class="pre">installdir</span></code>
+inside your mesa tree is as good as anything.  All of the commands below will
+assume <code class="docutils literal notranslate"><span class="pre">$MESA_INSTALLDIR</span></code> is an absolute path to this location.</p>
+<p>First, configure Mesa and install in the temporary location:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>meson<span class="w"> </span>setup<span class="w"> </span>builddir/<span class="w"> </span>-Dprefix<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$MESA_INSTALLDIR</span><span class="s2">&quot;</span><span class="w"> </span>OTHER_OPTIONS
+meson<span class="w"> </span>install<span class="w"> </span>-C<span class="w"> </span>builddir/
+</pre></div>
+</div>
+<p>where <code class="docutils literal notranslate"><span class="pre">OTHER_OPTIONS</span></code> is replaced by any meson configuration options you may
+want.  For instance, if you want to build the LLVMpipe drivers, it would look
+like this:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>meson<span class="w"> </span>setup<span class="w"> </span>builddir/<span class="w"> </span>-Dprefix<span class="o">=</span><span class="s2">&quot;</span><span class="nv">$MESA_INSTALLDIR</span><span class="s2">&quot;</span><span class="w"> </span><span class="se">\</span>
+<span class="w">   </span>-Dgallium-drivers<span class="o">=</span>llvmpipe<span class="w"> </span>-Dvulkan-drivers<span class="o">=</span>swrast
+meson<span class="w"> </span>install<span class="w"> </span>-C<span class="w"> </span>builddir/
+</pre></div>
+</div>
+<p>Once Mesa has built and installed to <code class="docutils literal notranslate"><span class="pre">$MESA_INSTALLDIR</span></code>, you can run any app
+against your temporary install by setting the right environment variables.
+Which variable you have to set depends on the API.</p>
+<section id="opengl">
+<h3>OpenGL<a class="headerlink" href="#opengl" title="Link to this heading">¶</a></h3>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nv">LD_LIBRARY_PATH</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$MESA_INSTALLDIR</span><span class="s2">/lib64&quot;</span><span class="w"> </span>glxinfo
+</pre></div>
+</div>
+<p>You may need to use <code class="docutils literal notranslate"><span class="pre">lib</span></code> instead of <code class="docutils literal notranslate"><span class="pre">lib64</span></code> on some systems or a full
+library specifier on Debian.  Look inside <code class="docutils literal notranslate"><span class="pre">installdir</span></code> for the directory that
+contains <code class="docutils literal notranslate"><span class="pre">libGL.so</span></code> and use that one.</p>
+</section>
+<section id="vulkan">
+<h3>Vulkan<a class="headerlink" href="#vulkan" title="Link to this heading">¶</a></h3>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nv">VK_DRIVER_FILES</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$MESA_INSTALLDIR</span><span class="s2">/share/vulkan/icd.d/my_icd.json&quot;</span><span class="w"> </span>vulkaninfo
+</pre></div>
+</div>
+<p>where <code class="docutils literal notranslate"><span class="pre">my_icd.json</span></code> is replaced with the actual ICD json file name.  This
+will depend on your driver.  For instance, the 64-bit Lavapipe driver ICD file
+is named <code class="docutils literal notranslate"><span class="pre">lvp_icd.x86_64.json</span></code>.</p>
+</section>
+<section id="opencl">
+<h3>OpenCL<a class="headerlink" href="#opencl" title="Link to this heading">¶</a></h3>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nv">OCL_ICD_VENDORS</span><span class="o">=</span><span class="s2">&quot;</span><span class="nv">$MESA_INSTALLDIR</span><span class="s2">/etc/OpenCL/vendors&quot;</span><span class="w"> </span>clinfo
+</pre></div>
+</div>
+<p>Unlike Vulkan, OpenCL takes a path to the whole <code class="docutils literal notranslate"><span class="pre">vendors</span></code> folder and will
+enumerate any drivers found there.</p>
+</section>
+<section id="troubleshooting-local-builds">
+<h3>Troubleshooting local builds<a class="headerlink" href="#troubleshooting-local-builds" title="Link to this heading">¶</a></h3>
+<p>If you are trying to run an app against a local build and it’s not working,
+here are a few things to check:</p>
+<blockquote>
+<div><ol class="arabic simple">
+<li><p>Double-check your paths and try with the simplest app you can.  Before
+banging your head on a Steam game, make sure your path works with
+<code class="docutils literal notranslate"><span class="pre">glxgears</span></code> first.</p></li>
+<li><p>Watch out for wrapper scripts.  Some more complex apps such as games have
+big start-up scripts.  Sometimes those scripts scrub the environment or set
+<code class="docutils literal notranslate"><span class="pre">LD_LIBRARY_PATH</span></code> to something in the game’s install directory.</p></li>
+<li><p>Is your Mesa build the same arch as your app?  Lots of games are still
+32-bit and your Mesa build is probably 64-bit by default.</p></li>
+<li><p>32 and 64-bit builds in the same local install directory doesn’t typically
+work.  Distributions go to great lengths to make this work in your system
+install and it’s hard to get it right for a local install.  If you’ve
+recently built 64-bit and are now building 32-bit, throw away the install
+directory first to prevent conflicts.</p></li>
+</ol>
+</div></blockquote>
+</section>
+</section>
+<section id="building-with-aosp-android">
+<h2>5. Building with AOSP (Android)<a class="headerlink" href="#building-with-aosp-android" title="Link to this heading">¶</a></h2>
+<p>See <a class="reference internal" href="android.html"><span class="doc">detailed Android instructions</span></a>.</p>
+</section>
+<section id="library-information">
+<h2>6. Library Information<a class="headerlink" href="#library-information" title="Link to this heading">¶</a></h2>
+<p>When compilation has finished, look in the top-level <code class="docutils literal notranslate"><span class="pre">lib/</span></code> (or
+<code class="docutils literal notranslate"><span class="pre">lib64/</span></code>) directory. You’ll see a set of library files similar to
+this:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>lrwxrwxrwx    1 brian    users          10 Mar 26 07:53 libGL.so -&gt; libGL.so.1*
+lrwxrwxrwx    1 brian    users          19 Mar 26 07:53 libGL.so.1 -&gt; libGL.so.1.5.060100*
+-rwxr-xr-x    1 brian    users     3375861 Mar 26 07:53 libGL.so.1.5.060100*
+</pre></div>
+</div>
+<p><strong>libGL</strong> is the main OpenGL library (i.e. Mesa).</p>
+<p>If you built the DRI hardware drivers, you’ll also see the DRI drivers:</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>-rwxr-xr-x   1 brian users 16895413 Jul 21 12:11 i915_dri.so
+-rwxr-xr-x   1 brian users 16895413 Jul 21 12:11 i965_dri.so
+-rwxr-xr-x   1 brian users 11849858 Jul 21 12:12 r200_dri.so
+-rwxr-xr-x   1 brian users 11757388 Jul 21 12:12 radeon_dri.so
+</pre></div>
+</div>
+<p>If you built with Gallium support, look in lib/gallium/ for
+Gallium-based versions of libGL and device drivers.</p>
+</section>
+<section id="building-opengl-programs-with-pkg-config">
+<h2>7. Building OpenGL programs with pkg-config<a class="headerlink" href="#building-opengl-programs-with-pkg-config" title="Link to this heading">¶</a></h2>
+<p>Running <code class="docutils literal notranslate"><span class="pre">meson</span> <span class="pre">install</span></code> will install package configuration files for
+the pkg-config utility.</p>
+<p>When compiling your OpenGL application you can use pkg-config to
+determine the proper compiler and linker flags.</p>
+<p>For example, compiling and linking a GLUT application can be done with:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>gcc<span class="w"> </span><span class="sb">`</span>pkg-config<span class="w"> </span>--cflags<span class="w"> </span>--libs<span class="w"> </span>glut<span class="sb">`</span><span class="w"> </span>mydemo.c<span class="w"> </span>-o<span class="w"> </span>mydemo
+</pre></div>
+</div>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Compiling and Installing</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="meson.html">Compilation and Installation Using Meson</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#prerequisites-for-building">1. Prerequisites for building</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#general">1.1 General</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#build-system">Build system</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#compiler">Compiler</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#third-party-extra-tools">Third party/extra tools.</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#requirements">1.2 Requirements</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#building-with-meson">2. Building with meson</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#running-against-a-local-build-easy-way">3. Running against a local build (easy way)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#running-against-a-local-build-hard-way">4. Running against a local build (hard way)</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#opengl">OpenGL</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#vulkan">Vulkan</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opencl">OpenCL</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#troubleshooting-local-builds">Troubleshooting local builds</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#building-with-aosp-android">5. Building with AOSP (Android)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#library-information">6. Library Information</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#building-opengl-programs-with-pkg-config">7. Building OpenGL programs with pkg-config</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="drivers/anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/install.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

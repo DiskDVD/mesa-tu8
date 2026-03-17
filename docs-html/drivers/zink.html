@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Zink &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="../_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="../_static/screen.css?v=10557b77" />
+
+    <script src="../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Source Code Repository" href="../repository.html" />
+    <link rel="prev" title="VirGL" href="virgl.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="../_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="../download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="../index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="zink">
+<h1>Zink<a class="headerlink" href="#zink" title="Link to this heading">¶</a></h1>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<p>The Zink driver is a Gallium driver that emits Vulkan API calls instead
+of targeting a specific GPU architecture. This can be used to get full
+desktop OpenGL support on devices that only support Vulkan.</p>
+</section>
+<section id="features">
+<h2>Features<a class="headerlink" href="#features" title="Link to this heading">¶</a></h2>
+<p>The feature-level of Zink depends on two things; what’s implemented in Zink,
+as well as the capabilities of the Vulkan driver.</p>
+<p>The feature-levels implemented by Zink are exposed by <a class="reference external" href="https://dev.vulkan.org/tools#vulkan-profiles">Vulkan Profiles</a> in the
+<code class="file docutils literal notranslate"><span class="pre">VP_ZINK_requirements.json</span></code> profiles file.</p>
+<p>Used with the <a class="reference external" href="https://github.com/KhronosGroup/Vulkan-Profiles">Vulkan Profiles tools</a>,
+we can compare the ZINK profiles with Vulkan devices profiles generated with
+<a class="reference external" href="https://vulkan.lunarg.com/doc/view/latest/windows/vulkaninfo.html">Vulkaninfo</a>
+or <a class="reference external" href="https://www.saschawillems.de/blog/2022/03/12/vulkan-profiles-support-for-the-vulkan-hardware-capability-viewer-and-database/">downloaded from GPUinfo.org</a>
+to establish the feature-levels supported by these drivers.
+You can check a running driver against the Zink profiles by building mesa with
+<code class="docutils literal notranslate"><span class="pre">--tools=zink</span></code> and running
+<code class="docutils literal notranslate"><span class="pre">./src/gallium/drivers/zink/check_requirements/zink_check_requirements</span></code>
+from the build directory.</p>
+<section id="opengl-2-1">
+<h3>OpenGL 2.1<a class="headerlink" href="#opengl-2-1" title="Link to this heading">¶</a></h3>
+<p>OpenGL 2.1 is the minimum version Zink can support, and will always be
+exposed, given Vulkan support. There’s a few features that are required
+for correct behavior, but not all of these are validated; instead you’ll
+see rendering-issues and likely validation error, or even crashes.</p>
+<p>Here’s a list of those requirements:</p>
+<ul class="simple">
+<li><p>Vulkan 1.0</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceFeatures</span></code>:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-logicOp">logicOp</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-fillModeNonSolid">fillModeNonSolid</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-alphaToOne">alphaToOne</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-shaderClipDistance">shaderClipDistance</a></p></li>
+</ul>
+</li>
+<li><p>Device extensions:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_maintenance1.html">VK_KHR_maintenance1</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_create_renderpass2.html">VK_KHR_create_renderpass2</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_imageless_framebuffer.html">VK_KHR_imageless_framebuffer</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_timeline_semaphore.html">VK_KHR_timeline_semaphore</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_custom_border_color.html">VK_EXT_custom_border_color</a> with <code class="docutils literal notranslate"><span class="pre">customBorderColorWithoutFormat</span></code></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_provoking_vertex.html">VK_EXT_provoking_vertex</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_line_rasterization.html">VK_EXT_line_rasterization</a>, with the following <code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceLineRasterizationFeaturesEXT</span></code>:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-rectangularLines">rectangularLines</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-bresenhamLines">bresenhamLines</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-smoothLines">smoothLines</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-stippledRectangularLines">stippledRectangularLines</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-stippledBresenhamLines">stippledBresenhamLines</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-stippledSmoothLines">stippledSmoothLines</a></p></li>
+</ul>
+</li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_swapchain_mutable_format.html">VK_KHR_swapchain_mutable_format</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_border_color_swizzle.html">VK_EXT_border_color_swizzle</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_descriptor_update_template.html">VK_KHR_descriptor_update_template</a></p></li>
+</ul>
+</li>
+</ul>
+<p>In addition to this, <a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_external_memory.html">VK_KHR_external_memory</a> is required to support the
+DRI code-path.</p>
+<p>We also require either the <a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_scalar_block_layout.html">VK_EXT_scalar_block_layout</a> extension or
+Vulkan 1.2, with the <a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-scalarBlockLayout">scalarBlockLayout</a> feature.</p>
+</section>
+<section id="opengl-3-0">
+<h3>OpenGL 3.0<a class="headerlink" href="#opengl-3-0" title="Link to this heading">¶</a></h3>
+<p>For OpenGL 3.0 support, the following additional requirements must be
+met:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceFeatures</span></code>:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-independentBlend">independentBlend</a></p></li>
+</ul>
+</li>
+<li><p>Device extensions:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_transform_feedback.html">VK_EXT_transform_feedback</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_conditional_rendering.html">VK_EXT_conditional_rendering</a></p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="opengl-3-1">
+<h3>OpenGL 3.1<a class="headerlink" href="#opengl-3-1" title="Link to this heading">¶</a></h3>
+<p>For OpenGL 3.1 support, the following additional <code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceLimits</span></code>
+are required:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">maxPerStageDescriptorSamplers</span></code> ≥ 16</p></li>
+</ul>
+</section>
+<section id="opengl-3-2">
+<h3>OpenGL 3.2<a class="headerlink" href="#opengl-3-2" title="Link to this heading">¶</a></h3>
+<p>For OpenGL 3.2 support, the following additional requirements must be
+met, although some of these might not actually get verified:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceFeatures</span></code>:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-depthClamp">depthClamp</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-geometryShader">geometryShader</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-shaderTessellationAndGeometryPointSize">shaderTessellationAndGeometryPointSize</a></p></li>
+</ul>
+</li>
+<li><p>Device extensions:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_depth_clip_enable.html">VK_EXT_depth_clip_enable</a></p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="opengl-3-3">
+<h3>OpenGL 3.3<a class="headerlink" href="#opengl-3-3" title="Link to this heading">¶</a></h3>
+<p>For OpenGL 3.3 support, the following additional requirements must be
+met, although some of these might not actually get verified:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceFeatures</span></code>:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-dualSrcBlend">dualSrcBlend</a></p></li>
+</ul>
+</li>
+<li><p>Device extensions:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_vertex_attribute_divisor.html">VK_EXT_vertex_attribute_divisor</a></p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="opengl-4-0">
+<h3>OpenGL 4.0<a class="headerlink" href="#opengl-4-0" title="Link to this heading">¶</a></h3>
+<p>For OpenGL 4.0 support, the following additional requirements must be
+met:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceFeatures</span></code>:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-sampleRateShading">sampleRateShading</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-tessellationShader">tessellationShader</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-imageCubeArray">imageCubeArray</a></p></li>
+</ul>
+</li>
+<li><p>Device extensions:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_maintenance2.html">VK_KHR_maintenance2</a></p></li>
+</ul>
+</li>
+<li><p>Formats requiring <code class="docutils literal notranslate"><span class="pre">VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT</span></code>:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">VK_FORMAT_R32G32B32_SFLOAT</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">VK_FORMAT_R32G32B32_SINT</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">VK_FORMAT_R32G32B32_UINT</span></code></p></li>
+</ul>
+</div></blockquote>
+</li>
+</ul>
+</section>
+<section id="opengl-4-1">
+<h3>OpenGL 4.1<a class="headerlink" href="#opengl-4-1" title="Link to this heading">¶</a></h3>
+<p>For OpenGL 4.1 support, the following additional requirements must be
+met:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceFeatures</span></code>:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-multiViewport">multiViewport</a></p></li>
+</ul>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceLimits</span></code></p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxImageDimension1D</span></code> ≥ 16384</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxImageDimension2D</span></code> ≥ 16384</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxImageDimension3D</span></code> ≥ 2048</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxImageDimensionCube</span></code> ≥ 16384</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxImageArrayLayers</span></code> ≥ 2048</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">maxViewports</span></code> ≥ 16</p></li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="opengl-4-2">
+<h3>OpenGL 4.2<a class="headerlink" href="#opengl-4-2" title="Link to this heading">¶</a></h3>
+<p>For OpenGL 4.2 support, the following additional requirements must be
+met:</p>
+<ul class="simple">
+<li><dl class="simple">
+<dt>Device extensions:</dt><dd><ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_EXT_image_2d_view_of_3d.html">VK_EXT_image_2d_view_of_3d</a></p></li>
+</ul>
+</dd>
+</dl>
+</li>
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceLimits</span></code>:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">shaderStorageImageExtendedFormats</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">shaderStorageImageWriteWithoutFormat</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">vertexPipelineStoresAndAtomics</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">fragmentStoresAndAtomics</span></code></p></li>
+</ul>
+</li>
+<li><p>For Vulkan 1.2 and above:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceVulkan11Features</span></code>:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-shaderDrawParameters">shaderDrawParameters</a></p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>For Vulkan 1.1 and below:</p>
+<ul>
+<li><p>Device extensions:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_shader_draw_parameters.html">VK_KHR_shader_draw_parameters</a></p></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="opengl-4-3">
+<h3>OpenGL 4.3<a class="headerlink" href="#opengl-4-3" title="Link to this heading">¶</a></h3>
+<p>For OpenGL 4.3 support, the following additional requirements must be
+met:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceFeatures</span></code>:</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-robustBufferAccess">robustBufferAccess</a></p></li>
+</ul>
+</li>
+<li><p>Formats requiring <code class="docutils literal notranslate"><span class="pre">VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT</span></code>:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">VK_FORMAT_R8G8B8A8_UNORM</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">VK_FORMAT_R8G8B8A8_SRGB</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">VK_FORMAT_R16_UNORM</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">VK_FORMAT_R16G16_UNORM</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">VK_FORMAT_R16_SNORM</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">VK_FORMAT_R16G16_SNORM</span></code></p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">VK_FORMAT_D32_SFLOAT_S8_UINT</span></code></p></li>
+</ul>
+</div></blockquote>
+</li>
+</ul>
+</section>
+<section id="opengl-4-4">
+<h3>OpenGL 4.4<a class="headerlink" href="#opengl-4-4" title="Link to this heading">¶</a></h3>
+<p>For OpenGL 4.4 support, the following additional requirements must be
+met:</p>
+<ul class="simple">
+<li><p>Formats requiring <code class="docutils literal notranslate"><span class="pre">VK_FORMAT_FEATURE_VERTEX_BUFFER_BIT</span></code>:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">VK_FORMAT_B10G11R11_UFLOAT_PACK32</span></code></p></li>
+</ul>
+</li>
+<li><p>For Vulkan 1.2 and above:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceVulkan12Features</span></code>:</p>
+<ul>
+<li><p><code class="docutils literal notranslate"><span class="pre">samplerMirrorClampToEdge</span></code></p></li>
+</ul>
+</li>
+</ul>
+</li>
+<li><p>For Vulkan 1.1 and below:</p>
+<ul>
+<li><p>Device extensions:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_sampler_mirror_clamp_to_edge.html">VK_KHR_sampler_mirror_clamp_to_edge</a></p></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</section>
+<section id="opengl-4-5">
+<h3>OpenGL 4.5<a class="headerlink" href="#opengl-4-5" title="Link to this heading">¶</a></h3>
+<p>For OpenGL 4.5 support, the following additional <code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceFeatures</span></code>
+are required to be supported</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-shaderCullDistance">shaderCullDistance</a></p></li>
+</ul>
+</section>
+<section id="opengl-4-6">
+<h3>OpenGL 4.6<a class="headerlink" href="#opengl-4-6" title="Link to this heading">¶</a></h3>
+<p>For OpenGL 4.6 support, the following additional requirements must be
+met:</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">VkPhysicalDeviceFeatures</span></code>:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-samplerAnisotropy">samplerAnisotropy</a></p></li>
+<li><p><a class="reference external" href="https://docs.vulkan.org/spec/latest/chapters/features.html#features-depthBiasClamp">depthBiasClamp</a></p></li>
+</ul>
+</li>
+<li><p>Device extensions:</p>
+<ul>
+<li><p><a class="reference external" href="https://docs.vulkan.org/refpages/latest/refpages/source/VK_KHR_draw_indirect_count.html">VK_KHR_draw_indirect_count</a></p></li>
+</ul>
+</li>
+</ul>
+</section>
+</section>
+<section id="performance">
+<h2>Performance<a class="headerlink" href="#performance" title="Link to this heading">¶</a></h2>
+<p>If you notice poor performance and high CPU usage while running an application,
+changing the descriptor manager may improve performance:</p>
+<dl class="std envvar">
+<dt class="sig sig-object std" id="envvar-ZINK_DESCRIPTORS-mode-auto">
+<span class="sig-name descname"><span class="pre">ZINK_DESCRIPTORS</span> <span class="pre">&lt;mode&gt;</span> <span class="pre">(&quot;auto&quot;)</span></span><a class="headerlink" href="#envvar-ZINK_DESCRIPTORS-mode-auto" title="Link to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">auto</span></code></dt><dd><p>Automatically detect best mode. This is the default.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">lazy</span></code></dt><dd><p>Attempt to use the least amount of CPU by binding descriptors opportunistically.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">db</span></code></dt><dd><p>Use EXT_descriptor_buffer when possible.</p>
+</dd>
+</dl>
+</section>
+<section id="debugging">
+<h2>Debugging<a class="headerlink" href="#debugging" title="Link to this heading">¶</a></h2>
+<p>There’s a few tools that are useful for debugging Zink, like this environment
+variable:</p>
+<dl class="std envvar">
+<dt class="sig sig-object std" id="envvar-ZINK_DEBUG">
+<span class="sig-name descname"><span class="pre">ZINK_DEBUG</span></span><a class="headerlink" href="#envvar-ZINK_DEBUG" title="Link to this definition">¶</a></dt>
+<dd><p>Accepts the following comma-separated list of flags:</p>
+<dl class="simple">
+<dt><code class="docutils literal notranslate"><span class="pre">nir</span></code></dt><dd><p>Print the NIR form of all shaders to stderr.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">spirv</span></code></dt><dd><p>Write the binary SPIR-V form of all compiled shaders to a file in the
+current directory, and print a message with the filename to stderr.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">tgsi</span></code></dt><dd><p>Print the TGSI form of TGSI shaders to stderr.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">validation</span></code></dt><dd><p>Dump Validation layer output.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">sync</span></code></dt><dd><p>Emit full synchronization barriers before every draw and dispatch.</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">compact</span></code></dt><dd><p>Use a maximum of 4 descriptor sets</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">noreorder</span></code></dt><dd><p>Do not reorder or optimize GL command streams</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">gpl</span></code></dt><dd><p>Force using Graphics Pipeline Library for all shaders</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">rp</span></code></dt><dd><p>Enable render pass optimizations (for tiling GPUs)</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">norp</span></code></dt><dd><p>Disable render pass optimizations (for tiling GPUs)</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">map</span></code></dt><dd><p>Print info about mapped VRAM</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">flushsync</span></code></dt><dd><p>Force synchronous flushes/presents</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">noshobj</span></code></dt><dd><p>Disable EXT_shader_object</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">optimal_keys</span></code></dt><dd><p>Debug/use optimal_keys</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">noopt</span></code></dt><dd><p>Disable async optimized pipeline compiles</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">nobgc</span></code></dt><dd><p>Disable all async pipeline compiles</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">mem</span></code></dt><dd><p>Enable memory allocation debugging</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">quiet</span></code></dt><dd><p>Suppress probably-harmless warnings</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">nopc</span></code></dt><dd><p>No precompilation</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">msaaopt</span></code></dt><dd><p>Optimize out loads/stores of MSAA attachments (nonconformant)</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">rploads</span></code></dt><dd><p>Zap renderpass loads for DONT_CARE</p>
+</dd>
+<dt><code class="docutils literal notranslate"><span class="pre">nogeneral</span></code></dt><dd><p>Disable GENERAL layout usage for supported hardware</p>
+</dd>
+</dl>
+</dd></dl>
+
+<section id="vulkan-validation-layers">
+<h3>Vulkan Validation Layers<a class="headerlink" href="#vulkan-validation-layers" title="Link to this heading">¶</a></h3>
+<p>Another useful tool for debugging is the <a class="reference external" href="https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/README.md">Vulkan Validation Layers</a>.</p>
+<p>The validation layers effectively insert extra checking between Zink and the
+Vulkan driver, pointing out incorrect usage of the Vulkan API. The layers can
+be enabled by setting the environment variable <span class="target" id="index-0"></span><a class="reference internal" href="../envvars.html#envvar-VK_LOADER_LAYERS_ENABLE"><code class="xref std std-envvar docutils literal notranslate"><span class="pre">VK_LOADER_LAYERS_ENABLE</span></code></a> to
+<code class="docutils literal notranslate"><span class="pre">VK_LAYER_KHRONOS_validation</span></code>. You can read more about the Validation Layers
+in the link above.</p>
+</section>
+</section>
+<section id="apple-macos-and-moltenvk">
+<h2>Apple macOS and MoltenVK<a class="headerlink" href="#apple-macos-and-moltenvk" title="Link to this heading">¶</a></h2>
+<p>Zink on macOS is experimental with very limited capabilities.
+The Vulkan SDK (1.3.250 or newer) is required to build Zink.
+Set the build option <code class="docutils literal notranslate"><span class="pre">-Dmoltenvk-dir=&lt;directory&gt;</span></code> to point at your Vulkan SDK install or MoltenVK build.
+Add Zink to the Gallium drivers build option <code class="docutils literal notranslate"><span class="pre">-Dgallium-drivers=zink</span></code>.
+If installed using <code class="docutils literal notranslate"><span class="pre">brew</span></code>, you can set <code class="docutils literal notranslate"><span class="pre">-D</span> <span class="pre">moltenvk-dir=$(brew</span> <span class="pre">--prefix</span> <span class="pre">molten-vk)</span></code>.</p>
+</section>
+<section id="irc">
+<h2>IRC<a class="headerlink" href="#irc" title="Link to this heading">¶</a></h2>
+<p>In order to make things a bit easier to follow, we have decided to create our
+own IRC channel. If you’re interested in contributing, or have any technical
+questions, don’t hesitate to visit <a class="reference external" href="irc://irc.oftc.net/zink">#zink on OFTC</a> and say hi!</p>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="../search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="virgl.html">VirGL</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Zink</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#features">Features</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-2-1">OpenGL 2.1</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-3-0">OpenGL 3.0</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-3-1">OpenGL 3.1</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-3-2">OpenGL 3.2</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-3-3">OpenGL 3.3</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-4-0">OpenGL 4.0</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-4-1">OpenGL 4.1</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-4-2">OpenGL 4.2</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-4-3">OpenGL 4.3</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-4-4">OpenGL 4.4</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-4-5">OpenGL 4.5</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#opengl-4-6">OpenGL 4.6</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#performance">Performance</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#debugging">Debugging</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#vulkan-validation-layers">Vulkan Validation Layers</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#apple-macos-and-moltenvk">Apple macOS and MoltenVK</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#irc">IRC</a></li>
+</ul>
+</li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/drivers/zink.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Releasing Process &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="_static/screen.css?v=10557b77" />
+
+    <script src="_static/documentation_options.js?v=91d07486"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="_static/favicon.ico"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Release Calendar" href="release-calendar.html" />
+    <link rel="prev" title="Rust" href="rust.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="releasing-process">
+<h1>Releasing Process<a class="headerlink" href="#releasing-process" title="Link to this heading">¶</a></h1>
+<section id="overview">
+<h2>Overview<a class="headerlink" href="#overview" title="Link to this heading">¶</a></h2>
+<p>This document uses the convention X.Y.Z for the release number with X.Y
+being the stable branch name.</p>
+<p>Mesa provides feature and bugfix releases. Former use zero as patch
+version (Z), while the latter have a non-zero one.</p>
+<p>For example:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>Mesa 10.1.0 - 10.1 branch, feature
+Mesa 10.1.4 - 10.1 branch, bugfix
+Mesa 12.0.0 - 12.0 branch, feature
+Mesa 12.0.2 - 12.0 branch, bugfix
+</pre></div>
+</div>
+</section>
+<section id="release-schedule">
+<span id="schedule"></span><h2>Release schedule<a class="headerlink" href="#release-schedule" title="Link to this heading">¶</a></h2>
+<p>Releases should happen on Wednesdays. Delays can occur although those
+should be kept to a minimum.</p>
+<p>See our <a class="reference internal" href="release-calendar.html"><span class="doc">calendar</span></a> for information about how
+the release schedule is planned, and the date and other details for
+individual releases.</p>
+<section id="feature-releases">
+<h3>Feature releases<a class="headerlink" href="#feature-releases" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Available approximately every three months.</p></li>
+<li><p>Feature releases are branched on or around the second Wednesday of
+January, April, July, and October.</p></li>
+<li><p>Initial time plan available 2-4 weeks before the planned branchpoint
+(rc1) on the mesa-announce&#64; mailing list.</p></li>
+<li><p>Typically, the final release will happen after 4 candidates.
+Additional ones may be needed in order to resolve blocking
+regressions, though.</p></li>
+</ul>
+</section>
+<section id="stable-releases">
+<h3>Stable releases<a class="headerlink" href="#stable-releases" title="Link to this heading">¶</a></h3>
+<ul class="simple">
+<li><p>Normally available once every two weeks.</p></li>
+<li><p>Only the latest branch has releases. See note below.</p></li>
+</ul>
+<div class="alert alert-info">
+<div class="h5">Note</div><p>There is one or two releases overlap when changing branches. For
+example:</p>
+<p>The final release from the 12.0 series Mesa 12.0.5 will be out around
+the same time (or shortly after) 13.0.1 is out.</p>
+<p>This also involves that, as a final release may be delayed due to the
+need of additional candidates to solve some blocking regression(s), the
+release manager might have to update the
+<a class="reference internal" href="release-calendar.html"><span class="doc">calendar</span></a> with additional bug fix releases of
+the current stable branch.</p>
+</div>
+</section>
+</section>
+<section id="cherry-picking-and-testing">
+<span id="pickntest"></span><h2>Cherry-picking and testing<a class="headerlink" href="#cherry-picking-and-testing" title="Link to this heading">¶</a></h2>
+<p>Commits nominated for the active branch are picked as based on the
+<a class="reference internal" href="submittingpatches.html#criteria"><span class="std std-ref">criteria</span></a> as described in the same
+section.</p>
+<p>Nominations happen via special tags in the commit messages, and via
+GitLab merge requests against the staging branches. There are special
+scripts used to read the tags.</p>
+<p>The maintainer should watch or be in contact with the Intel CI team, as
+well as watch the GitLab CI for regressions.</p>
+<p>Cherry picking should be done with the ‘-x’ switch (to automatically add
+“cherry picked from …” to the commit message):</p>
+<p><code class="docutils literal notranslate"><span class="pre">git</span> <span class="pre">cherry-pick</span> <span class="pre">-x</span> <span class="pre">abcdef12345667890</span></code></p>
+<p>Developers can request, <em>as an exception</em>, patches to be applied up-to
+the last one hour before the actual release. This is made <strong>only</strong> with
+explicit permission/request, and the patch <strong>must</strong> be very well
+contained. Thus it cannot affect more than one driver/subsystem.</p>
+<p>Following developers have requested permanent exception</p>
+<ul class="simple">
+<li><p><em>Ilia Mirkin</em></p></li>
+<li><p><em>AMD team</em></p></li>
+</ul>
+<p>The GitLab CI must pass.</p>
+<p>For Windows related changes, the main contact point is Brian Paul. Jose
+Fonseca can also help as a fallback contact.</p>
+<p>For Android related changes, the main contact is Tapani Pälli. Mauro
+Rossi is collaborating with Android-x86 and may provide feedback about
+the build status in that project.</p>
+<p>For MacOSX related changes, Jeremy Huddleston Sequoia is currently a
+good contact point.</p>
+<div class="alert alert-info">
+<div class="h5">Note</div><p>If a patch in the current queue needs any additional fix(es),
+then they should be squashed together. The commit messages and the
+“<code class="docutils literal notranslate"><span class="pre">cherry</span> <span class="pre">picked</span> <span class="pre">from</span></code>”-tags must be preserved.</p>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>git show b10859ec41d09c57663a258f43fe57c12332698e
+
+commit b10859ec41d09c57663a258f43fe57c12332698e
+Author: Jonas Pfeil &lt;pfeiljonas@gmx.de&gt;
+Date:   Wed Mar 1 18:11:10 2017 +0100
+
+   ralloc: Make sure ralloc() allocations match malloc()&#39;s alignment.
+
+   The header of ralloc needs to be aligned, because the compiler assumes
+   ...
+
+   (cherry picked from commit cd2b55e536dc806f9358f71db438dd9c246cdb14)
+
+   Squashed with commit:
+
+   ralloc: don&#39;t leave out the alignment factor
+
+   Experimentation shows that without alignment factor GCC and Clang choose
+   ...
+
+   (cherry picked from commit ff494fe999510ea40e3ed5827e7818550b6de126)
+</pre></div>
+</div>
+</div>
+</section>
+<section id="regression-functionality-testing">
+<h2>Regression/functionality testing<a class="headerlink" href="#regression-functionality-testing" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p><em>no regressions should be observed for Piglit/dEQP/CTS/Vulkan on
+Intel platforms</em></p></li>
+<li><p><em>no regressions should be observed for Piglit using the Softpipe
+and LLVMpipe drivers</em></p></li>
+</ul>
+</section>
+<section id="staging-branch">
+<span id="stagingbranch"></span><h2>Staging branch<a class="headerlink" href="#staging-branch" title="Link to this heading">¶</a></h2>
+<p>A live branch, which contains the currently merge/rejected patches is
+available in the main repository under <code class="docutils literal notranslate"><span class="pre">staging/X.Y</span></code>. For example:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>staging/18.1 - WIP branch for the 18.1 series
+staging/18.2 - WIP branch for the 18.2 series
+</pre></div>
+</div>
+<p>Notes:</p>
+<ul class="simple">
+<li><p>People are encouraged to test the staging branch and report
+regressions.</p></li>
+<li><p>The branch history is not stable and it <strong>will</strong> be rebased,</p></li>
+</ul>
+</section>
+<section id="making-a-branchpoint">
+<h2>Making a branchpoint<a class="headerlink" href="#making-a-branchpoint" title="Link to this heading">¶</a></h2>
+<p>A branchpoint is made such that new development can continue in parallel
+to stabilization and bugfixing.</p>
+<div class="alert alert-info">
+<div class="h5">Note</div><p>Before doing a branch ensure that basic build and <code class="docutils literal notranslate"><span class="pre">meson</span> <span class="pre">test</span></code>
+testing is done and there are little to-no issues. Ideally all of those
+should be tackled already.</p>
+</div>
+<p>Setup the branchpoint:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="c1"># Make sure main can carry on at the new version</span>
+<span class="nv">$EDITOR</span><span class="w"> </span>VERSION<span class="w"> </span><span class="c1"># bump the version number, keeping in mind the wrap around at the end of the year</span>
+git<span class="w"> </span>commit<span class="w"> </span>-asm<span class="w"> </span><span class="s1">&#39;VERSION: bump to X.(Y+1)&#39;</span>
+truncate<span class="w"> </span>-s0<span class="w"> </span>docs/relnotes/new_features.txt
+git<span class="w"> </span>commit<span class="w"> </span>-asm<span class="w"> </span><span class="s1">&#39;docs: reset new_features.txt&#39;</span>
+git<span class="w"> </span>push<span class="w"> </span>YOUR_FORK
+</pre></div>
+</div>
+<p>Make a merge request with what you just pushed, and assign it straight
+to <code class="docutils literal notranslate"><span class="pre">&#64;Marge-bot</span></code>. Keep an eye on it, as you’ll need to wait for it to
+be merged.</p>
+<p>Once it has been merged, note the last commit <em>before</em> your “VERSION:
+bump to X.Y” as this is the branchpoint. This is <code class="docutils literal notranslate"><span class="pre">$LAST_COMMIT</span></code> in the
+command below:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nv">VERSION</span><span class="o">=</span>X.Y
+
+git<span class="w"> </span>tag<span class="w"> </span>-s<span class="w"> </span><span class="nv">$VERSION</span>-branchpoint<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;Mesa </span><span class="nv">$VERSION</span><span class="s2"> branchpoint&quot;</span><span class="w"> </span><span class="nv">$LAST_COMMIT</span>
+
+<span class="c1"># Double-check that you tagged the correct commit</span>
+git<span class="w"> </span>show<span class="w"> </span><span class="nv">$VERSION</span>-branchpoint
+</pre></div>
+</div>
+<p>Now that we have an official branchpoint, let’s push the tag and create
+the branches:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span><span class="nv">$VERSION</span>-branchpoint
+git<span class="w"> </span>checkout<span class="w"> </span><span class="nv">$VERSION</span>-branchpoint
+git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>HEAD:refs/heads/<span class="nv">$VERSION</span>
+git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>HEAD:refs/heads/staging/<span class="nv">$VERSION</span><span class="w"> </span>--push-option<span class="w"> </span>ci.skip
+git<span class="w"> </span>checkout<span class="w"> </span>staging/<span class="nv">$VERSION</span>
+git<span class="w"> </span>branch<span class="w"> </span>--set-upstream-to<span class="w"> </span>origin/staging/<span class="nv">$VERSION</span>
+</pre></div>
+</div>
+<p>You are now on the <a class="reference internal" href="#stagingbranch"><span class="std std-ref">staging branch</span></a>, where you
+will be doing your release maintainer work. This branch can be rebased
+and altered in way necessary, with the caveat that anything pushed to
+the <code class="docutils literal notranslate"><span class="pre">X.Y</span></code> branch must not be altered anymore. A convenient command
+to perform an interactive rebase over everything since the last release is:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>rebase<span class="w"> </span>-i<span class="w"> </span>mesa-<span class="k">$(</span>cat<span class="w"> </span>VERSION<span class="k">)</span>
+</pre></div>
+</div>
+<p>Now go to
+<a class="reference external" href="https://gitlab.freedesktop.org/mesa/mesa/-/milestones">GitLab</a> and
+add the new Mesa version X.Y.</p>
+<p>Check that there are no distribution breaking changes and revert them if
+needed. For example: files being overwritten on install, etc. Happens
+extremely rarely - we had only one case so far (see commit
+2ced8eb136528914e1bf4e000dea06a9d53c7e04).</p>
+</section>
+<section id="making-a-new-release">
+<h2>Making a new release<a class="headerlink" href="#making-a-new-release" title="Link to this heading">¶</a></h2>
+<p>These are the instructions for making a new Mesa release.</p>
+<section id="get-latest-source-files">
+<h3>Get latest source files<a class="headerlink" href="#get-latest-source-files" title="Link to this heading">¶</a></h3>
+<p>Ensure the latest code is available - both in your local main and the
+relevant branch.</p>
+</section>
+<section id="merge-the-staging-branch-into-the-release-branch">
+<h3>Merge the staging branch into the release branch<a class="headerlink" href="#merge-the-staging-branch-into-the-release-branch" title="Link to this heading">¶</a></h3>
+<p>This allows the CI to be run against the proposed patches while they are still
+on the <code class="docutils literal notranslate"><span class="pre">staging/X.Y</span></code> branch, and can be force pushed.</p>
+<p>Create a new Merge Request, with <code class="docutils literal notranslate"><span class="pre">staging/X.Y</span></code> targeting the <code class="docutils literal notranslate"><span class="pre">X.Y</span></code> branch.
+Be sure to rename the merge request, something like <code class="docutils literal notranslate"><span class="pre">merge</span> <span class="pre">staging/X.Y</span> <span class="pre">in</span> <span class="pre">to</span>
+<span class="pre">X.Y</span> <span class="pre">for</span> <span class="pre">the</span> <span class="pre">X.Y.Z</span> <span class="pre">release</span></code>. Ensure that <code class="docutils literal notranslate"><span class="pre">delete</span> <span class="pre">source</span> <span class="pre">branch</span></code> is <strong>not</strong>
+checked, and set the label to <code class="docutils literal notranslate"><span class="pre">release-maintainer</span></code> and <code class="docutils literal notranslate"><span class="pre">mesa-release</span></code>.
+(this prevents the auto-labeller from running on this MR, which would otherwise
+spam labels which a dev who watches those probably doesn’t care about).
+Assign to <code class="docutils literal notranslate"><span class="pre">&#64;marge-bot</span></code> immediately.</p>
+</section>
+<section id="create-release-notes-for-the-new-release">
+<h3>Create release notes for the new release<a class="headerlink" href="#create-release-notes-for-the-new-release" title="Link to this heading">¶</a></h3>
+<p>The release notes are completely generated by the
+<code class="docutils literal notranslate"><span class="pre">bin/gen_release_notes.py</span></code> script. Simply run this script <strong>before</strong>
+bumping the version. You’ll need to come back to this file once the
+tarball is generated to add its SHA256 checksum.</p>
+<p>Increment the version contained in the file <code class="docutils literal notranslate"><span class="pre">VERSION</span></code> at Mesa’s top-level,
+then commit this change and <strong>push the branch</strong> (if you forget to do
+this, <code class="docutils literal notranslate"><span class="pre">release.sh</span></code> below will fail).</p>
+</section>
+<section id="use-the-release-sh-script-from-x-org-util-modular">
+<h3>Use the release.sh script from X.Org <a class="reference external" href="https://gitlab.freedesktop.org/xorg/util/modular">util-modular</a><a class="headerlink" href="#use-the-release-sh-script-from-x-org-util-modular" title="Link to this heading">¶</a></h3>
+<p>Start the release process.</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>../relative/path/to/release.sh<span class="w"> </span>.<span class="w"> </span><span class="c1"># append --dist if you&#39;ve already done distcheck above</span>
+</pre></div>
+</div>
+<p>Pay close attention to the prompts as you might be required to enter
+your GPG and SSH passphrase(s) to sign and upload the files,
+respectively.</p>
+<p>Ensure that you do sign the tarballs, that your key is mentioned in the
+release notes, and is published in <a class="reference external" href="release-maintainers-keys.asc">release-maintainers-keys.asc</a>.</p>
+</section>
+<section id="add-the-sha256-checksums-to-the-release-notes">
+<h3>Add the SHA256 checksums to the release notes<a class="headerlink" href="#add-the-sha256-checksums-to-the-release-notes" title="Link to this heading">¶</a></h3>
+<p>Edit <code class="docutils literal notranslate"><span class="pre">docs/relnotes/X.Y.Z.rst</span></code> to add the SHA256 checksums as available
+in the <code class="docutils literal notranslate"><span class="pre">mesa-X.Y.Z.announce</span></code> template. Commit this change.</p>
+<p>Don’t forget to push the commits to both the <code class="docutils literal notranslate"><span class="pre">staging/X.Y</span></code> branch and
+the <code class="docutils literal notranslate"><span class="pre">X.Y</span></code> branch:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>HEAD:staging/X.Y
+git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>HEAD:X.Y
+</pre></div>
+</div>
+</section>
+<section id="create-a-new-branch-against-main-for-the-release-notes">
+<h3>Create a new branch against main for the release notes<a class="headerlink" href="#create-a-new-branch-against-main-for-the-release-notes" title="Link to this heading">¶</a></h3>
+<p>Something like the following steps will do the trick:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>checkout<span class="w"> </span>-b<span class="w"> </span>X.Y-release
+git<span class="w"> </span>cherry-pick<span class="w"> </span>-x<span class="w"> </span>X.Y~2
+git<span class="w"> </span>cherry-pick<span class="w"> </span>-x<span class="w"> </span>X.Y
+</pre></div>
+</div>
+<p>Then run the</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>./bin/post_version.py<span class="w"> </span>X.Y.Z
+</pre></div>
+</div>
+<p>, where X.Y.Z is the version you just made. This will update
+docs/relnotes.rst and docs/release-calendar.csv. It will then generate
+a Git commit automatically. Check that everything looks correct and
+push:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>YOUR_FORK<span class="w"> </span>X.Y-release
+</pre></div>
+</div>
+<p>Finally, open a merge request against the main branch, assigning it to
+<code class="docutils literal notranslate"><span class="pre">&#64;marge-bot</span></code> immediately.</p>
+</section>
+</section>
+<section id="update-the-website">
+<h2>Update the website<a class="headerlink" href="#update-the-website" title="Link to this heading">¶</a></h2>
+<p>Create a fork of <a class="reference external" href="https://gitlab.freedesktop.org/mesa/mesa3d.org/">Mesa3d.org</a>, and create
+a new merge request using the script:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>git<span class="w"> </span>checkout<span class="w"> </span>-b<span class="w"> </span>X.Y-release
+./post_release.py<span class="w"> </span>X.Y.Z
+git<span class="w"> </span>push<span class="w"> </span>-u<span class="w"> </span>YOUR_FORK<span class="w"> </span>X.Y-release
+</pre></div>
+</div>
+<p>Where X.Y.Z is the same value as passed to post_version.py in the previous step.</p>
+<p>Create a merge request from this commit. After the commit to mesa is merged,
+merge this MR.</p>
+</section>
+<section id="announce-the-release">
+<h2>Announce the release<a class="headerlink" href="#announce-the-release" title="Link to this heading">¶</a></h2>
+<p>Use the generated template during the releasing process.</p>
+<p>Again, pay attention to add a note to warn about a final release in a
+series, if that is the case.</p>
+</section>
+<section id="update-gitlab-issues">
+<h2>Update GitLab issues<a class="headerlink" href="#update-gitlab-issues" title="Link to this heading">¶</a></h2>
+<p>Parse through the bug reports as listed in the docs/relnotes/X.Y.Z.rst
+document. If there’s outstanding action, close the bug referencing the
+commit ID which addresses the bug and mention the Mesa version that has
+the fix.</p>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="drivers/anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rust.html">Rust</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Releasing Process</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#overview">Overview</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#release-schedule">Release schedule</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#feature-releases">Feature releases</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#stable-releases">Stable releases</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#cherry-picking-and-testing">Cherry-picking and testing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#regression-functionality-testing">Regression/functionality testing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#staging-branch">Staging branch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#making-a-branchpoint">Making a branchpoint</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#making-a-new-release">Making a new release</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#get-latest-source-files">Get latest source files</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#merge-the-staging-branch-into-the-release-branch">Merge the staging branch into the release branch</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#create-release-notes-for-the-new-release">Create release notes for the new release</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#use-the-release-sh-script-from-x-org-util-modular">Use the release.sh script from X.Org util-modular</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#add-the-sha256-checksums-to-the-release-notes">Add the SHA256 checksums to the release notes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#create-a-new-branch-against-main-for-the-release-notes">Create a new branch against main for the release notes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#update-the-website">Update the website</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#announce-the-release">Announce the release</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#update-gitlab-issues">Update GitLab issues</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/releasing.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

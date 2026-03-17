@@ -1,0 +1,561 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>VC4 &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="../_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="../_static/screen.css?v=10557b77" />
+
+    <script src="../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Virtio-GPU Venus" href="venus.html" />
+    <link rel="prev" title="V3D" href="v3d.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="../_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="../download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="../index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="vc4">
+<h1>VC4<a class="headerlink" href="#vc4" title="Link to this heading">¶</a></h1>
+<p>Mesa’s VC4 graphics driver supports multiple implementations of
+Broadcom’s VideoCore IV GPU. It is notably used in the Raspberry Pi 0
+through Raspberry Pi 3 hardware, and the driver is included as an
+option as of the 2016-02-09 Raspbian release using <code class="docutils literal notranslate"><span class="pre">raspi-config</span></code>.
+On most other distributions such as Debian or Fedora, you need no
+configuration to enable the driver.</p>
+<p>This Mesa driver talks directly to the <a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/vc4.html">VC4</a> kernel DRM
+driver for scheduling graphics commands, and that module also provides
+KMS display support.  The driver makes no use of the closed source VPU
+firmware on the VideoCore IV block, instead talking directly to the
+GPU block from Linux.</p>
+<section id="gles2-support">
+<h2>GLES2 support<a class="headerlink" href="#gles2-support" title="Link to this heading">¶</a></h2>
+<p>The VC4 driver is a nearly conformant GLES2 driver, and the hardware
+has achieved GLES2 conformance with other driver stacks.</p>
+</section>
+<section id="opengl-support">
+<h2>OpenGL support<a class="headerlink" href="#opengl-support" title="Link to this heading">¶</a></h2>
+<p>Along with GLES 2.0, the Mesa driver also exposes OpenGL 2.1, which is
+mostly correct but with a few caveats.</p>
+<ul class="simple">
+<li><p>4-byte index buffers.</p></li>
+</ul>
+<p>GLES2.0, and VC4, don’t have <code class="docutils literal notranslate"><span class="pre">GL_UNSIGNED_INT</span></code> index buffers. To support
+them in VC4, we create a shadow copy of your index buffer with the
+indices truncated to 2 bytes. This is incorrect (and will assertion
+fail in debug builds of Mesa) if any of the indices were &gt;65535. To
+fix that, we would need to detect this case and rewrite the index
+buffer and vertex buffers to do a series of draws each with small
+indices and new vertex attrib bindings.</p>
+<p>To avoid this problem, ensure that all index buffers are written using
+<code class="docutils literal notranslate"><span class="pre">GL_UNSIGNED_SHORT</span></code>, even at the cost of doing multiple draw calls
+with updated vertex attrib bindings.</p>
+<ul class="simple">
+<li><p>Occlusion queries</p></li>
+</ul>
+<p>The VC4 hardware has no support for occlusion queries.  GL 2.0
+requires that you support the occlusion queries extension, but you can
+report 0 from <code class="docutils literal notranslate"><span class="pre">glGetQueryiv(GL_SAMPLES_PASSED,</span>
+<span class="pre">GL_QUERY_COUNTER_BITS)</span></code>. This is absurd, but it’s how OpenGL handles
+“we want the functions to be present everywhere, but we want it to be
+optional for hardware to support it. Sadly, gallium doesn’t yet allow
+the driver to report 0 query bits.</p>
+<ul class="simple">
+<li><p>Primitive mode</p></li>
+</ul>
+<p>VC4 doesn’t support reducing triangles/quads/polygons to lines and
+points like desktop GL. If front/back mode matched, we could rewrite
+the index buffer to the new primitive type, but we don’t. If
+front/back mode don’t match, we would need to run the vertex shader in
+software, classify the prims, write new index buffers, and emit
+(possibly many) new draw calls to rasterize the new prims in the same
+order.</p>
+</section>
+<section id="bug-reporting">
+<h2>Bug Reporting<a class="headerlink" href="#bug-reporting" title="Link to this heading">¶</a></h2>
+<p>VC4 rendering bugs should go to Mesa’s GitLab <a class="reference external" href="https://gitlab.freedesktop.org/mesa/mesa/-/issues">issues</a> page.</p>
+<p>By far the easiest way to communicate bug reports for rendering
+problems is to take an apitrace. This passes exactly the drawing you
+saw to the developer, without the developer needing to download and
+build the application and replicate whatever steps you took to produce
+the problem.  Traces attached to bug reports should ideally be small.</p>
+<p>For GPU hangs, if you can get a short apitrace that produces the
+problem, that’s still the best.  If the problem takes a long time to
+reproduce or you can’t capture it in a trace, describing how to
+reproduce and including a GPU hang dump would be the most
+useful. Install <a class="reference external" href="https://github.com/anholt/vc4-gpu-tools/">vc4-gpu-tools</a> and use
+<code class="docutils literal notranslate"><span class="pre">vc4_dump_hang_state</span> <span class="pre">my-app.hang</span></code>. Sometimes the hang file will
+provide useful information.</p>
+</section>
+<section id="tiled-rendering">
+<h2>Tiled Rendering<a class="headerlink" href="#tiled-rendering" title="Link to this heading">¶</a></h2>
+<p>VC4 is a tiled renderer, chopping the screen into 64x64 (non-MSAA) or
+32x32 (MSAA) tiles and rendering the scene per tile. Rasterization
+looks like:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>(CPU) Allocate space to store a list of draw commands per tile
+(CPU) Set up a command list per tile that does:
+    Either load the current tile&#39;s color buffer from memory, or clear it.
+    Either load the current tile&#39;s depth buffer from memory, or clear it.
+    Branch into the draw list for the tile
+    Store the depth buffer if anybody might read it.
+    Store the color buffer if anybody might read it.
+(GPU) Initialize the per-tile draw call lists to empty.
+(GPU) Run all draw calls collecting vertex data
+(GPU) For each tile covered by a draw call&#39;s primitive.
+    Emit state packets to the list to update it to the current draw call&#39;s state.
+    Emit a primitive description into the tile&#39;s draw call list.
+</pre></div>
+</div>
+<p>Tiled rendering avoids the need for large render target caches, at the
+expense of increasing the cost of vertex processing. Unlike some tiled
+renderers, VC4 has no non-tiled rendering mode.</p>
+</section>
+<section id="performance-tricks">
+<h2>Performance Tricks<a class="headerlink" href="#performance-tricks" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Reducing memory bandwidth by clearing.</p></li>
+</ul>
+<p>Even if your drawing is going to cover the entire render target, it’s
+more efficient for VC4 if you emit a <code class="docutils literal notranslate"><span class="pre">glClear()</span></code> of the color and
+depth buffers. This means we can skip the load of the previous state
+from memory, in favor of a cheap GPU-side <code class="docutils literal notranslate"><span class="pre">memset()</span></code> of the tile
+buffer before we start running the draw calls.</p>
+<ul class="simple">
+<li><p>Reducing memory bandwidth with scissoring.</p></li>
+</ul>
+<p>If all draw calls for the frame are with a <code class="docutils literal notranslate"><span class="pre">glScissor()</span></code> to only
+part of the screen, then we can skip setting up the tiles for that
+area, which means a little less memory used setting up the empty bins,
+and a lot less memory used loading/storing the unchanged tiles.</p>
+<ul class="simple">
+<li><p>Reducing memory bandwidth with <code class="docutils literal notranslate"><span class="pre">glInvalidateFramebuffer()</span></code>.</p></li>
+</ul>
+<p>If we don’t know who might use the contents of the framebuffer’s depth
+or color in the future, then we have to store it for later. If you use
+glInvalidateFramebuffer() before accessing the results of your
+rendering, then we can skip the store of the depth or color
+buffer. Note that this is unimplemented.</p>
+<ul class="simple">
+<li><p>Avoid non-constant GLSL array indexing</p></li>
+</ul>
+<p>In VC4 the only non-constant-index array access supported in hardware
+is uniforms. For everything else (inputs, outputs, temporaries), we
+have to lower them to an IF ladder like:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>if (index == 0)
+   return array[0]
+else if (index == 1)
+  return array[1]
+...
+</pre></div>
+</div>
+<p>This is very expensive as we probably have to execute every branch of
+every IF statement due to it being a SIMD machine. So, it is
+recommended (if you can) to avoid non-uniform non-constant array
+indexing.</p>
+<p>Note that if you do variable indexing within a bounded loop that Mesa
+can unroll, that can actually count as constant indexing.</p>
+<ul class="simple">
+<li><p>Increasing GPU memory Increase CMA pool size</p></li>
+</ul>
+<p>The memory for the VC4 driver is allocated from the standard Linux CMA
+pool. The size of this pool defaults to 64 MB.  To increase this, pass
+an additional parameter on the kernel command line.  Edit the boot
+partition’s <code class="docutils literal notranslate"><span class="pre">cmdline.txt</span></code> to add:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>cma=256M@256M
+</pre></div>
+</div>
+<p><code class="docutils literal notranslate"><span class="pre">cmdline.txt</span></code> is a single line with whitespace separated parameters.</p>
+<p>The first value is the size of the pool and the second parameter is
+the start address of the pool. The pool size can be increased further,
+but it must fit into the memory, so size + start address must be below
+1024M (Pi 2, 3, 3+) or 512M (Pi B, B+, Zero, Zero W). Also this
+reduces the memory available to Linux.</p>
+<ul class="simple">
+<li><p>Decrease firmware memory</p></li>
+</ul>
+<p>The firmware allocates a fixed chunk of memory before booting
+Linux. If firmware functions are not required, this amount can be
+reduced.</p>
+<p>In <code class="docutils literal notranslate"><span class="pre">config.txt</span></code> edit <code class="docutils literal notranslate"><span class="pre">gpu_mem</span></code> to 16, if you do not need video decoding,
+edit gpu_mem to 64 if you need video decoding.</p>
+</section>
+<section id="performance-debugging">
+<h2>Performance debugging<a class="headerlink" href="#performance-debugging" title="Link to this heading">¶</a></h2>
+<ul class="simple">
+<li><p>Step 1: Known issues</p></li>
+</ul>
+<p>The first tool to look at is running your application with the
+environment variable <code class="docutils literal notranslate"><span class="pre">VC4_DEBUG=perf</span></code> set. This will report debug
+information for many known causes of performance problems on the
+console. Not all of them will cause visible performance improvements
+when fixed, but it’s a good first step to see what might going wrong.</p>
+<ul class="simple">
+<li><p>Step 2: CPU vs GPU</p></li>
+</ul>
+<p>The primary question is figuring out whether the CPU is busy in your
+application, the CPU is busy in the GL driver, the GPU is waiting for
+the CPU, or the CPU is waiting for the GPU. Ideally, you get to the
+point where the CPU is waiting for the GPU infrequently but for a
+significant amount of time (however long it takes the GPU to draw a
+frame).</p>
+<p>Start with top while your application is running. Is the CPU usage
+around 90%+? If so, then our performance analysis will be with
+sysprof. If it’s not very high, is the GPU staying busy? We don’t have
+a clean tool for this yet, but <code class="docutils literal notranslate"><span class="pre">cat</span> <span class="pre">/debug/dri/0/v3d_regs</span></code> could be
+useful. If <code class="docutils literal notranslate"><span class="pre">CT0CA</span></code> != <code class="docutils literal notranslate"><span class="pre">CT0EA</span></code> or <code class="docutils literal notranslate"><span class="pre">CT1CA</span></code> != <code class="docutils literal notranslate"><span class="pre">CT1EA</span></code>, that
+means that the GPU is currently busy processing some rendering job.</p>
+<ul class="simple">
+<li><p>sysprof for CPU usage</p></li>
+</ul>
+<p>If the CPU is totally busy and the GPU isn’t terribly busy, there is
+an excellent tool for debugging: sysprof. Install, run as root (so you
+can get system-wide profiling), hit play and later stop. The top-left
+area shows the flat profile sorted by total time of that symbol plus
+its descendants. The top few are generally uninteresting (main() and
+its descendants consuming a lot), but eventually you can get down to
+something interesting. Click it, and to the right you get the
+callchains to descendants – where all that time actually went. On the
+other hand, the lower left shows callers – double-clicking those
+selects that as the symbol to view, instead.</p>
+<p>Note that you need debug symbols for the callgraphs in sysprof to
+work, which is where most of its value is. Most distributions offer
+debug symbol packages from their builds which can be installed
+separately, and sysprof will find them. I’ve found that on arm, the
+debug packages are not enough, and if someone could determine what is
+necessary for callgraphs in debugging, that would be really helpful.</p>
+<ul class="simple">
+<li><p>perf for CPU waits on GPU</p></li>
+</ul>
+<p>If the CPU is not very busy and the GPU is not very busy, then we’re
+probably ping-ponging between the two. Most cases of this would be
+noticed by <code class="docutils literal notranslate"><span class="pre">VC4_DEBUG=perf</span></code>, but not all. To see all cases where
+this happens, use the perf tool from the Linux kernel (note: unrelated
+to <code class="docutils literal notranslate"><span class="pre">VC4_DEBUG=perf</span></code>):</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>sudo perf record -f -g -e vc4:vc4_wait_for_seqno_begin -c 1 openarena
+</pre></div>
+</div>
+<p>If you want to see the whole system’s stalls for a period of time
+(very useful!), use the -a flag instead of a particular command
+name. Just <code class="docutils literal notranslate"><span class="pre">^C</span></code> when you’re done capturing data.</p>
+<p>At exit, you’ll have <code class="docutils literal notranslate"><span class="pre">perf.data</span></code> in the current directory. You can print
+out the results with:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>perf report | less
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Debugging for GPU fully busy</p></li>
+</ul>
+<p>As of Linux kernel 4.17 and Mesa 18.1, we now expose the hardware’s
+performance counters in OpenGL. Install apitrace, and trace your
+application with:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>apitrace trace &lt;application&gt;          # for GLX applications
+apitrace trace -a egl &lt;application&gt;   # for EGL applications
+</pre></div>
+</div>
+<p>Once you’ve captured a trace, you can see what counters are available
+and replay it while looking while looking at some of those counters:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>apitrace replay &lt;application&gt;.trace --list-metrics
+
+apitrace replay &lt;application&gt;.trace --pdraw=GL_AMD_performance_monitor:QPU-total-clk-cycles-vertex-coord-shading
+</pre></div>
+</div>
+<p>Multiple counters can be captured at once with commas separating them.</p>
+<p>Once you’ve found what draw calls are surprisingly expensive in one of
+the counters, you can work out which ones they were at the GL level by
+opening the trace up in qapitrace and using <code class="docutils literal notranslate"><span class="pre">^-G</span></code> to jump to that call
+number and <code class="docutils literal notranslate"><span class="pre">^-L</span></code> to look up the GL state at that call.</p>
+</section>
+<section id="trace-testing">
+<h2>Trace Testing<a class="headerlink" href="#trace-testing" title="Link to this heading">¶</a></h2>
+<p>shader-db is often used as a proxy for real-world app performance when
+working on the compiler in Mesa.  On VC4, there is a lot of
+state-dependent code in the shaders (like blending or vertex attribute
+format handling), so the typical <a class="reference external" href="https://gitlab.freedesktop.org/mesa/shader-db">shader-db</a> will miss important
+areas for optimization.  Piglit can instead test apitraces, such as
+those captured in
+<a class="reference external" href="https://gitlab.freedesktop.org/gfx-ci/tracie/traces-db/">traces-db</a>.</p>
+</section>
+<section id="hardware-documentation">
+<h2>Hardware Documentation<a class="headerlink" href="#hardware-documentation" title="Link to this heading">¶</a></h2>
+<p>For driver developers, Broadcom publicly released a <a class="reference external" href="https://docs.broadcom.com/doc/12358545">specification</a> PDF for the 21553, which
+is closely related to the VC4 GPU present in the Raspberry Pi.  They
+also released a <a class="reference external" href="https://docs.broadcom.com/docs/12358546">snapshot</a>
+of a corresponding Android graphics driver.  That graphics driver was
+ported to Raspbian for a demo, but was not expected to have ongoing
+development.</p>
+<p>Developers with NDA access with Broadcom or Raspberry Pi can
+potentially get access to “simpenrose”, the C software simulator of
+the GPU.  The Mesa driver includes a backend (<code class="docutils literal notranslate"><span class="pre">vc4_simulator.c</span></code>) to
+use simpenrose from an x86 system with the i915 graphics driver with
+all of the VC4 rendering commands emulated on simpenrose and memcpyed
+to the real GPU.</p>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="../search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="v3d.html">V3D</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">VC4</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#gles2-support">GLES2 support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#opengl-support">OpenGL support</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#bug-reporting">Bug Reporting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#tiled-rendering">Tiled Rendering</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#performance-tricks">Performance Tricks</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#performance-debugging">Performance debugging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#trace-testing">Trace Testing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hardware-documentation">Hardware Documentation</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/drivers/vc4.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

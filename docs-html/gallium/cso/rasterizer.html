@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Rasterizer &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="../../_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="../../_static/screen.css?v=10557b77" />
+
+    <script src="../../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="../../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Sampler" href="sampler.html" />
+    <link rel="prev" title="Depth, Stencil, &amp; Alpha" href="dsa.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="../../_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="../../download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="../../index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="rasterizer">
+<span id="id1"></span><h1>Rasterizer<a class="headerlink" href="#rasterizer" title="Link to this heading">¶</a></h1>
+<p>The rasterizer state controls the rendering of points, lines and triangles.
+Attributes include polygon culling state, line width, line stipple,
+multisample state, scissoring and flat/smooth shading.</p>
+<section id="linkage">
+<h2>Linkage<a class="headerlink" href="#linkage" title="Link to this heading">¶</a></h2>
+<dl>
+<dt>clamp_vertex_color</dt><dd><p>If set, TGSI_SEMANTIC_COLOR registers are clamped to the [0, 1] range after
+the execution of the vertex shader, before being passed to the geometry
+shader or fragment shader.</p>
+<p>OpenGL: glClampColor(GL_CLAMP_VERTEX_COLOR) in GL 3.0 or
+<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_color_buffer_float.txt">GL_ARB_color_buffer_float</a></p>
+<p>D3D11: seems always disabled</p>
+<p>Note pipe_caps.vertex_color_clamped indicates whether or not the
+driver supports this control.  If it’s not supported, gallium frontends may
+have to insert extra clamping code.</p>
+</dd>
+<dt>clamp_fragment_color</dt><dd><p>Controls whether TGSI_SEMANTIC_COLOR outputs of the fragment shader
+are clamped to [0, 1].</p>
+<p>OpenGL: glClampColor(GL_CLAMP_FRAGMENT_COLOR) in GL 3.0 or
+<a class="reference external" href="https://registry.khronos.org/OpenGL/extensions/ARB/ARB_color_buffer_float.txt">GL_ARB_color_buffer_float</a></p>
+<p>D3D11: seems always disabled</p>
+<p>Note pipe_caps.fragment_color_clamped indicates whether or not the
+driver supports this control.  If it’s not supported, gallium frontends may
+have to insert extra clamping code.</p>
+</dd>
+</dl>
+</section>
+<section id="shading">
+<h2>Shading<a class="headerlink" href="#shading" title="Link to this heading">¶</a></h2>
+<dl>
+<dt>flatshade</dt><dd><p>If set, the provoking vertex of each polygon is used to determine the color
+of the entire polygon.  If not set, fragment colors will be interpolated
+between the vertex colors.</p>
+<p>The actual interpolated shading algorithm is obviously
+implementation-dependent, but will usually be Gouraud for most hardware.</p>
+<div class="alert alert-info">
+<div class="h5">Note</div><p>This is separate from the fragment shader input attributes
+CONSTANT, LINEAR and PERSPECTIVE. The flatshade state is needed at
+clipping time to determine how to set the color of new vertices.</p>
+<p>Draw can implement flat shading by copying the provoking vertex
+color to all the other vertices in the primitive.</p>
+</div>
+</dd>
+<dt>flatshade_first</dt><dd><p>Whether the first vertex should be the provoking vertex, for most primitives.
+If not set, the last vertex is the provoking vertex.</p>
+<p>There are a few important exceptions to the specification of this rule.</p>
+<ul class="simple">
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_PRIMITIVE_POLYGON</span></code>: The provoking vertex is always the first
+vertex. If the caller wishes to change the provoking vertex, they merely
+need to rotate the vertices themselves.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_PRIMITIVE_QUAD</span></code>, <code class="docutils literal notranslate"><span class="pre">PIPE_PRIMITIVE_QUAD_STRIP</span></code>: The option only has
+an effect if <code class="docutils literal notranslate"><span class="pre">pipe_caps.quads_follow_provoking_vertex_convention</span></code> is true.
+If it is not, the provoking vertex is always the last vertex.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">PIPE_PRIMITIVE_TRIANGLE_FAN</span></code>: When set, the provoking vertex is the
+second vertex, not the first. This permits each segment of the fan to have
+a different color.</p></li>
+</ul>
+</dd>
+</dl>
+</section>
+<section id="polygons">
+<h2>Polygons<a class="headerlink" href="#polygons" title="Link to this heading">¶</a></h2>
+<dl>
+<dt>light_twoside</dt><dd><p>If set, there are per-vertex back-facing colors.  The hardware
+(perhaps assisted by Draw) should be set up to use this state
+along with the front/back information to set the final vertex colors
+prior to rasterization.</p>
+<p>The front-face vertex shader color output is marked with TGSI semantic
+COLOR[0], and back-face COLOR[1].</p>
+</dd>
+<dt>front_ccw</dt><dd><p>Indicates whether the window order of front-facing polygons is
+counter-clockwise (TRUE) or clockwise (FALSE).</p>
+</dd>
+<dt>cull_mode</dt><dd><p>Indicates which faces of polygons to cull, either PIPE_FACE_NONE
+(cull no polygons), PIPE_FACE_FRONT (cull front-facing polygons),
+PIPE_FACE_BACK (cull back-facing polygons), or
+PIPE_FACE_FRONT_AND_BACK (cull all polygons).</p>
+</dd>
+<dt>fill_front</dt><dd><p>Indicates how to fill front-facing polygons, either
+PIPE_POLYGON_MODE_FILL, PIPE_POLYGON_MODE_LINE or
+PIPE_POLYGON_MODE_POINT.</p>
+</dd>
+<dt>fill_back</dt><dd><p>Indicates how to fill back-facing polygons, either
+PIPE_POLYGON_MODE_FILL, PIPE_POLYGON_MODE_LINE or
+PIPE_POLYGON_MODE_POINT.</p>
+</dd>
+<dt>poly_stipple_enable</dt><dd><p>Whether polygon stippling is enabled.</p>
+</dd>
+<dt>poly_smooth</dt><dd><p>Controls OpenGL-style polygon smoothing/antialiasing</p>
+</dd>
+<dt>offset_point</dt><dd><p>If set, point-filled polygons will have polygon offset factors applied</p>
+</dd>
+<dt>offset_line</dt><dd><p>If set, line-filled polygons will have polygon offset factors applied</p>
+</dd>
+<dt>offset_tri</dt><dd><p>If set, filled polygons will have polygon offset factors applied</p>
+</dd>
+<dt>offset_units</dt><dd><p>Specifies the polygon offset bias</p>
+</dd>
+<dt>offset_scale</dt><dd><p>Specifies the polygon offset scale</p>
+</dd>
+<dt>offset_clamp</dt><dd><p>Upper (if &gt; 0) or lower (if &lt; 0) bound on the polygon offset result</p>
+</dd>
+</dl>
+</section>
+<section id="lines">
+<h2>Lines<a class="headerlink" href="#lines" title="Link to this heading">¶</a></h2>
+<dl class="simple">
+<dt>line_width</dt><dd><p>The width of lines.</p>
+</dd>
+<dt>line_smooth</dt><dd><p>Whether lines should be smoothed. Line smoothing is simply anti-aliasing.</p>
+</dd>
+<dt>line_stipple_enable</dt><dd><p>Whether line stippling is enabled.</p>
+</dd>
+<dt>line_stipple_pattern</dt><dd><p>16-bit bitfield of on/off flags, used to pattern the line stipple.</p>
+</dd>
+<dt>line_stipple_factor</dt><dd><p>When drawing a stippled line, each bit in the stipple pattern is
+repeated N times, where N = line_stipple_factor + 1.</p>
+</dd>
+<dt>line_last_pixel</dt><dd><p>Controls whether the last pixel in a line is drawn or not.  OpenGL
+omits the last pixel to avoid double-drawing pixels at the ends of lines
+when drawing connected lines.</p>
+</dd>
+</dl>
+</section>
+<section id="points">
+<h2>Points<a class="headerlink" href="#points" title="Link to this heading">¶</a></h2>
+<dl>
+<dt>sprite_coord_enable</dt><dd><p>The effect of this state depends on pipe_caps.tgsi_texcoord !</p>
+<p>Controls automatic texture coordinate generation for rendering sprite points.</p>
+<p>If pipe_caps.tgsi_texcoord is false:
+When bit k in the sprite_coord_enable bitfield is set, then generic
+input k to the fragment shader will get an automatically computed
+texture coordinate.</p>
+<p>If pipe_caps.tgsi_texcoord is true:
+The bitfield refers to inputs with TEXCOORD semantic instead of generic inputs.</p>
+<p>The texture coordinate will be of the form (s, t, 0, 1) where s varies
+from 0 to 1 from left to right while t varies from 0 to 1 according to
+the state of ‘sprite_coord_mode’ (see below).</p>
+<p>If any bit is set, then point_smooth MUST be disabled (there are no
+round sprites) and point_quad_rasterization MUST be true (sprites are
+always rasterized as quads).  Any mismatch between these states should
+be considered a bug in the gallium frontend.</p>
+<p>This feature is implemented in the Draw module but may also be
+implemented natively by GPUs or implemented with a geometry shader.</p>
+</dd>
+<dt>sprite_coord_mode</dt><dd><p>Specifies how the value for each shader output should be computed when drawing
+point sprites. For PIPE_SPRITE_COORD_LOWER_LEFT, the lower-left vertex will
+have coordinates (0,0,0,1). For PIPE_SPRITE_COORD_UPPER_LEFT, the upper-left
+vertex will have coordinates (0,0,0,1).
+This state is used by Draw to generate texcoords.</p>
+</dd>
+<dt>point_quad_rasterization</dt><dd><p>Determines if points should be rasterized according to quad or point
+rasterization rules.</p>
+<p>(Legacy-only) OpenGL actually has quite different rasterization rules
+for points and point sprites - hence this indicates if points should be
+rasterized as points or according to point sprite (which decomposes them
+into quads, basically) rules. Newer GL versions no longer support the old
+point rules at all.</p>
+<p>Additionally Direct3D will always use quad rasterization rules for
+points, regardless of whether point sprites are enabled or not.</p>
+<p>If this state is enabled, point smoothing and antialiasing are
+disabled. If it is disabled, point sprite coordinates are not
+generated.</p>
+<div class="alert alert-info">
+<div class="h5">Note</div><p>Some renderers always internally translate points into quads; this state
+still affects those renderers by overriding other rasterization state.</p>
+</div>
+</dd>
+<dt>point_tri_clip</dt><dd><p>Determines if clipping of points should happen after they are converted
+to “rectangles” (required by d3d) or before (required by OpenGL, though
+this rule is ignored by some IHVs).
+It is not valid to set this to enabled but have point_quad_rasterization
+disabled.</p>
+</dd>
+<dt>point_smooth</dt><dd><p>Whether points should be smoothed. Point smoothing turns rectangular
+points into circles or ovals.</p>
+</dd>
+<dt>point_size_per_vertex</dt><dd><p>Whether the vertex shader is expected to have a point size output.
+Undefined behavior is permitted if there is disagreement between
+this flag and the actual bound shader.</p>
+</dd>
+<dt>point_size</dt><dd><p>The size of points, if not specified per-vertex.</p>
+</dd>
+</dl>
+</section>
+<section id="other-members">
+<h2>Other Members<a class="headerlink" href="#other-members" title="Link to this heading">¶</a></h2>
+<dl>
+<dt>scissor</dt><dd><p>Whether the scissor test is enabled.</p>
+</dd>
+<dt>multisample</dt><dd><p>Whether <a class="reference internal" href="../glossary.html#term-MSAA"><span class="xref std std-term">MSAA</span></a> is enabled.</p>
+</dd>
+<dt>half_pixel_center</dt><dd><p>When true, the rasterizer should use (0.5, 0.5) pixel centers for
+determining pixel ownership (e.g, OpenGL, D3D10 and higher):</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>    0 0.5 1
+ 0  +-----+
+    |     |
+0.5 |  X  |
+    |     |
+ 1  +-----+
+</pre></div>
+</div>
+<p>When false, the rasterizer should use (0, 0) pixel centers for determining
+pixel ownership (e.g., D3D9 or earlier):</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>   -0.5 0 0.5
+-0.5 +-----+
+     |     |
+  0  |  X  |
+     |     |
+ 0.5 +-----+
+</pre></div>
+</div>
+</dd>
+<dt>bottom_edge_rule</dt><dd><p>Determines what happens when a pixel sample lies precisely on a triangle
+edge.</p>
+<p>When true, a pixel sample is considered to lie inside of a triangle if it
+lies on the <em>bottom edge</em> or <em>left edge</em> (e.g., OpenGL drawables):</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>  0                    x
+0 +---------------------&gt;
+  |
+  |  +-------------+
+  |  |             |
+  |  |             |
+  |  |             |
+  |  +=============+
+  |
+y V
+</pre></div>
+</div>
+<p>When false, a pixel sample is considered to lie inside of a triangle if it
+lies on the <em>top edge</em> or <em>left edge</em> (e.g., OpenGL FBOs, D3D):</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>  0                    x
+0 +---------------------&gt;
+  |
+  |  +=============+
+  |  |             |
+  |  |             |
+  |  |             |
+  |  +-------------+
+  |
+y V
+</pre></div>
+</div>
+<dl class="simple">
+<dt>Where:</dt><dd><ul class="simple">
+<li><p>a <em>top edge</em> is an edge that is horizontal and is above the other edges;</p></li>
+<li><p>a <em>bottom edge</em> is an edge that is horizontal and is below the other
+edges;</p></li>
+<li><p>a <em>left edge</em> is an edge that is not horizontal and is on the left side of
+the triangle.</p></li>
+</ul>
+</dd>
+</dl>
+<div class="alert alert-info">
+<div class="h5">Note</div><p>Actually all graphics APIs use a top-left rasterization rule for pixel
+ownership, but their notion of top varies with the axis origin (which
+can be either at y = 0 or at y = height).  Gallium instead always
+assumes that top is always at y=0.</p>
+</div>
+<dl class="simple">
+<dt>See also:</dt><dd><ul class="simple">
+<li><p><a class="reference external" href="https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d10-graphics-programming-guide-rasterizer-stage-rules">https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d10-graphics-programming-guide-rasterizer-stage-rules</a></p></li>
+<li><p><a class="reference external" href="https://learn.microsoft.com/en-us/windows/win32/direct3d9/rasterization-rules">https://learn.microsoft.com/en-us/windows/win32/direct3d9/rasterization-rules</a></p></li>
+</ul>
+</dd>
+</dl>
+</dd>
+<dt>clip_halfz</dt><dd><p>When true clip space in the z axis goes from [0..1] (D3D).  When false
+[-1, 1] (GL)</p>
+</dd>
+<dt>depth_clip_near</dt><dd><p>When false, the near depth clipping plane of the view volume is disabled.</p>
+</dd>
+<dt>depth_clip_far</dt><dd><p>When false, the far depth clipping plane of the view volume is disabled.</p>
+</dd>
+<dt>depth_clamp</dt><dd><p>Whether the depth value will be clamped to the interval defined by the
+near and far depth range at the per-pixel level, after polygon offset has
+been applied and before depth testing. Note that a clamp to [0,1] according
+to GL rules should always happen even if this is disabled.</p>
+</dd>
+<dt>clip_plane_enable</dt><dd><p>For each k in [0, PIPE_MAX_CLIP_PLANES), if bit k of this field is set,
+clipping half-space k is enabled, if it is clear, it is disabled.
+The clipping half-spaces are defined either by the user clip planes in
+<code class="docutils literal notranslate"><span class="pre">pipe_clip_state</span></code>, or by the clip distance outputs of the shader stage
+preceding the fragment shader.
+If any clip distance output is written, those half-spaces for which no
+clip distance is written count as disabled; i.e. user clip planes and
+shader clip distances cannot be mixed, and clip distances take precedence.</p>
+</dd>
+<dt>conservative_raster_mode</dt><dd><p>The conservative rasterization mode.  For PIPE_CONSERVATIVE_RASTER_OFF,
+conservative rasterization is disabled.  For PIPE_CONSERVATIVE_RASTER_POST_SNAP
+or PIPE_CONSERVATIVE_RASTER_PRE_SNAP, conservative rasterization is enabled.
+When conservative rasterization is enabled, the polygon smooth, line smooth,
+point smooth and line stipple settings are ignored.
+With the post-snap mode, unlike the pre-snap mode, fragments are never
+generated for degenerate primitives.  Degenerate primitives, when rasterized,
+are considered back-facing and the vertex attributes and depth are that of
+the provoking vertex.
+If the post-snap mode is used with an unsupported primitive, the pre-snap
+mode is used, if supported.  Behavior is similar for the pre-snap mode.
+If the pre-snap mode is used, fragments are generated with respect to the primitive
+before vertex snapping.</p>
+</dd>
+<dt>conservative_raster_dilate</dt><dd><p>The amount of dilation during conservative rasterization.</p>
+</dd>
+<dt>subpixel_precision_x</dt><dd><p>A bias added to the horizontal subpixel precision during conservative rasterization.</p>
+</dd>
+<dt>subpixel_precision_y</dt><dd><p>A bias added to the vertical subpixel precision during conservative rasterization.</p>
+</dd>
+</dl>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="../../search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../drivers/zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../index.html">Gallium</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../intro.html">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../debugging.html">Debugging</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../tgsi.html">TGSI</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../screen.html">Screen</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../resources.html">Resources and derived objects</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../format.html">Formats in gallium</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../context.html">Context</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../cso.html">CSO</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="blend.html">Blend</a></li>
+<li class="toctree-l3"><a class="reference internal" href="dsa.html">Depth, Stencil, &amp; Alpha</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Rasterizer</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#linkage">Linkage</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#shading">Shading</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#polygons">Polygons</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#lines">Lines</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#points">Points</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#other-members">Other Members</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="sampler.html">Sampler</a></li>
+<li class="toctree-l3"><a class="reference internal" href="shader.html">Shader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="velems.html">Vertex Elements</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../buffermapping.html">Buffer mapping patterns</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../buffermapping.html#buffer-mapping-conclusions">Buffer mapping conclusions</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../postprocess.html">Gallium Post-processing</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../glossary.html">Glossary</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../index.html#indices-and-tables">Indices and tables</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../../conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/gallium/cso/rasterizer.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

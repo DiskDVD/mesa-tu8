@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Asahi &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="../_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="../_static/screen.css?v=10557b77" />
+
+    <script src="../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@4/tex-mml-chtml.js"></script>
+    <link rel="icon" href="../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="D3D12" href="d3d12.html" />
+    <link rel="prev" title="ANV" href="anv.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="../_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="../download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="../index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="asahi">
+<h1>Asahi<a class="headerlink" href="#asahi" title="Link to this heading">¶</a></h1>
+<p>The Asahi driver aims to provide an OpenGL implementation for the Apple M1.</p>
+<section id="wrap-macos-only">
+<h2>Wrap (macOS only)<a class="headerlink" href="#wrap-macos-only" title="Link to this heading">¶</a></h2>
+<p>Mesa includes a library that wraps the key IOKit entrypoints used in the macOS
+UABI for AGX. The wrapped routines print information about the kernel calls made
+and dump work submitted to the GPU using agxdecode. This facilitates
+reverse-engineering the hardware, as glue to get at the “interesting” GPU
+memory.</p>
+<p>The library is only built if <code class="docutils literal notranslate"><span class="pre">-Dtools=asahi</span></code> is passed. It builds a single
+<code class="docutils literal notranslate"><span class="pre">wrap.dylib</span></code> file, which should be inserted into a process with the
+<code class="docutils literal notranslate"><span class="pre">DYLD_INSERT_LIBRARIES</span></code> environment variable.</p>
+<p>For example, to trace an app <code class="docutils literal notranslate"><span class="pre">./app</span></code>, run:</p>
+<blockquote>
+<div><p>DYLD_INSERT_LIBRARIES=~/mesa/build/src/asahi/lib/libwrap.dylib ./app</p>
+</div></blockquote>
+</section>
+<section id="hardware-varyings">
+<h2>Hardware varyings<a class="headerlink" href="#hardware-varyings" title="Link to this heading">¶</a></h2>
+<p>At an API level, vertex shader outputs need to be interpolated to become
+fragment shader inputs. This process is logically pipelined in AGX, with a value
+traveling from a vertex shader to remapping hardware to coefficient register
+setup to the fragment shader to the iterator hardware. Each stage is described
+below.</p>
+<section id="vertex-shader">
+<h3>Vertex shader<a class="headerlink" href="#vertex-shader" title="Link to this heading">¶</a></h3>
+<p>A vertex shader (running on the <a class="reference internal" href="#term-Unified-Shader-Cores"><span class="xref std std-term">Unified Shader Cores</span></a>) outputs varyings with the
+<code class="docutils literal notranslate"><span class="pre">st_var</span></code> instruction. <code class="docutils literal notranslate"><span class="pre">st_var</span></code> takes a <em>vertex output index</em> and a 32-bit
+value. The maximum number of <em>vertex outputs</em> is specified as the “output count”
+of the shader in the “VDM State Vertex Outputs” structure. The value may be interpreted
+consist of a single 32-bit value or an aligned 16-bit register pair, depending
+on whether interpolation should happen at 32-bit or 16-bit. Vertex outputs are
+indexed starting from 0, with the <em>vertex position</em> always coming first, the
+32-bit user varyings coming next with perspective, flat, and linear interpolated
+varyings grouped in that order, then 16-bit user varyings with the same groupings,
+and finally <em>point size</em>, <em>layer/viewport</em>, and <em>clip distances</em> at the end if present. Note that
+<em>clip distances</em> are not accessible from the fragment shader; if the fragment
+shader needs to read the interpolated clip distance, the vertex shader must
+<em>also</em> write the clip distance values to a user varying for the fragment shader
+to interpolate. Also note there is no clip plane enable mask anywhere; that must
+lowered for APIs that require this (OpenGL but not Vulkan).</p>
+<table class="table" id="id1">
+<caption><span class="caption-text">Ordering of vertex outputs with all outputs used</span><a class="headerlink" href="#id1" title="Link to this table">¶</a></caption>
+<colgroup>
+<col style="width: 25.0%" />
+<col style="width: 75.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Size (words)</p></th>
+<th class="head"><p>Value</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>4</p></td>
+<td><p>Vertex position</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>32-bit smooth varying 0</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p>…</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>32-bit smooth varying m</p></td>
+</tr>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>32-bit flat varying 0</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p>…</p></td>
+</tr>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>32-bit flat varying n</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>32-bit linear varying 0</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p>…</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>32-bit linear varying o</p></td>
+</tr>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>Packed pair of 16-bit smooth varyings 0</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p>…</p></td>
+</tr>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>Packed pair of 16-bit smooth varyings p</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>Packed pair of 16-bit flat varyings 0</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p>…</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>Packed pair of 16-bit flat varyings q</p></td>
+</tr>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>Packed pair of 16-bit linear varyings 0</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p>…</p></td>
+</tr>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>Packed pair of 16-bit linear varyings r</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>Point size</p></td>
+</tr>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>Layer/viewport</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>Clip distance for plane 0</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p>…</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>Clip distance for plane 16</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="remapping">
+<h3>Remapping<a class="headerlink" href="#remapping" title="Link to this heading">¶</a></h3>
+<p>Vertex outputs are remapped to varying slots to be interpolated.
+The output of remapping consists of the following items: the <em>W</em> fragment
+coordinate, the <em>Z</em> fragment coordinate, user varyings in the vertex
+output order. <em>Z</em> may be omitted, but <em>W</em> may not be. This remapping is
+configured by the “Output select” word.</p>
+<table class="table" id="id2">
+<caption><span class="caption-text">Ordering of remapped slots</span><a class="headerlink" href="#id2" title="Link to this table">¶</a></caption>
+<colgroup>
+<col style="width: 25.0%" />
+<col style="width: 75.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Index</p></th>
+<th class="head"><p>Value</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>0</p></td>
+<td><p>Fragment coord W</p></td>
+</tr>
+<tr class="row-odd"><td><p>1</p></td>
+<td><p>Fragment coord Z</p></td>
+</tr>
+<tr class="row-even"><td><p>2</p></td>
+<td><p>32-bit varying 0</p></td>
+</tr>
+<tr class="row-odd"><td></td>
+<td><p>…</p></td>
+</tr>
+<tr class="row-even"><td><p>2 + m</p></td>
+<td><p>32-bit varying m</p></td>
+</tr>
+<tr class="row-odd"><td><p>2 + m + 1</p></td>
+<td><p>Packed pair of 16-bit varyings 0</p></td>
+</tr>
+<tr class="row-even"><td></td>
+<td><p>…</p></td>
+</tr>
+<tr class="row-odd"><td><p>2 + m + n + 1</p></td>
+<td><p>Packed pair of 16-bit varyings n</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+<section id="coefficient-registers">
+<h3>Coefficient registers<a class="headerlink" href="#coefficient-registers" title="Link to this heading">¶</a></h3>
+<p>The fragment shader does not see the physical slots.
+Instead, it references varyings through <em>coefficient registers</em>. A coefficient
+register is a register allocated constant for all fragment shader invocations in
+a given polygon. Physically, it contains the values output by the vertex shader
+for each vertex of the polygon. Coefficient registers are preloaded with values
+from varying slots. This preloading appears to occur in fixed function hardware,
+a simplification from PowerVR which requires a specialized program for the
+programmable data sequencer to do the preload.</p>
+<p>The “Fragment Shader” structure points to coefficient register bindings,
+preceded by a header. The header contains the number of 32-bit varying slots. As
+the <em>W</em> slot is always present, this field is always nonzero. Slots whose index
+is below this count are treated as 32-bit. The remaining slots are treated as
+16-bits.</p>
+<p>The header also contains the total number of coefficient registers bound.</p>
+<p>Each binding that follows maps a (vector of) varying slots to a (consecutive)
+coefficient registers. Some details about the varying (perspective
+interpolation, flat shading, point sprites) are configured here.</p>
+<p>Coefficient registers may be ordered the same as the internal varying slots.
+However, this may be inconvenient for some APIs that require a separable shader
+model. For these APIs, the flexibility to mix-and-match slots and coefficient
+registers allows mixing shaders without shader variants. In that case, the
+bindings should be generated outside of the compiler. For simple APIs where the
+bindings are fixed and known at compile-time, the bindings could be generated
+within the compiler.</p>
+<p>Mathematically, the value of the coefficient register is a vector in
+<span class="math notranslate nohighlight">\(\mathbb{R}^3\)</span>. The X and Y components are the screen-space partial
+derivatives of the varying with respect to X and Y. The Z component is the
+interpolated value of the varying at the upper-left pixel in the 32x32 tile that
+the pixel belongs to.</p>
+</section>
+<section id="fragment-shader">
+<h3>Fragment shader<a class="headerlink" href="#fragment-shader" title="Link to this heading">¶</a></h3>
+<p>In the fragment shader, coefficient registers, identified by the prefix <code class="docutils literal notranslate"><span class="pre">cf</span></code>
+followed by a decimal index, act as opaque handles to varyings. For flat
+shading, coefficient registers may be loaded into general registers with the
+<code class="docutils literal notranslate"><span class="pre">ldcf</span></code> instruction. For smooth shading, the coefficient register corresponding
+to the desired varying is passed as an argument to the “iterate” instruction
+<code class="docutils literal notranslate"><span class="pre">iter</span></code> in order to “iterate” (interpolate) a varying. As perspective correct
+interpolation also requires the W component of the fragment coordinate, the
+coefficient register for W is passed as a second argument. As an example, if
+there’s a single varying to interpolate, an instruction like <code class="docutils literal notranslate"><span class="pre">iter</span> <span class="pre">r0,</span> <span class="pre">cf1,</span> <span class="pre">cf0</span></code>
+is used.</p>
+<p>It is occassionally useful to manipulate the raw coefficient registers, for
+example to implement interpolation modes not natively supported by the hardware.
+<code class="docutils literal notranslate"><span class="pre">ldcf</span></code> is used for this purpose.</p>
+</section>
+<section id="iterator">
+<h3>Iterator<a class="headerlink" href="#iterator" title="Link to this heading">¶</a></h3>
+<p>To actually interpolate varyings, AGX provides fixed-function iteration hardware
+to multiply the specified coefficient registers with the required barycentrics,
+producing an interpolated value, hence the name “coefficient register”. This
+operation is purely mathematical and does not require any memory access, as
+the required coefficients are preloaded before the shader begins execution.
+That means the iterate instruction executes in constant time, does not signal
+a data fence, and does not require the shader to wait on a data fence before
+using the value.</p>
+</section>
+</section>
+<section id="image-layouts">
+<h2>Image layouts<a class="headerlink" href="#image-layouts" title="Link to this heading">¶</a></h2>
+<p>AGX supports several image layouts, described here. To work with image layouts
+in the drivers, use the ail library, located in <code class="docutils literal notranslate"><span class="pre">src/asahi/layout</span></code>.</p>
+<section id="strided-linear">
+<h3>Strided linear<a class="headerlink" href="#strided-linear" title="Link to this heading">¶</a></h3>
+<p>The simplest layout is <strong>strided linear</strong>. Pixels are stored in raster-order in
+memory with a software-controlled stride. Strided linear images are useful for
+working with modifier-unaware window systems, however performance will suffer.
+Strided linear images have numerous limitations:</p>
+<ul class="simple">
+<li><p>Strides must be a multiple of 16 bytes.</p></li>
+<li><p>Strides must be nonzero. For 1D images where the stride is logically
+irrelevant, ail will internally select the minimal stride.</p></li>
+<li><p>Only 1D, 2D, and 2D Array images may be linear. In particular, no 3D or cubemaps.</p></li>
+<li><p>2D images must not be mipmapped.</p></li>
+<li><p>Block-compressed formats and multisampled images are unsupported. Elements of
+a strided linear image are simply pixels.</p></li>
+</ul>
+<p>With these limitations, addressing into a strided linear image is as simple as</p>
+<div class="math notranslate nohighlight">
+\[\text{address} = (y \cdot \text{stride}) + (x \cdot \text{bytes per pixel})\]</div>
+<p>In practice, this suffices for window system integration and little else.</p>
+</section>
+<section id="gpu-tiled">
+<h3>GPU-tiled<a class="headerlink" href="#gpu-tiled" title="Link to this heading">¶</a></h3>
+<p>The most common uncompressed layout is <strong>GPU-tiled</strong>. The image is divided into
+power-of-two sized tiles. The tiles themselves are stored in raster-order.
+Within each tile, elements (pixels/blocks) are stored in Morton (Z) order.</p>
+<p>The tile size used depends on both the image size and the block size of the
+image format. For large images, <span class="math notranslate nohighlight">\(n \times n\)</span> or <span class="math notranslate nohighlight">\(2n \times n\)</span> tiles
+are used (<span class="math notranslate nohighlight">\(n\)</span> power-of-two). <span class="math notranslate nohighlight">\(n\)</span> is such that each page contains
+exactly one tile. Only power-of-two block sizes are supported in hardware,
+ensuring such a tile size always exists. The hardware uses 16 KiB pages, so tile
+sizes are as follows:</p>
+<table class="table" id="id3">
+<caption><span class="caption-text">Tile sizes for large images</span><a class="headerlink" href="#id3" title="Link to this table">¶</a></caption>
+<colgroup>
+<col style="width: 50.0%" />
+<col style="width: 50.0%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Bytes per block</p></th>
+<th class="head"><p>Tile size</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>1</p></td>
+<td><p>128 x 128</p></td>
+</tr>
+<tr class="row-odd"><td><p>2</p></td>
+<td><p>128 x 64</p></td>
+</tr>
+<tr class="row-even"><td><p>4</p></td>
+<td><p>64 x 64</p></td>
+</tr>
+<tr class="row-odd"><td><p>8</p></td>
+<td><p>64 x 32</p></td>
+</tr>
+<tr class="row-even"><td><p>16</p></td>
+<td><p>32 x 32</p></td>
+</tr>
+</tbody>
+</table>
+<p>The dimensions of large images are rounded up to be multiples of the tile size.
+In addition, non-power-of-two large images have extra padding tiles when
+mipmapping is used, see below.</p>
+<p>That rounding would waste a great deal of memory for small images. If
+an image is smaller than this tile size, a smaller tile size is used to reduce
+the memory footprint. For small images, the tile size is <span class="math notranslate nohighlight">\(m \times m\)</span>
+where</p>
+<div class="math notranslate nohighlight">
+\[m = 2^{\lceil \log_2( \min \{ \text{width}, \text{ height} \}) \rceil}\]</div>
+<p>In other words, small images use the smallest square power-of-two tile such that
+the image’s minor axis fits in one tile.</p>
+<p>For mipmapped images, tile sizes are determined independently for each level.
+Typically, the first levels of an image are “large” and the remaining levels are
+“small”. This scheme reduces the memory footprint of mipmapping, compared to a
+fixed tile size for the whole image. Each mip level are padded to fill at least
+one cache line (128 bytes), ensure no cache line contains multiple mip levels.</p>
+<p>There is a wrinkle: the dimensions of large mip levels in tiles are determined
+by the dimensions of level 0. For power-of-two images, the two calculations are
+equivalent. However, they differ subtly for non-power-of-two images. To
+determine the number of tiles to allocate for level <span class="math notranslate nohighlight">\(l\)</span>, the number of
+tiles for level 0 should be right-shifted by <span class="math notranslate nohighlight">\(2l\)</span>. That appears to divide
+by <span class="math notranslate nohighlight">\(2^l\)</span> in both width and height, matching the definition of mipmapping,
+however it rounds down incorrectly. To compensate, the level contains one extra
+row, column, or both (with the corner) as required if any of the first <span class="math notranslate nohighlight">\(l\)</span>
+levels were rounded down. This hurt the memory footprint. However, it means
+non-power-of-two integer multiplication is only required for level 0.
+Calculating the sizes for subsequent levels requires only addition and bitwise
+math. That simplifies the hardware (but complicates software).</p>
+<p>A 2D image consists of a full miptree (constructed as above) rounded up to the
+page size (16 KiB).</p>
+<p>3D images consist simply of an array of 2D layers (constructed as above). That
+means cube maps, 2D arrays, cube map arrays, and 3D images all use the same
+layout. The only difference is the number of layers. Notably, 3D images (like
+<code class="docutils literal notranslate"><span class="pre">GL_TEXTURE_3D</span></code>) reserve space even for mip levels that do not exist
+logically. These extra levels pad out layers of 3D images to the size of the
+first layer, simplifying layout calculations for both software and hardware.
+Although the padding is logically unnecessary, it wastes little space compared
+to the sizes of large mipmapped 3D textures.</p>
+</section>
+<section id="twiddled">
+<h3>Twiddled<a class="headerlink" href="#twiddled" title="Link to this heading">¶</a></h3>
+<p>In addition to GPU-tiled images, AGX also has a fully <strong>twiddled</strong> layout. The
+image is rounded up to power-of-two dimensions, then all elements are stored in
+Morton (Z) order.</p>
+<p>A twiddled image is equivalent to a GPU-tiled image with a single square
+power-of-two tile spanning the entire image. That means GPU-tiled and twiddled
+images may share address calculation code, as long as everything is parametrized
+in terms of the tile size.</p>
+<p>In general, twiddled images require more memory than GPU-tiled images due to the
+extra padding required. Because GPU tiles are page-sized, twiddling beyond that
+does not offer any cache locality benefit either. The twiddled layout is
+mostly vestigial at this point, but the PBE requires it for sparse mapping.</p>
+</section>
+<section id="sparse-page-tables">
+<h3>Sparse page tables<a class="headerlink" href="#sparse-page-tables" title="Link to this heading">¶</a></h3>
+<p>The hardware has native support for sparse images. If an texture/PBE descriptor
+is configured in sparse mode, the specified address does not point to the image
+itself. Rather, it points to a <strong>sparse page table</strong>. The extra indirection
+enables on-device sparse binding (e.g. by updating the page table from a compute
+kernel).</p>
+<p>At the top level, the sparse page table is an array of <strong>folios</strong>. Each folio
+describes 256 pages. The folio itself has two halves. The first half is the page
+table itself, containing 4-byte “Sparse Block” data structures mapping image
+pages to GPU virtual addresses. The second half is probably sparse texture
+counters, again 4-bytes per page. Each folio therefore consumes <span class="math notranslate nohighlight">\(256 \cdot
+4 \cdot 2 = 2 \mathrm{KiB}\)</span> in order to describe <span class="math notranslate nohighlight">\(256 \cdot 16384 =
+4 \mathrm{MiB}\)</span>.</p>
+<p>In a layered (array or 3D) image, a given folio only describes a single layer.
+That implies extra padding between layers.</p>
+<p>Within a layer, the table works purely at an address level. It maps pages to
+pages, rather than tiles to tiles. It is not a spatial data structure in itself.
+Rather, it inherits the tiling of the image by virtue of the addresses mapped.
+This presumably simplifies the hardware implementation.</p>
+</section>
+</section>
+<section id="drm-shim-linux-only">
+<h2>drm-shim (Linux only)<a class="headerlink" href="#drm-shim-linux-only" title="Link to this heading">¶</a></h2>
+<p>Mesa includes a library that mocks out the DRM UABI used by the Asahi driver
+stack, allowing the Mesa driver to run on non-M1 Linux hardware. This can be
+useful for exercising the compiler. To build, use options:</p>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>-Dgallium-drivers=asahi -Dtools=drm-shim
+</pre></div>
+</div>
+<p>Then run an OpenGL workload with environment variable:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span><span class="nv">LD_PRELOAD</span><span class="o">=</span>~/mesa/build/src/asahi/drm-shim/libasahi_noop_drm_shim.so
+</pre></div>
+</div>
+<p>For example to compile a shader with shaderdb and print some statistics along
+with the IR:</p>
+<div class="highlight-sh notranslate"><div class="highlight"><pre><span></span>~/shader-db$<span class="w"> </span><span class="nv">AGX_MESA_DEBUG</span><span class="o">=</span>shaders,shaderdb<span class="w"> </span><span class="nv">ASAHI_MESA_DEBUG</span><span class="o">=</span>precompile<span class="w"> </span><span class="nv">LD_PRELOAD</span><span class="o">=</span>~/mesa/build/src/asahi/drm-shim/libasahi_noop_drm_shim.so<span class="w"> </span>./run<span class="w"> </span>shaders/glmark/1-12.shader_test
+</pre></div>
+</div>
+<p>The drm-shim implementation for Asahi is located in <code class="docutils literal notranslate"><span class="pre">src/asahi/drm-shim</span></code>. The
+drm-shim implementation there should be updated as new UABI is added.</p>
+</section>
+<section id="hardware-glossary">
+<h2>Hardware glossary<a class="headerlink" href="#hardware-glossary" title="Link to this heading">¶</a></h2>
+<p>AGX is a tiled renderer descended from the PowerVR architecture. Some hardware
+concepts used in PowerVR GPUs appear in AGX.</p>
+<dl class="simple glossary">
+<dt id="term-CDM">CDM<a class="headerlink" href="#term-CDM" title="Link to this term">¶</a></dt><dt id="term-Compute-Data-Master">Compute Data Master<a class="headerlink" href="#term-Compute-Data-Master" title="Link to this term">¶</a></dt><dd><p>Dispatches compute kernels.</p>
+</dd>
+<dt id="term-ISP">ISP<a class="headerlink" href="#term-ISP" title="Link to this term">¶</a></dt><dt id="term-Image-Synthesis-Processor">Image Synthesis Processor<a class="headerlink" href="#term-Image-Synthesis-Processor" title="Link to this term">¶</a></dt><dd><p>The Image Synthesis Processor is responsible for the rasterization stage
+of the rendering pipeline.</p>
+</dd>
+<dt id="term-PBE">PBE<a class="headerlink" href="#term-PBE" title="Link to this term">¶</a></dt><dt id="term-Pixel-BackEnd">Pixel BackEnd<a class="headerlink" href="#term-Pixel-BackEnd" title="Link to this term">¶</a></dt><dd><p>Hardware unit which writes to color attachments and images. Also the
+name for a descriptor passed to <a class="reference internal" href="#term-PBE"><span class="xref std std-term">PBE</span></a> instructions.</p>
+</dd>
+<dt id="term-PDM">PDM<a class="headerlink" href="#term-PDM" title="Link to this term">¶</a></dt><dt id="term-Pixel-Data-Master">Pixel Data Master<a class="headerlink" href="#term-Pixel-Data-Master" title="Link to this term">¶</a></dt><dd><p>Dispatches pixel shaders.</p>
+</dd>
+<dt id="term-PPP">PPP<a class="headerlink" href="#term-PPP" title="Link to this term">¶</a></dt><dt id="term-Primitive-Processing-Pipeline">Primitive Processing Pipeline<a class="headerlink" href="#term-Primitive-Processing-Pipeline" title="Link to this term">¶</a></dt><dd><p>The Primitive Processing Pipeline is a hardware unit that does primitive
+assembly. The PPP is between the <a class="reference internal" href="#term-VDM"><span class="xref std std-term">VDM</span></a> and <a class="reference internal" href="#term-ISP"><span class="xref std std-term">ISP</span></a>.</p>
+</dd>
+<dt id="term-USC">USC<a class="headerlink" href="#term-USC" title="Link to this term">¶</a></dt><dt id="term-Unified-Shader-Cores">Unified Shader Cores<a class="headerlink" href="#term-Unified-Shader-Cores" title="Link to this term">¶</a></dt><dd><p>A unified shader core is a small CPU that runs shader code. The core is
+unified because a single ISA is used for vertex, pixel and compute
+shaders. This differs from older GPUs where the vertex, fragment and
+compute have separate ISAs for shader stages.</p>
+</dd>
+<dt id="term-UVS">UVS<a class="headerlink" href="#term-UVS" title="Link to this term">¶</a></dt><dt id="term-Unified-Vertex-Store">Unified Vertex Store<a class="headerlink" href="#term-Unified-Vertex-Store" title="Link to this term">¶</a></dt><dd><p>Hardware unit which buffers the outputs of the vertex shader (varyings).</p>
+</dd>
+<dt id="term-VDM">VDM<a class="headerlink" href="#term-VDM" title="Link to this term">¶</a></dt><dt id="term-Vertex-Data-Master">Vertex Data Master<a class="headerlink" href="#term-Vertex-Data-Master" title="Link to this term">¶</a></dt><dd><p>Dispatches vertex shaders.</p>
+</dd>
+</dl>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="../search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="anv.html">ANV</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Asahi</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#wrap-macos-only">Wrap (macOS only)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hardware-varyings">Hardware varyings</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#vertex-shader">Vertex shader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#remapping">Remapping</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#coefficient-registers">Coefficient registers</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fragment-shader">Fragment shader</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#iterator">Iterator</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#image-layouts">Image layouts</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#strided-linear">Strided linear</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#gpu-tiled">GPU-tiled</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#twiddled">Twiddled</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#sparse-page-tables">Sparse page tables</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#drm-shim-linux-only">drm-shim (Linux only)</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#hardware-glossary">Hardware glossary</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/drivers/asahi.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

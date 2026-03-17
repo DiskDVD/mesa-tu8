@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="../">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>Mesa 10.4.3 Release Notes / January 24, 2015 &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="../_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="../_static/screen.css?v=10557b77" />
+
+    <script src="../_static/documentation_options.js?v=91d07486"></script>
+    <script src="../_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="../_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="../_static/favicon.ico"/>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Mesa 10.4.2 Release Notes / January 12, 2015" href="10.4.2.html" />
+    <link rel="prev" title="Mesa 10.4.4 Release Notes / February 06, 2015" href="10.4.4.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="../_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="../download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="../index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="mesa-10-4-3-release-notes-january-24-2015">
+<h1>Mesa 10.4.3 Release Notes / January 24, 2015<a class="headerlink" href="#mesa-10-4-3-release-notes-january-24-2015" title="Link to this heading">¶</a></h1>
+<p>Mesa 10.4.3 is a bug fix release which fixes bugs found since the 10.4.2
+release.</p>
+<p>Mesa 10.4.3 implements the OpenGL 3.3 API, but the version reported by
+glGetString(GL_VERSION) or glGetIntegerv(GL_MAJOR_VERSION) /
+glGetIntegerv(GL_MINOR_VERSION) depends on the particular driver being
+used. Some drivers don’t support all the features required in OpenGL
+3.3. OpenGL 3.3 is <strong>only</strong> available if requested at context creation
+because compatibility contexts are not supported.</p>
+<section id="sha256-checksums">
+<h2>SHA256 checksums<a class="headerlink" href="#sha256-checksums" title="Link to this heading">¶</a></h2>
+<div class="highlight-none notranslate"><div class="highlight"><pre><span></span>c53eaafc83d9c6315f63e0904d9954d929b841b0b2be7a328eeb6e14f1376129  MesaLib-10.4.3.tar.gz
+ef6ecc9c2f36c9f78d1662382a69ae961f38f03af3a0c3268e53f351aa1978ad  MesaLib-10.4.3.tar.bz2
+179325fc8ec66529d3b0d0c43ef61a33a44d91daa126c3bbdd1efdfd25a7db1d  MesaLib-10.4.3.zip
+</pre></div>
+</div>
+</section>
+<section id="new-features">
+<h2>New features<a class="headerlink" href="#new-features" title="Link to this heading">¶</a></h2>
+<p>None</p>
+</section>
+<section id="bug-fixes">
+<h2>Bug fixes<a class="headerlink" href="#bug-fixes" title="Link to this heading">¶</a></h2>
+<p>This list is likely incomplete.</p>
+<ul class="simple">
+<li><p><a class="reference external" href="https://bugs.freedesktop.org/show_bug.cgi?id=80568">Bug 80568</a> -
+[gen4] GPU Crash During Google Chrome Operation</p></li>
+<li><p><a class="reference external" href="https://bugs.freedesktop.org/show_bug.cgi?id=85367">Bug 85367</a> -
+[gen4] GPU hang in glmark-es2</p></li>
+<li><p><a class="reference external" href="https://bugs.freedesktop.org/show_bug.cgi?id=85696">Bug 85696</a> -
+r600g+nine: Bioshock shader failure after
+7b1c0cbc90d456384b0950ad21faa3c61a6b43ff</p></li>
+<li><p><a class="reference external" href="https://bugs.freedesktop.org/show_bug.cgi?id=88219">Bug 88219</a> -
+include/c11/threads_posix.h:197: undefined reference to
+`pthread_mutex_lock’</p></li>
+</ul>
+</section>
+<section id="changes">
+<h2>Changes<a class="headerlink" href="#changes" title="Link to this heading">¶</a></h2>
+<p>Axel Davy (39):</p>
+<ul class="simple">
+<li><p>st/nine: Add new texture format strings</p></li>
+<li><p>st/nine: Correctly advertise D3DPMISCCAPS_CLIPTLVERTS</p></li>
+<li><p>st/nine: NineBaseTexture9: fix setting of last_layer</p></li>
+<li><p>st/nine: CubeTexture: fix GetLevelDesc</p></li>
+<li><p>st/nine: Fix crash when deleting non-implicit swapchain</p></li>
+<li><p>st/nine: Return D3DERR_INVALIDCALL when trying to create a texture of
+bad format</p></li>
+<li><p>st/nine: NineBaseTexture9: update sampler view creation</p></li>
+<li><p>st/nine: Check if srgb format is supported before trying to use it.</p></li>
+<li><p>st/nine: Add ATI1 and ATI2 support</p></li>
+<li><p>st/nine: Rework of boolean constants</p></li>
+<li><p>st/nine: Convert integer constants to floats before storing them when
+cards don’t support integers</p></li>
+<li><p>st/nine: Remove some shader unused code</p></li>
+<li><p>st/nine: Saturate oFog and oPts vs outputs</p></li>
+<li><p>st/nine: Correctly declare NineTranslateInstruction_Mkxn inputs</p></li>
+<li><p>st/nine: Fix typo for M4x4</p></li>
+<li><p>st/nine: Fix POW implementation</p></li>
+<li><p>st/nine: Handle RSQ special cases</p></li>
+<li><p>st/nine: Handle NRM with input of null norm</p></li>
+<li><p>st/nine: Correct LOG on negative values</p></li>
+<li><p>st/nine: Rewrite LOOP implementation, and a0 aL handling</p></li>
+<li><p>st/nine: Fix CND implementation</p></li>
+<li><p>st/nine: Clamp ps 1.X constants</p></li>
+<li><p>st/nine: Fix some fixed function pipeline operation</p></li>
+<li><p>st/nine: Implement TEXCOORD special behaviours</p></li>
+<li><p>st/nine: Fill missing dst and src number for some instructions.</p></li>
+<li><p>st/nine: Fix TEXM3x3 and implement TEXM3x3VSPEC</p></li>
+<li><p>st/nine: implement TEXM3x2DEPTH</p></li>
+<li><p>st/nine: Implement TEXM3x2TEX</p></li>
+<li><p>st/nine: Implement TEXM3x3SPEC</p></li>
+<li><p>st/nine: Implement TEXDEPTH</p></li>
+<li><p>st/nine: Implement TEXDP3</p></li>
+<li><p>st/nine: Implement TEXDP3TEX</p></li>
+<li><p>st/nine: Implement TEXREG2AR, TEXREG2GB and TEXREG2RGB</p></li>
+<li><p>st/nine: Correct rules for relative adressing and constants.</p></li>
+<li><p>st/nine: Remove unused code for ps</p></li>
+<li><p>st/nine: Fix sm3 relative addressing for non-debug build</p></li>
+<li><p>st/nine: Add variables containing the size of the constant buffers</p></li>
+<li><p>st/nine: Allocate the correct size for the user constant buffer</p></li>
+<li><p>st/nine: Allocate vs constbuf buffer for indirect addressing once.</p></li>
+</ul>
+<p>Emil Velikov (2):</p>
+<ul class="simple">
+<li><p>docs: Add sha256 sums for the 10.4.2 release</p></li>
+<li><p>Update version to 10.4.3</p></li>
+</ul>
+<p>Faith Ekstrand (1):</p>
+<ul class="simple">
+<li><p>mesa: Fix clamping to -1.0 in snorm_to_float</p></li>
+</ul>
+<p>Jonathan Gray (1):</p>
+<ul class="simple">
+<li><p>glsl: Link glsl_test with pthreads library.</p></li>
+</ul>
+<p>Jose Fonseca (1):</p>
+<ul class="simple">
+<li><p>nine: Drop use of TGSI_OPCODE_CND.</p></li>
+</ul>
+<p>Kenneth Graunke (2):</p>
+<ul class="simple">
+<li><p>i965: Respect the no_8 flag on Gen6, not just Gen7+.</p></li>
+<li><p>i965: Work around mysterious Gen4 GPU hangs with minimal state
+changes.</p></li>
+</ul>
+<p>Stanislaw Halik (1):</p>
+<ul class="simple">
+<li><p>st/nine: Hack to generate resource if it doesn’t exist when getting
+view</p></li>
+</ul>
+<p>Xavier Bouchoux (3):</p>
+<ul class="simple">
+<li><p>st/nine: Additional defines to d3dtypes.h</p></li>
+<li><p>st/nine: Add missing c++ declaration for IDirect3DVolumeTexture9</p></li>
+<li><p>st/nine: Fix D3DRS_POINTSPRITE support</p></li>
+</ul>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="../search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../relnotes.html">Release Notes</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="25.3.5.html">25.3.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.3.4.html">25.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.3.3.html">25.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.3.2.html">25.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.2.8.html">25.2.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.3.1.html">25.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.3.0.html">25.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.2.7.html">25.2.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.2.6.html">25.2.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.2.5.html">25.2.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.2.4.html">25.2.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.2.3.html">25.2.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.2.2.html">25.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.1.9.html">25.1.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.2.1.html">25.2.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.1.8.html">25.1.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.2.0.html">25.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.1.7.html">25.1.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.1.6.html">25.1.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.1.5.html">25.1.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.1.4.html">25.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.1.3.html">25.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.1.2.html">25.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.0.7.html">25.0.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.1.1.html">25.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.0.6.html">25.0.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.1.0.html">25.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.0.5.html">25.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.0.4.html">25.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.0.3.html">25.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.0.2.html">25.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.0.1.html">25.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="25.0.0.html">25.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.3.4.html">24.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.3.3.html">24.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.3.2.html">24.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.3.1.html">24.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.2.8.html">24.2.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.3.0.html">24.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.2.7.html">24.2.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.2.6.html">24.2.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.2.5.html">24.2.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.2.4.html">24.2.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.2.3.html">24.2.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.2.2.html">24.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.1.7.html">24.1.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.2.1.html">24.2.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.1.6.html">24.1.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.2.0.html">24.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.1.5.html">24.1.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.1.4.html">24.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.1.3.html">24.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.1.2.html">24.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.0.9.html">24.0.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.1.1.html">24.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.1.0.html">24.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.0.8.html">24.0.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.0.7.html">24.0.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.0.6.html">24.0.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.0.5.html">24.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.0.4.html">24.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.0.3.html">24.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.0.2.html">24.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.3.6.html">23.3.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.0.1.html">24.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="24.0.0.html">24.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.3.5.html">23.3.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.3.4.html">23.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.3.3.html">23.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.3.2.html">23.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.3.1.html">23.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.3.0.html">23.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.2.1.html">23.2.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.1.9.html">23.1.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.1.8.html">23.1.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.1.7.html">23.1.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.1.6.html">23.1.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.1.5.html">23.1.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.1.4.html">23.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.1.3.html">23.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.1.2.html">23.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.0.4.html">23.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.1.1.html">23.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.1.0.html">23.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.0.3.html">23.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.0.2.html">23.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.0.1.html">23.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="23.0.0.html">23.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.3.7.html">22.3.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.3.6.html">22.3.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.3.5.html">22.3.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.3.4.html">22.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.3.3.html">22.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.3.2.html">22.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.3.1.html">22.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.3.0.html">22.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.2.4.html">22.2.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.2.3.html">22.2.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.2.2.html">22.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.2.1.html">22.2.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.2.0.html">22.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.1.7.html">22.1.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.1.6.html">22.1.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.1.5.html">22.1.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.1.4.html">22.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.1.3.html">22.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.1.2.html">22.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.3.9.html">21.3.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.0.5.html">22.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.1.1.html">22.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.0.4.html">22.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.1.0.html">22.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.0.3.html">22.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.0.2.html">22.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.0.1.html">22.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.3.8.html">21.3.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="22.0.0.html">22.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.3.7.html">21.3.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.3.6.html">21.3.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.3.5.html">21.3.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.3.4.html">21.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.3.3.html">21.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.3.2.html">21.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.3.1.html">21.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.2.6.html">21.2.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.3.0.html">21.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.2.5.html">21.2.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.2.4.html">21.2.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.2.3.html">21.2.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.2.2.html">21.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.1.8.html">21.1.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.1.7.html">21.1.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.2.0.html">21.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.1.6.html">21.1.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.1.5.html">21.1.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.1.4.html">21.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.1.3.html">21.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.1.2.html">21.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.1.1.html">21.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.1.0.html">21.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.0.3.html">21.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.0.2.html">21.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.0.1.html">21.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.3.5.html">20.3.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="21.0.0.html">21.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.3.4.html">20.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.3.3.html">20.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.3.2.html">20.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.2.6.html">20.2.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.3.1.html">20.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.2.5.html">20.2.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.2.4.html">20.2.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.3.0.html">20.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.2.3.html">20.2.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.2.2.html">20.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.1.10.html">20.1.10</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.2.1.html">20.2.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.2.0.html">20.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.1.9.html">20.1.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.1.8.html">20.1.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.1.7.html">20.1.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.1.6.html">20.1.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.1.5.html">20.1.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.1.4.html">20.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.1.3.html">20.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.1.2.html">20.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.0.8.html">20.0.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.1.1.html">20.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.1.0.html">20.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.0.7.html">20.0.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.0.6.html">20.0.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.0.5.html">20.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.0.4.html">20.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.0.3.html">20.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.0.2.html">20.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.3.5.html">19.3.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.0.1.html">20.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="20.0.0.html">20.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.3.4.html">19.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.3.3.html">19.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.3.2.html">19.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.2.8.html">19.2.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.3.1.html">19.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.3.0.html">19.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.2.7.html">19.2.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.2.6.html">19.2.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.2.5.html">19.2.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.2.4.html">19.2.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.2.3.html">19.2.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.2.2.html">19.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.1.8.html">19.1.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.2.1.html">19.2.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.2.0.html">19.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.1.7.html">19.1.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.1.6.html">19.1.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.1.5.html">19.1.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.1.4.html">19.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.1.3.html">19.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.1.2.html">19.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.0.8.html">19.0.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.1.1.html">19.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.0.7.html">19.0.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.1.0.html">19.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.0.6.html">19.0.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.0.5.html">19.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.0.4.html">19.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.0.3.html">19.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.0.2.html">19.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.3.6.html">18.3.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.0.1.html">19.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.3.5.html">18.3.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="19.0.0.html">19.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.3.4.html">18.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.3.3.html">18.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.3.2.html">18.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.2.8.html">18.2.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.2.7.html">18.2.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.3.1.html">18.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.3.0.html">18.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.2.6.html">18.2.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.2.5.html">18.2.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.2.4.html">18.2.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.2.3.html">18.2.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.2.2.html">18.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.1.9.html">18.1.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.2.1.html">18.2.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.2.0.html">18.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.1.8.html">18.1.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.1.7.html">18.1.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.1.6.html">18.1.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.1.5.html">18.1.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.1.4.html">18.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.1.3.html">18.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.1.2.html">18.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.0.5.html">18.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.1.1.html">18.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.1.0.html">18.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.0.4.html">18.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.0.3.html">18.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.0.2.html">18.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.0.1.html">18.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.3.9.html">17.3.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.3.8.html">17.3.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="18.0.0.html">18.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.3.7.html">17.3.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.3.6.html">17.3.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.3.5.html">17.3.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.3.4.html">17.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.3.3.html">17.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.3.2.html">17.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.2.8.html">17.2.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.3.1.html">17.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.2.7.html">17.2.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.3.0.html">17.3.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.2.6.html">17.2.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.2.5.html">17.2.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.2.4.html">17.2.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.2.3.html">17.2.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.2.2.html">17.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.1.10.html">17.1.10</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.2.1.html">17.2.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.1.9.html">17.1.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.2.0.html">17.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.1.8.html">17.1.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.1.7.html">17.1.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.1.6.html">17.1.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.1.5.html">17.1.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.1.4.html">17.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.1.3.html">17.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.1.2.html">17.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.0.7.html">17.0.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.1.1.html">17.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.0.6.html">17.0.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.1.0.html">17.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.0.5.html">17.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.0.4.html">17.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.0.3.html">17.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.0.2.html">17.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="13.0.6.html">13.0.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.0.1.html">17.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="13.0.5.html">13.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="17.0.0.html">17.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="13.0.4.html">13.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="12.0.6.html">12.0.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="13.0.3.html">13.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="12.0.5.html">12.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="13.0.2.html">13.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="13.0.1.html">13.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="12.0.4.html">12.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="13.0.0.html">13.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="12.0.3.html">12.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="12.0.2.html">12.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="12.0.1.html">12.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="12.0.0.html">12.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.2.2.html">11.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.1.4.html">11.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.2.1.html">11.2.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.1.3.html">11.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.2.0.html">11.2.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.1.2.html">11.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.0.9.html">11.0.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.1.1.html">11.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.0.8.html">11.0.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.1.0.html">11.1.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.0.7.html">11.0.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.0.6.html">11.0.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.0.5.html">11.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.0.4.html">11.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.0.3.html">11.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.6.9.html">10.6.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.0.2.html">11.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.0.1.html">11.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.6.8.html">10.6.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="11.0.0.html">11.0.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.6.7.html">10.6.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.6.6.html">10.6.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.6.5.html">10.6.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.6.4.html">10.6.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.6.3.html">10.6.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.6.2.html">10.6.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.5.9.html">10.5.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.6.1.html">10.6.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.5.8.html">10.5.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.6.0.html">10.6.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.5.7.html">10.5.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.5.6.html">10.5.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.5.5.html">10.5.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.5.4.html">10.5.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.5.3.html">10.5.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.5.2.html">10.5.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.4.7.html">10.4.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.5.1.html">10.5.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.5.0.html">10.5.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.4.6.html">10.4.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.4.5.html">10.4.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.4.4.html">10.4.4</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">10.4.3</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#sha256-checksums">SHA256 checksums</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#new-features">New features</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#bug-fixes">Bug fixes</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#changes">Changes</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="10.4.2.html">10.4.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.3.7.html">10.3.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.4.1.html">10.4.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.3.6.html">10.3.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.4.html">10.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.3.5.html">10.3.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.3.4.html">10.3.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.3.3.html">10.3.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.3.2.html">10.3.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.3.1.html">10.3.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.2.9.html">10.2.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.3.html">10.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.2.8.html">10.2.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.2.7.html">10.2.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.2.6.html">10.2.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.2.5.html">10.2.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.2.4.html">10.2.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.2.3.html">10.2.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.2.2.html">10.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.2.1.html">10.2.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.2.html">10.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.1.6.html">10.1.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.1.5.html">10.1.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.1.4.html">10.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.1.3.html">10.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.1.2.html">10.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.1.1.html">10.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.1.html">10.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.0.5.html">10.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.0.4.html">10.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.0.3.html">10.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.0.2.html">10.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.0.1.html">10.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="10.0.html">10.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.2.5.html">9.2.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.2.4.html">9.2.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.2.3.html">9.2.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.2.2.html">9.2.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.2.1.html">9.2.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.2.html">9.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.1.7.html">9.1.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.1.6.html">9.1.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.1.5.html">9.1.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.1.4.html">9.1.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.1.3.html">9.1.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.1.2.html">9.1.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.1.1.html">9.1.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.1.html">9.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.0.3.html">9.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.0.2.html">9.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.0.1.html">9.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="9.0.html">9.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="8.0.5.html">8.0.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="8.0.4.html">8.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="8.0.3.html">8.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="8.0.2.html">8.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="8.0.1.html">8.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="8.0.html">8.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.11.2.html">7.11.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.11.1.html">7.11.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.11.html">7.11</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.10.3.html">7.10.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.10.2.html">7.10.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.10.1.html">7.10.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.10.html">7.10</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.9.2.html">7.9.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.9.1.html">7.9.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.9.html">7.9</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.8.3.html">7.8.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.8.2.html">7.8.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.8.1.html">7.8.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.8.html">7.8</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.7.1.html">7.7.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.7.html">7.7</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.6.1.html">7.6.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.6.html">7.6</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.5.2.html">7.5.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.5.1.html">7.5.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.5.html">7.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.4.4.html">7.4.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.4.3.html">7.4.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.4.2.html">7.4.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.4.1.html">7.4.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.4.html">7.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.3.html">7.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.2.html">7.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.1.html">7.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.0.4.html">7.0.4</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.0.3.html">7.0.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.0.2.html">7.0.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.0.1.html">7.0.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="7.0.html">7.0</a></li>
+<li class="toctree-l2"><a class="reference internal" href="6.5.3.html">6.5.3</a></li>
+<li class="toctree-l2"><a class="reference internal" href="6.5.2.html">6.5.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="6.5.1.html">6.5.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="6.5.html">6.5</a></li>
+<li class="toctree-l2"><a class="reference internal" href="6.4.2.html">6.4.2</a></li>
+<li class="toctree-l2"><a class="reference internal" href="6.4.1.html">6.4.1</a></li>
+<li class="toctree-l2"><a class="reference internal" href="6.4.html">6.4</a></li>
+</ul>
+</li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../drivers/zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../dispatch.html">GL Dispatch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/relnotes/10.4.3.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>

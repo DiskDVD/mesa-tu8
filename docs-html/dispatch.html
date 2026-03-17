@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+
+<html lang="en" data-content_root="./">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>GL Dispatch &#8212; The Mesa 3D Graphics Library latest documentation</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+    
+    <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=b86133f3" />
+    <link id="pygments_dark_css" media="(prefers-color-scheme: dark)" rel="stylesheet" type="text/css" href="_static/pygments_dark.css?v=c309799c" />
+    <link rel="stylesheet" type="text/css" href="_static/screen.css?v=10557b77" />
+
+    <script src="_static/documentation_options.js?v=91d07486"></script>
+    <script src="_static/doctools.js?v=fd6eb6e6"></script>
+    <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
+    <link rel="icon" href="_static/favicon.ico"/>
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="next" title="Gallium" href="gallium/index.html" />
+    <link rel="prev" title="Debugging GPU hangs, faults, and misrenderings" href="graphics-debugging/debugging-misrenderings-crashes.html" />
+<script>
+  (() => {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const update = (m) => document.documentElement.setAttribute('data-bs-theme', m.matches ? 'dark' : 'light');
+    mq.addEventListener('change', (e) => update(e));
+    update(mq);
+  })();
+</script>
+
+  </head>
+  <body class="d-flex flex-column h-100">
+
+  <nav class="navbar navbar-expand-lg navbar-dark bg-dark-subtle" data-bs-theme="dark">
+    <div class="container">
+      <div class="d-flex flex-row">
+        <a class="navbar-brand" href="https://www.mesa3d.org/">
+          <img class="d-inline-block align-bottom" src="_static/logo.svg" alt="" width="30" height="30">
+          Mesa 3D
+        </a>
+      </div>
+
+      <button id="navbar-button" class="d-none navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+
+      <div class="navbar-collapse" id="navbarSupportedContent">
+        <ul class="navbar-nav ms-auto">
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/" title="Home">Home</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="https://www.mesa3d.org/news/" title="News">News</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link" href="download.html" title="">Getting Started</a>
+          </li>
+
+          <li class="nav-item">
+            <a class="nav-link active" href="index.html" title="">Documentation</a>
+          </li>
+
+        </ul>
+      </div>
+    </div>
+    <script>
+      document.getElementById('navbar-button').classList.remove('d-none');
+      document.getElementById('navbarSupportedContent').classList.add('collapse');
+    </script>
+  </nav>
+
+  <div class="container my-3">
+    <div class="row">
+      <main class="body col-12 col-lg-9 order-1 order-lg-2" role="main">
+        
+  <section id="gl-dispatch">
+<h1>GL Dispatch<a class="headerlink" href="#gl-dispatch" title="Link to this heading">¶</a></h1>
+<p>Several factors combine to make efficient dispatch of OpenGL functions
+fairly complicated. This document attempts to explain some of the issues
+and introduce the reader to Mesa’s implementation. Readers already
+familiar with the issues around GL dispatch can safely skip ahead to the
+<a class="reference internal" href="#overview"><span class="std std-ref">overview of Mesa’s implementation</span></a>.</p>
+<section id="complexity-of-gl-dispatch">
+<h2>1. Complexity of GL Dispatch<a class="headerlink" href="#complexity-of-gl-dispatch" title="Link to this heading">¶</a></h2>
+<p>Every GL application has at least one object called a GL <em>context</em>. This
+object, which is an implicit parameter to every GL function, stores all
+of the GL related state for the application. Every texture, every buffer
+object, every enable, and much, much more is stored in the context.
+Since an application can have more than one context, the context to be
+used is selected by a window-system dependent function such as
+<code class="docutils literal notranslate"><span class="pre">glXMakeContextCurrent</span></code>.</p>
+<p>In environments that implement OpenGL with X-Windows using GLX, every GL
+function, including the pointers returned by <code class="docutils literal notranslate"><span class="pre">glXGetProcAddress</span></code>, are
+<em>context independent</em>. This means that no matter what context is
+currently active, the same <code class="docutils literal notranslate"><span class="pre">glVertex3fv</span></code> function is used.</p>
+<p>This creates the first bit of dispatch complexity. An application can
+have two GL contexts. One context is a direct rendering context where
+function calls are routed directly to a driver loaded within the
+application’s address space. The other context is an indirect rendering
+context where function calls are converted to GLX protocol and sent to a
+server. The same <code class="docutils literal notranslate"><span class="pre">glVertex3fv</span></code> has to do the right thing depending on
+which context is current.</p>
+<p>Highly optimized drivers or GLX protocol implementations may want to
+change the behavior of GL functions depending on current state. For
+example, <code class="docutils literal notranslate"><span class="pre">glFogCoordf</span></code> may operate differently depending on whether or
+not fog is enabled.</p>
+<p>In multi-threaded environments, it is possible for each thread to have a
+different GL context current. This means that poor old <code class="docutils literal notranslate"><span class="pre">glVertex3fv</span></code>
+has to know which GL context is current in the thread where it is being
+called.</p>
+</section>
+<section id="overview-of-mesa-s-implementation">
+<span id="overview"></span><h2>2. Overview of Mesa’s Implementation<a class="headerlink" href="#overview-of-mesa-s-implementation" title="Link to this heading">¶</a></h2>
+<p>Mesa uses two per-thread pointers. The first pointer stores the address
+of the context current in the thread, and the second pointer stores the
+address of the <em>dispatch table</em> associated with that context. The
+dispatch table stores pointers to functions that actually implement
+specific GL functions. Each time a new context is made current in a
+thread, these pointers are updated.</p>
+<p>The implementation of functions such as <code class="docutils literal notranslate"><span class="pre">glVertex3fv</span></code> becomes
+conceptually simple:</p>
+<ul class="simple">
+<li><p>Fetch the current dispatch table pointer.</p></li>
+<li><p>Fetch the pointer to the real <code class="docutils literal notranslate"><span class="pre">glVertex3fv</span></code> function from the
+table.</p></li>
+<li><p>Call the real function.</p></li>
+</ul>
+<p>This can be implemented in just a few lines of C code. The file
+<code class="docutils literal notranslate"><span class="pre">src/mesa/glapi/glapitemp.h</span></code> contains code very similar to this.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-text">Sample dispatch function</span><a class="headerlink" href="#id1" title="Link to this code">¶</a></div>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="kt">void</span><span class="w"> </span><span class="nf">glVertex3f</span><span class="p">(</span><span class="n">GLfloat</span><span class="w"> </span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">GLfloat</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">GLfloat</span><span class="w"> </span><span class="n">z</span><span class="p">)</span>
+<span class="p">{</span>
+<span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">_glapi_table</span><span class="w"> </span><span class="o">*</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">dispatch</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">GET_DISPATCH</span><span class="p">();</span>
+
+<span class="w">    </span><span class="n">dispatch</span><span class="o">-&gt;</span><span class="n">Vertex3f</span><span class="p">(</span><span class="n">x</span><span class="p">,</span><span class="w"> </span><span class="n">y</span><span class="p">,</span><span class="w"> </span><span class="n">z</span><span class="p">);</span>
+<span class="p">}</span>
+</pre></div>
+</div>
+</div>
+<p>The problem with this simple implementation is the large amount of
+overhead that it adds to every GL function call.</p>
+<p>In a multithreaded environment, a naive implementation of
+<code class="docutils literal notranslate"><span class="pre">GET_DISPATCH()</span></code> involves a call to <code class="docutils literal notranslate"><span class="pre">_mesa_glapi_get_dispatch()</span></code> or
+<code class="docutils literal notranslate"><span class="pre">_mesa_glapi_tls_Dispatch</span></code>.</p>
+</section>
+<section id="optimizations">
+<h2>3. Optimizations<a class="headerlink" href="#optimizations" title="Link to this heading">¶</a></h2>
+<p>A number of optimizations have been made over the years to diminish the
+performance hit imposed by GL dispatch. This section describes these
+optimizations. The benefits of each optimization and the situations
+where each can or cannot be used are listed.</p>
+<section id="elf-tls">
+<h3>3.1. ELF TLS<a class="headerlink" href="#elf-tls" title="Link to this heading">¶</a></h3>
+<p>Starting with the 2.4.20 Linux kernel, each thread is allocated an area
+of per-thread, global storage. Variables can be put in this area using
+some extensions to GCC that called <code class="docutils literal notranslate"><span class="pre">ELF</span> <span class="pre">TLS</span></code>. By storing the dispatch table
+pointer in this area, the expensive call to <code class="docutils literal notranslate"><span class="pre">pthread_getspecific</span></code> and
+the test of <code class="docutils literal notranslate"><span class="pre">_mesa_glapi_Dispatch</span></code> can be avoided. As we don’t support for
+Linux kernel earlier than 2.4.20, so we can always using <code class="docutils literal notranslate"><span class="pre">ELF</span> <span class="pre">TLS</span></code>.</p>
+<p>The dispatch table pointer is stored in a new variable called
+<code class="docutils literal notranslate"><span class="pre">_mesa_glapi_tls_Dispatch</span></code>. A new variable name is used so that a single
+libGL can implement both interfaces. This allows the libGL to operate
+with direct rendering drivers that use either interface. Once the
+pointer is properly declared, <code class="docutils literal notranslate"><span class="pre">GET_DISPACH</span></code> becomes a simple variable
+reference.</p>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-text">TLS <code class="docutils literal notranslate"><span class="pre">GET_DISPATCH</span></code> Implementation</span><a class="headerlink" href="#id2" title="Link to this code">¶</a></div>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="k">extern</span><span class="w"> </span><span class="n">__THREAD_INITIAL_EXEC</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">_glapi_table</span><span class="w"> </span><span class="o">*</span><span class="n">_mesa_glapi_tls_Dispatch</span><span class="p">;</span>
+
+<span class="cp">#define GET_DISPATCH() _mesa_glapi_tls_Dispatch</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="assembly-language-dispatch-stubs">
+<h3>3.2. Assembly Language Dispatch Stubs<a class="headerlink" href="#assembly-language-dispatch-stubs" title="Link to this heading">¶</a></h3>
+<p>Many platforms have difficulty properly optimizing the tail-call in the
+dispatch stubs. Platforms like x86 that pass parameters on the stack
+seem to have even more difficulty optimizing these routines. All of the
+dispatch routines are very short, and it is trivial to create optimal
+assembly language versions. The amount of optimization provided by using
+assembly stubs varies from platform to platform and application to
+application. However, by using the assembly stubs, many platforms can
+use an additional space optimization (see <a class="reference internal" href="#fixedsize"><span class="std std-ref">below</span></a>).</p>
+<p>The biggest hurdle to creating assembly stubs is handling the various
+ways that the dispatch table pointer can be accessed. There are four
+different methods that can be used:</p>
+<ol class="arabic simple">
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">_mesa_glapi_Dispatch</span></code> directly in builds for non-multithreaded
+environments.</p></li>
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">_mesa_glapi_Dispatch</span></code> and <code class="docutils literal notranslate"><span class="pre">_mesa_glapi_get_dispatch</span></code> in
+multithreaded environments.</p></li>
+<li><p>Using <code class="docutils literal notranslate"><span class="pre">_mesa_glapi_tls_Dispatch</span></code> directly in TLS enabled multithreaded
+environments.</p></li>
+</ol>
+<p>People wishing to implement assembly stubs for new platforms should
+focus on #3 if the new platform supports TLS. Otherwise implement #2.
+Environments that do not support multithreading are
+uncommon and not terribly relevant.</p>
+<p>Selection of the dispatch table pointer access method is controlled by a
+few preprocessor defines.</p>
+<ul class="simple">
+<li><p>If <code class="docutils literal notranslate"><span class="pre">HAVE_PTHREAD</span></code> is defined, method #2 is used.</p></li>
+<li><p>If none of the preceding are defined, method #1 is used.</p></li>
+</ul>
+<p>Two different techniques are used to handle the various different cases.
+On x86 and SPARC, a macro called <code class="docutils literal notranslate"><span class="pre">GL_STUB</span></code> is used. In the preamble of
+the assembly source file different implementations of the macro are
+selected based on the defined preprocessor variables. The assembly code
+then consists of a series of invocations of the macros such as:</p>
+<div class="literal-block-wrapper docutils container" id="id3">
+<div class="code-block-caption"><span class="caption-text">SPARC Assembly Implementation of <code class="docutils literal notranslate"><span class="pre">glColor3fv</span></code></span><a class="headerlink" href="#id3" title="Link to this code">¶</a></div>
+<div class="highlight-c notranslate"><div class="highlight"><pre><span></span><span class="n">GL_STUB</span><span class="p">(</span><span class="n">Color3fv</span><span class="p">,</span><span class="w"> </span><span class="n">_gloffset_Color3fv</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>The benefit of this technique is that changes to the calling pattern
+(i.e., addition of a new dispatch table pointer access method) require
+fewer changed lines in the assembly code.</p>
+<p>However, this technique can only be used on platforms where the function
+implementation does not change based on the parameters passed to the
+function. For example, since x86 passes all parameters on the stack, no
+additional code is needed to save and restore function parameters around
+a call to <code class="docutils literal notranslate"><span class="pre">pthread_getspecific</span></code>. Since x86-64 passes parameters in
+registers, varying amounts of code needs to be inserted around the call
+to <code class="docutils literal notranslate"><span class="pre">pthread_getspecific</span></code> to save and restore the GL function’s
+parameters.</p>
+<p>The other technique, used by platforms like x86-64 that cannot use the
+first technique, is to insert <code class="docutils literal notranslate"><span class="pre">#ifdef</span></code> within the assembly
+implementation of each function. This makes the assembly file
+considerably larger (e.g., 29,332 lines for <code class="docutils literal notranslate"><span class="pre">glapi_x86-64.S</span></code> versus
+1,155 lines for <code class="docutils literal notranslate"><span class="pre">glapi_x86.S</span></code>) and causes simple changes to the
+function implementation to generate many lines of diffs. Since the
+assembly files are typically generated by scripts, this isn’t a
+significant problem.</p>
+<p>Once a new assembly file is created, it must be inserted in the build
+system. There are two steps to this. The file must first be added to
+<code class="docutils literal notranslate"><span class="pre">src/mesa/sources</span></code>. That gets the file built and linked. The second
+step is to add the correct <code class="docutils literal notranslate"><span class="pre">#ifdef</span></code> magic to
+<code class="docutils literal notranslate"><span class="pre">src/mesa/glapi/glapi_dispatch.c</span></code> to prevent the C version of the
+dispatch functions from being built.</p>
+</section>
+<section id="fixed-length-dispatch-stubs">
+<span id="fixedsize"></span><h3>3.3. Fixed-Length Dispatch Stubs<a class="headerlink" href="#fixed-length-dispatch-stubs" title="Link to this heading">¶</a></h3>
+<p>To implement <code class="docutils literal notranslate"><span class="pre">glXGetProcAddress</span></code>, Mesa stores a table that associates
+function names with pointers to those functions. This table is stored in
+<code class="docutils literal notranslate"><span class="pre">src/mesa/glapi/glprocs.h</span></code>. For different reasons on different
+platforms, storing all of those pointers is inefficient. On most
+platforms, including all known platforms that support TLS, we can avoid
+this added overhead.</p>
+<p>If the assembly stubs are all the same size, the pointer need not be
+stored for every function. The location of the function can instead be
+calculated by multiplying the size of the dispatch stub by the offset of
+the function in the table. This value is then added to the address of
+the first dispatch stub.</p>
+<p>This path is activated by adding the correct <code class="docutils literal notranslate"><span class="pre">#ifdef</span></code> magic to
+<code class="docutils literal notranslate"><span class="pre">src/mesa/glapi/glapi.c</span></code> just before <code class="docutils literal notranslate"><span class="pre">glprocs.h</span></code> is included.</p>
+</section>
+</section>
+</section>
+
+
+      </main>
+
+      
+      <nav id="menu" class="rounded col-12 col-lg-3 order-2 order-lg-1 bg-dark-subtle pb-3">
+        <div class="my-3" role="search">
+          <form id="search-form" action="search.html" method="get">
+            <div class="form-group">
+              <input class="form-control" type="text" name="q" placeholder="Search docs" />
+              <input type="hidden" name="check_keywords" value="yes" />
+              <input type="hidden" name="area" value="default" />
+            </div>
+          </form>
+        </div>
+
+        
+        
+        
+          <p aria-level="2" class="caption" role="heading"><span class="caption-text">Documentation</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="index.html">Introduction</a></li>
+<li class="toctree-l1"><a class="reference internal" href="history.html">Project History</a></li>
+<li class="toctree-l1"><a class="reference internal" href="amber.html">Amber Branch</a></li>
+<li class="toctree-l1"><a class="reference internal" href="systems.html">Platforms and Drivers</a></li>
+<li class="toctree-l1"><a class="reference internal" href="license.html">License and Copyright</a></li>
+<li class="toctree-l1"><a class="reference internal" href="faq.html">Frequently Asked Questions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="relnotes.html">Release Notes</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Download and Install</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="download.html">Downloading and Unpacking</a></li>
+<li class="toctree-l1"><a class="reference internal" href="install.html">Compiling and Installing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="precompiled.html">Precompiled Libraries</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Need help?</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="lists.html">Mailing Lists</a></li>
+<li class="toctree-l1"><a class="reference internal" href="bugs.html">Report a Bug</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">User Topics</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="shading.html">Shading Language</a></li>
+<li class="toctree-l1"><a class="reference internal" href="egl.html">EGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="opengles.html">OpenGL ES</a></li>
+<li class="toctree-l1"><a class="reference internal" href="envvars.html">Environment Variables</a></li>
+<li class="toctree-l1"><a class="reference internal" href="debugging.html">Debugging Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="perf.html">Performance Tips</a></li>
+<li class="toctree-l1"><a class="reference internal" href="gpu-perf-tracing.html">GPU Performance Tracing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="extensions.html">Mesa Extensions</a></li>
+<li class="toctree-l1"><a class="reference internal" href="application-issues.html">Application Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="viewperf.html">Viewperf Issues</a></li>
+<li class="toctree-l1"><a class="reference internal" href="xlibdriver.html">Xlib Software Driver</a></li>
+<li class="toctree-l1"><a class="reference internal" href="teflon.html">TensorFlow Lite delegate</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Drivers</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="drivers/anv.html">ANV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/asahi.html">Asahi</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/d3d12.html">D3D12</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/freedreno.html">Freedreno</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/kosmickrisp.html">KosmicKrisp</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/lima.html">Lima</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/llvmpipe.html">LLVMpipe</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/nvk.html">NVK</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/panfrost.html">Panfrost</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/powervr.html">PowerVR</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/radv.html">RADV</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/svga3d.html">VMware SVGA3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/v3d.html">V3D</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/vc4.html">VC4</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/venus.html">Virtio-GPU Venus</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/virgl.html">VirGL</a></li>
+<li class="toctree-l1"><a class="reference internal" href="drivers/zink.html">Zink</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Developer Topics</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="repository.html">Source Code Repository</a></li>
+<li class="toctree-l1"><a class="reference internal" href="sourcetree.html">Source Code Tree</a></li>
+<li class="toctree-l1"><a class="reference internal" href="utilities.html">Development Utilities</a></li>
+<li class="toctree-l1"><a class="reference internal" href="helpwanted.html">Help Wanted</a></li>
+<li class="toctree-l1"><a class="reference internal" href="devinfo.html">Development Notes</a></li>
+<li class="toctree-l1"><a class="reference internal" href="codingstyle.html">Coding Style</a></li>
+<li class="toctree-l1"><a class="reference internal" href="submittingpatches.html">Submitting Patches</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rust.html">Rust</a></li>
+<li class="toctree-l1"><a class="reference internal" href="releasing.html">Releasing Process</a></li>
+<li class="toctree-l1"><a class="reference internal" href="release-calendar.html">Release Calendar</a></li>
+<li class="toctree-l1"><a class="reference internal" href="graphics-debugging/debugging-misrenderings-crashes.html">Debugging GPU hangs, faults, and misrenderings</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">GL Dispatch</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#complexity-of-gl-dispatch">1. Complexity of GL Dispatch</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#overview-of-mesa-s-implementation">2. Overview of Mesa’s Implementation</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#optimizations">3. Optimizations</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#elf-tls">3.1. ELF TLS</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#assembly-language-dispatch-stubs">3.2. Assembly Language Dispatch Stubs</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#fixed-length-dispatch-stubs">3.3. Fixed-Length Dispatch Stubs</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="gallium/index.html">Gallium</a></li>
+<li class="toctree-l1"><a class="reference internal" href="vulkan/index.html">Vulkan Runtime</a></li>
+<li class="toctree-l1"><a class="reference internal" href="nir/index.html">NIR Intermediate Representation (NIR)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="spirv/index.html">SPIR-V Debugging</a></li>
+<li class="toctree-l1"><a class="reference internal" href="isl/index.html">Intel Surface Layout (ISL)</a></li>
+<li class="toctree-l1"><a class="reference internal" href="isaspec.html">ISASPEC - XML Based ISA Specification</a></li>
+<li class="toctree-l1"><a class="reference internal" href="rusticl.html">Rusticl</a></li>
+<li class="toctree-l1"><a class="reference internal" href="android.html">Android</a></li>
+<li class="toctree-l1"><a class="reference internal" href="macos.html">Notes for macOS</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://www.kernel.org/doc/html/latest/gpu/">Linux Kernel Drivers</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Testing</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="conform.html">Conformance Testing</a></li>
+<li class="toctree-l1"><a class="reference internal" href="ci/index.html">Continuous Integration</a></li>
+</ul>
+<p aria-level="2" class="caption" role="heading"><span class="caption-text">Links</span></p>
+<ul>
+<li class="toctree-l1"><a class="reference external" href="https://www.opengl.org">OpenGL Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://dri.freedesktop.org">DRI Website</a></li>
+<li class="toctree-l1"><a class="reference external" href="https://planet.freedesktop.org">Developer Blogs</a></li>
+</ul>
+
+        
+        
+      </nav>
+      
+    </div>
+  </div>
+
+  <footer class="footer py-3 bg-body-tertiary text-muted">
+    <div class="container">
+      <div class="row">
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Documentation</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://docs.mesa3d.org/license.html">License</a></li>
+            <li><a href="https://docs.mesa3d.org/faq.html">FAQ</a></li>
+            <li><a href="https://docs.mesa3d.org/download.html">Getting Started</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">Community</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://gitlab.freedesktop.org/mesa">GitLab</a></li>
+            <li><a href="https://docs.mesa3d.org/lists.html">Mailing Lists</a></li>
+            <li><a href="https://docs.mesa3d.org/bugs.html">Report a Bug</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <h6 class="text-body">More</h6>
+          <ul class="list-unstyled">
+            <li><a href="https://www.mesa3d.org/website/">About Mesa3D.org</a></li>
+            <li><a href="https://docs.mesa3d.org/thanks.html">Acknowledgements</a></li>
+            <li><a href="https://dri.freedesktop.org/wiki/">Mesa / DRI Wiki</a></li>
+          </ul>
+        </div>
+
+        <div class="col-12 col-lg-3">
+          <p>Hosted by <a href="https://www.freedesktop.org/">Freedesktop.org</a></p>
+          <p><a href="https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/docs/dispatch.rst">Edit this page</a></p>
+        </div>
+
+      </div>
+    </div>
+  </footer>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js" integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+  <script>
+  (() => {
+    const collapseElementList = document.querySelectorAll('#menu > .caption + ul');
+    // Add Bootstrap collapse components to the expandable menu-captions
+    [...collapseElementList].forEach(collapseEl => {
+      // disable transition if we need toggling
+      const toggle = collapseEl.classList.contains('current');
+      if (toggle)
+        collapseEl.style.transition = "none";
+      else
+        collapseEl.previousElementSibling.classList.add('collapsed');
+
+      // enable collapse
+      collapseEl.classList.add('collapse');
+      collapseEl.previousElementSibling.classList.add('collapse-icon');
+      const collapse = new bootstrap.Collapse(collapseEl, {
+        toggle: toggle
+      });
+
+      // disable transition-override again
+      if (toggle) {
+        collapseEl.addEventListener('shown.bs.collapse', event => {
+          collapseEl.style.removeProperty('transition');
+        }, {once : true})
+      }
+
+      // collapse on click on previous element
+      collapseEl.previousElementSibling.addEventListener('click', (event) => {
+        collapse.toggle();
+        collapseEl.previousElementSibling.classList.toggle('collapsed');
+      });
+    });
+  })();
+  </script>
+
+  </body>
+</html>
