@@ -1637,13 +1637,13 @@ a8xx_810 = GPUProps(
         sysmem_per_ccu_depth_cache_size = 32 * 1024,
         
         # GMEM VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ
-        gmem_vpc_attr_buf_size = 49152,         # 48KB - стабильно
-        gmem_vpc_pos_buf_size = 24576,          # 24KB - стабильно
-        gmem_vpc_bv_pos_buf_size = 32768,       # 32KB - стабильно
+        gmem_vpc_attr_buf_size = 32768,         # 48KB - стабильно
+        gmem_vpc_pos_buf_size = 16384,          # 24KB - стабильно
+        gmem_vpc_bv_pos_buf_size = 16384,       # 32KB - стабильно
         
         # GMEM кэши - без изменений
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
-        gmem_per_ccu_color_cache_size = 16 * 1024,
+        gmem_per_ccu_color_cache_size = 32 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
         gmem_per_ccu_depth_cache_size = 64 * 1024,
         
@@ -1667,9 +1667,9 @@ add_gpus([
         num_slices = 1,
         tile_align_w = 64,
         tile_align_h = 64,
-        tile_max_w = 64,
-        tile_max_h = 64,
-        num_vsc_pipes = 8,
+        tile_max_w = 128,
+        tile_max_h = 128,
+        num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
