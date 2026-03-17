@@ -1643,9 +1643,9 @@ a8xx_810 = GPUProps(
         
         # GMEM кэши - без изменений
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
-        gmem_per_ccu_color_cache_size = 32 * 1024,
+        gmem_per_ccu_color_cache_size = 16 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
-        gmem_per_ccu_depth_cache_size = 64 * 1024,
+        gmem_per_ccu_depth_cache_size = 48 * 1024,
         
         gmem_size = 512 * 1024,  # 512kb GMEM    
         # A810 не поддерживает ray tracing
@@ -1667,8 +1667,8 @@ add_gpus([
         num_slices = 1,
         tile_align_w = 32,
         tile_align_h = 16,
-        tile_max_w = 64,
-        tile_max_h =  96,
+        tile_max_w = 192,
+        tile_max_h =  192,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
