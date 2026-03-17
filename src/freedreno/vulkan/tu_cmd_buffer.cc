@@ -4264,59 +4264,126 @@ tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
    /* Note: we reverse the order of walking the pipes and tiles on every
     * other row, to improve texture cache locality compared to raster order.
     */
-for (uint32_t py = 0; py < vsc->pipe_count.height; py++) {
-    for (uint32_t pipe_row_i = 0; pipe_row_i < vsc->pipe_count.width; pipe_row_i++) {
-        uint32_t px;
-        
-        /* ===== A810: ПРОСТОЙ ЛИНЕЙНЫЙ ОБХОД ===== */
-        if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-            px = pipe_row_i;  /* Линейно, без зигзага */
-        } else {
-            if (py & 1)
-                px = vsc->pipe_count.width - 1 - pipe_row_i;
-            else
-                px = pipe_row_i;
-        }
-        /* ===== КОНЕЦ ===== */
-        
-        uint32_t pipe = pipe_row + px;
-        uint32_t tx1 = px * vsc->pipe0.width;
-        uint32_t ty1 = py * vsc->pipe0.height;
-        
-        for (uint32_t ty = ty1; ty < ty2; ty++) {
-            for (uint32_t tile_row_i = 0; tile_row_i < tile_row_stride; tile_row_i++) {
-                uint32_t tx;
-                
-                /* ===== A810: ПРОСТОЙ ЛИНЕЙНЫЙ ОБХОД ТАЙЛОВ ===== */
-                if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-                    tx = tile_row_i;  /* Линейно, без зигзага */
-                } else {
-                    if (ty & 1)
-                        tx = tile_row_stride - 1 - tile_row_i;
-                    else
-                        tx = tile_row_i;
-                }
-                /* ===== КОНЕЦ ===== */
-                
-                struct tu_tile_config tile = {
-                    .pos = { tx1 + tx, ty },
-                    .pipe = pipe,
-                    .slot_mask = 1u << (slot_row + tx),
-                    .sysmem_extent = { 1, 1 },
-                    .gmem_extent = { 1, 1 },
-                };
-                
-                tu_calc_bin_visibility(cmd, &tile, fdm_offsets);
-                if (has_fdm)
-                    tu_calc_frag_area(cmd, &tile, fdm, fdm_offsets);
-                else
-                    tu_identity_frag_area(cmd, &tile);
+template <chip CHIP>
+static void
+tu_cmd_render_tiles(struct tu_cmd_buffer *cmd,
+                    struct tu_renderpass_result *autotune_result,
+                    const VkOffset2D *fdm_offsets)
+{
+   const struct tu_tiling_config *tiling = cmd->state.tiling;
+   const struct tu_vsc_config *vsc = tu_vsc_config(cmd, tiling);
+   const struct tu_image_view *fdm = NULL;
 
-                tu6_render_tile<CHIP>(cmd, &cmd->cs, &tile, fdm_offsets);
+   /* Preamble save/restore for BINs doesn't handle PC_TESS_BASE, so we
+    * assume that PC_TESS_BASE is invalid after any GMEM pass.
+    */
+   cmd->state.tessfactor_addr_set = false;
+
+   VkResult result = tu_allocate_transient_attachments(cmd, false);
+   if (result != VK_SUCCESS) {
+      vk_command_buffer_set_error(&cmd->vk, result);
+      return;
+   }
+
+   if (cmd->state.pass->fragment_density_map.attachment != VK_ATTACHMENT_UNUSED) {
+      fdm = cmd->state.attachments[cmd->state.pass->fragment_density_map.attachment];
+   }
+
+   bool has_fdm = fdm || (TU_DEBUG(FDM) && cmd->state.pass->has_fdm);
+   /* TODO: we should also be able to merge tiles when only
+    * per_view_render_areas is used without FDM. That requires using another
+    * method to force disable draws since we don't want to force the viewport
+    * to be re-emitted, like overriding the view mask. It would also require
+    * disabling stores, and adding patchpoints for CmdClearAttachments in
+    * secondaries or making it use the view mask.
+    */
+   bool merge_tiles = has_fdm && !TU_DEBUG(NO_BIN_MERGING) &&
+      cmd->device->physical_device->info->props.has_bin_mask;
+
+   /* If not using FDM make sure not to accidentally apply the offsets */
+   if (!has_fdm)
+      fdm_offsets = NULL;
+
+   /* Create gmem stores now (at EndRenderPass time)) because they needed to
+    * know whether to allow their conditional execution, which was tied to a
+    * state that was known only at the end of the renderpass.  They will be
+    * called from tu6_render_tile().
+    */
+   tu_cs_begin(&cmd->tile_store_cs);
+   tu6_emit_tile_store_cs<CHIP>(cmd, &cmd->tile_store_cs);
+   tu_cs_end(&cmd->tile_store_cs);
+
+   tu6_tile_render_begin<CHIP>(cmd, &cmd->cs, autotune_result, fdm_offsets);
+
+   /* Note: we reverse the order of walking the pipes and tiles on every
+    * other row, to improve texture cache locality compared to raster order.
+    */
+   for (uint32_t py = 0; py < vsc->pipe_count.height; py++) {
+      uint32_t pipe_row = py * vsc->pipe_count.width;
+      
+      for (uint32_t pipe_row_i = 0; pipe_row_i < vsc->pipe_count.width; pipe_row_i++) {
+         uint32_t px;
+         
+         /* ===== A810: ПРОСТОЙ ЛИНЕЙНЫЙ ОБХОД ===== */
+         if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+            px = pipe_row_i;  /* Линейно, без зигзага */
+         } else {
+            if (py & 1)
+               px = vsc->pipe_count.width - 1 - pipe_row_i;
+            else
+               px = pipe_row_i;
+         }
+         /* ===== КОНЕЦ ===== */
+         
+         uint32_t pipe = pipe_row + px;
+         uint32_t tx1 = px * vsc->pipe0.width;
+         uint32_t ty1 = py * vsc->pipe0.height;
+         uint32_t tx2 = MIN2(tx1 + vsc->pipe0.width, vsc->tile_count.width);
+         uint32_t ty2 = MIN2(ty1 + vsc->pipe0.height, vsc->tile_count.height);
+         uint32_t tile_row_stride = tx2 - tx1;
+         uint32_t slot_row = 0;
+
+         if (merge_tiles) {
+            tu_render_pipe_fdm<CHIP>(cmd, pipe, tx1, ty1, tx2, ty2, fdm,
+                                     fdm_offsets);
+            continue;
+         }
+
+         for (uint32_t ty = ty1; ty < ty2; ty++) {
+            for (uint32_t tile_row_i = 0; tile_row_i < tile_row_stride; tile_row_i++) {
+               uint32_t tx;
+               
+               /* ===== A810: ПРОСТОЙ ЛИНЕЙНЫЙ ОБХОД ТАЙЛОВ ===== */
+               if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+                  tx = tile_row_i;  /* Линейно, без зигзага */
+               } else {
+                  if (ty & 1)
+                     tx = tile_row_stride - 1 - tile_row_i;
+                  else
+                     tx = tile_row_i;
+               }
+               /* ===== КОНЕЦ ===== */
+               
+               struct tu_tile_config tile = {
+                  .pos = { tx1 + tx, ty },
+                  .pipe = pipe,
+                  .slot_mask = 1u << (slot_row + tx),
+                  .sysmem_extent = { 1, 1 },
+                  .gmem_extent = { 1, 1 },
+               };
+               
+               tu_calc_bin_visibility(cmd, &tile, fdm_offsets);
+               if (has_fdm)
+                  tu_calc_frag_area(cmd, &tile, fdm, fdm_offsets);
+               else
+                  tu_identity_frag_area(cmd, &tile);
+
+               tu6_render_tile<CHIP>(cmd, &cmd->cs, &tile, fdm_offsets);
             }
-        }
-    }
-}
+            slot_row += tile_row_stride;
+         }
+      }
+   }
 
    tu6_tile_render_end<CHIP>(cmd, &cmd->cs, autotune_result);
 
