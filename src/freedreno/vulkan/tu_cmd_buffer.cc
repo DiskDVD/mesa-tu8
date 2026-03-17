@@ -3705,6 +3705,13 @@ tu6_render_tile(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
                 const struct tu_tile_config *tile,
                 const VkOffset2D *fdm_offsets)
 {
+    /* ===== A810: СИНХРОНИЗАЦИЯ ДЛЯ ПЕРВОГО ТАЙЛА ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810 && 
+       tile->pos.x == 0 && tile->pos.y == 0) {
+      tu_cs_emit_pkt7(cs, CP_WAIT_FOR_IDLE, 0);
+      tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
+   }
+   /* ===== КОНЕЦ ===== */
    tu6_emit_tile_select<CHIP>(cmd, &cmd->cs, tile, fdm_offsets);
    tu_lrz_before_tile<CHIP>(cmd, &cmd->cs);
 
