@@ -7266,27 +7266,17 @@ tu_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
    }
 
 tu_choose_gmem_layout(cmd);
-
 /* ===== ФИКС ДЛЯ ADRENO 810 ===== */
 if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-   /* Принудительно устанавливаем размер тайла для A810 */
-   if (cmd->state.tiling) {
-      struct tu_tiling_config *tiling = (struct tu_tiling_config*)cmd->state.tiling;
-      cmd->state.tiling->tile0.width = 192;
-      cmd->state.tiling->tile0.height = 192;
-      
-      /* Проверяем, не превышает ли размер GMEM */
-      uint32_t tile_size = 192 * 192 * 4; // 32bpp
-      uint32_t total_needed = tile_size * cmd->state.pass->attachment_count;
-      
-      if (total_needed > 512 * 1024) {
-         mesa_logw("A810: GMEM overflow, forcing sysmem");
-         cmd->state.rp.gmem_disable_reason = "A810: GMEM overflow after fix";
-         cmd->state.rp.disable_gmem = true;
-      }
-   }
+   /* Принудительно используем размер тайла 192x192 для всех операций */
+   cmd->state.tile_width = 192;
+   cmd->state.tile_height = 192;
+   
+   /* Добавляем отладочную информацию */
+   mesa_logi("A810: Using forced tile size %ux%u", 192, 192);
 }
 /* ===== КОНЕЦ ФИКСА ===== */
+
 
 /* Note: because this is external, any flushes will happen before draw_cs
  * gets called. However deferred flushes could have to happen later as part
