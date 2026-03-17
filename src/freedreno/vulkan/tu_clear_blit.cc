@@ -5715,6 +5715,12 @@ tu_store_gmem_attachment(struct tu_cmd_buffer *cmd,
       dst_format = PIPE_FORMAT_Z32_FLOAT;
 
    if (dst->samples > 1) {
+          /* Для A810 принудительно выравниваем scissor перед store */
+         if (!per_layer_render_area) {
+            tu6_emit_blit_scissor(cmd, cs, 0, false);
+         }
+      }
+      /* ===== КОНЕЦ ФИКСА ===== */
       /* If we hit this path, we have to disable draw states after every tile
        * instead of once at the end of the renderpass, so that they aren't
        * executed when calling CP_DRAW.
