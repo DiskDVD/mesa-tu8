@@ -5485,6 +5485,18 @@ tu_attachment_store_unaligned(struct tu_cmd_buffer *cmd, uint32_t a)
    if (cmd->state.pass->has_fdm)
       return true;
 
+   /* ===== A810: СПЕЦИАЛЬНОЕ ВЫРАВНИВАНИЕ ===== */
+   uint32_t align_w, align_h;
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* A810: аппаратное выравнивание 32x16 */
+      align_w = 32;
+      align_h = 16;
+   } else {
+      align_w = phys_dev->info->gmem_align_w;
+      align_h = phys_dev->info->gmem_align_h;
+   }
+   /* ===== КОНЕЦ ===== */
+
    unsigned render_area_count =
       cmd->state.per_layer_render_area ? cmd->state.pass->num_views : 1;
 
@@ -5501,15 +5513,16 @@ tu_attachment_store_unaligned(struct tu_cmd_buffer *cmd, uint32_t a)
       bool need_y2_align =
          y2 != iview->view.height || iview->view.need_y2_align;
 
-      if (x1 % phys_dev->info->gmem_align_w ||
-          (x2 % phys_dev->info->gmem_align_w && x2 != iview->view.width) ||
-          y1 % phys_dev->info->gmem_align_h ||
-          (y2 % phys_dev->info->gmem_align_h && need_y2_align))
+      if (x1 % align_w ||
+          (x2 % align_w && x2 != iview->view.width) ||
+          y1 % align_h ||
+          (y2 % align_h && need_y2_align))
          return true;
    }
 
    return false;
 }
+
 
 /* The fast path cannot handle mismatched mutability. */
 static bool
