@@ -1077,22 +1077,32 @@ tu6_emit_blit_scissor(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
    uint32_t x2 = x1 + render_area->extent.width - 1;
    uint32_t y2 = y1 + render_area->extent.height - 1;
    
-   /* ===== ФИКС ВЫРАВНИВАНИЯ ДЛЯ ADRENO 810 ===== */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-       /* Принудительное выравнивание 32x16 для A810 */
-      x1 = x1 & ~31;
-      y1 = y1 & ~15;
-      x2 = ((x2 + 32) & ~31) - 1;
-      y2 = ((y2 + 16) & ~15) - 1;
-   } else if (align) {
-      /* Стандартное выравнивание для других GPU */
-      x1 = x1 & ~(phys_dev->info->gmem_align_w - 1);
-      y1 = y1 & ~(phys_dev->info->gmem_align_h - 1);
-      x2 = ALIGN_POT(x2 + 1, phys_dev->info->gmem_align_w) - 1;
-      y2 = ALIGN_POT(y2 + 1, phys_dev->info->gmem_align_h) - 1;
-   }
-   /* ===== КОНЕЦ ФИКСА ===== */  
-
+   /* ===== ИСПРАВЛЕНО ДЛЯ ADRENO 810 ===== */
+if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+    /* A810: аппаратное выравнивание 32x16, сохраняем границы тайла */
+    uint32_t orig_x1 = x1;
+    uint32_t orig_y1 = y1;
+    uint32_t orig_x2 = x2;
+    uint32_t orig_y2 = y2;
+    
+    x1 = orig_x1 & ~31;
+    y1 = orig_y1 & ~15;
+    x2 = ((orig_x2 + 32) & ~31) - 1;
+    y2 = ((orig_y2 + 16) & ~15) - 1;
+    
+    /* Не выходим за пределы исходного тайла */
+    if (x2 > orig_x2) x2 = orig_x2;
+    if (y2 > orig_y2) y2 = orig_y2;
+    if (x2 < x1) x2 = orig_x2;
+    if (y2 < y1) y2 = orig_y2;
+} else if (align) {
+    /* Стандартное выравнивание для других GPU */
+    x1 = x1 & ~(phys_dev->info->gmem_align_w - 1);
+    y1 = y1 & ~(phys_dev->info->gmem_align_h - 1);
+    x2 = ALIGN_POT(x2 + 1, phys_dev->info->gmem_align_w) - 1;
+    y2 = ALIGN_POT(y2 + 1, phys_dev->info->gmem_align_h) - 1;
+}
+/* ===== КОНЕЦ ФИКСА ===== */    
    if (align) {
       x1 = x1 & ~(phys_dev->info->gmem_align_w - 1);
       y1 = y1 & ~(phys_dev->info->gmem_align_h - 1);
