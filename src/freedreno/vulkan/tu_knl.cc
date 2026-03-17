@@ -368,32 +368,10 @@ tu_physical_device_try_create(struct vk_instance *vk_instance,
                                  path, version->name);
    }
 
-   /* ===== KGSL ТОЛЬКО КАК ЗАПАСНОЙ ВАРИАНТ ===== */
+   /* KGSL полностью отключаем для A810 */
    if (result != VK_SUCCESS) {
-#ifdef TU_HAS_KGSL
       close(fd);
-      /* Пробуем KGSL как запасной вариант */
-      fd = open("/dev/kgsl-3d0", O_RDWR | O_CLOEXEC);
-      if (fd >= 0) {
-         result = tu_knl_kgsl_load(instance, fd);
-         if (result == VK_SUCCESS) {
-            /* Создаем фиктивное устройство для KGSL */
-            device = (struct tu_physical_device *) 
-               vk_zalloc(&instance->vk.alloc, sizeof(*device), 8,
-                        VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
-            if (!device) {
-               result = VK_ERROR_OUT_OF_HOST_MEMORY;
-               goto out;
-            }
-            device->fd = fd;
-            device->instance = instance;
-            strncpy(device->fd_path, "/dev/kgsl-3d0", sizeof(device->fd_path) - 1);
-            result = tu_physical_device_init(device, instance);
-            if (TU_DEBUG(STARTUP))
-               mesa_logw("Using KGSL fallback driver - GMEM may have issues!");
-         }
-      }
-#endif
+      fd = -1;
    }
 
    if (result != VK_SUCCESS)
