@@ -580,12 +580,6 @@ tu_autotune_use_bypass(struct tu_autotune *at,
    const struct tu_render_pass *pass = cmd_buffer->state.pass;
    const struct tu_framebuffer *framebuffer = cmd_buffer->state.framebuffer;
 
-   /* Если A810 - форсируем GMEM для сложных сцен */
-   if (cmd_buffer->device->physical_device->dev_id.gpu_id == 810 &&
-       cmd_buffer->state.rp.drawcall_count > 20) {
-      return false; /* Используем GMEM */
-   }
-
    /* If a feedback loop in the subpass caused one of the pipelines used to set
     * SINGLE_PRIM_MODE(FLUSH_PER_OVERLAP_AND_OVERWRITE) or even
     * SINGLE_PRIM_MODE(FLUSH), then that should cause significantly increased
@@ -642,16 +636,8 @@ tu_autotune_use_bypass(struct tu_autotune *at,
       const uint64_t total_draw_call_bandwidth =
          estimate_drawcall_bandwidth(cmd_buffer, avg_samples);
 
-      /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 - пересчет весов */
-      if (cmd_buffer->device->physical_device->dev_id.gpu_id == 810) {
-         /* A810: GMEM эффективнее, увеличиваем вес GMEM */
-         sysmem_bandwidth = sysmem_bandwidth * 12 / 10;
-         gmem_bandwidth = gmem_bandwidth * 9 / 10;
-      } else {
-         /* Стандартные значения для других GPU */
-         sysmem_bandwidth += total_draw_call_bandwidth;
-         gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
-      }
+      sysmem_bandwidth += total_draw_call_bandwidth;
+      gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
 
       const bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;
       if (TU_AUTOTUNE_DEBUG_LOG) {

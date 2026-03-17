@@ -226,41 +226,11 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 
-         /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      /* Фиксируем оптимальные значения 0x3000 для обоих буферов */
-      if (dev->vsc_draw_strm_pitch < A810_VSC_DRAW_SIZE) {
-         dev->vsc_draw_strm_pitch = A810_VSC_DRAW_SIZE;
-      }
-      if (dev->vsc_prim_strm_pitch < A810_VSC_PRIM_SIZE) {
-         dev->vsc_prim_strm_pitch = A810_VSC_PRIM_SIZE;
-      }
-      
-      /* Если все еще переполнение - увеличиваем, но осторожно */
-      if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch && 
-          dev->vsc_draw_strm_pitch < A810_VSC_DRAW_MAX) {
-         dev->vsc_draw_strm_pitch = MIN2(
-            dev->vsc_draw_strm_pitch + 0x200, /* +512 байт */
-            A810_VSC_DRAW_MAX
-         );
-      }
-      
-      if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch &&
-          dev->vsc_prim_strm_pitch < A810_VSC_PRIM_MAX) {
-         dev->vsc_prim_strm_pitch = MIN2(
-            dev->vsc_prim_strm_pitch + 0x200, /* +512 байт */
-            A810_VSC_PRIM_MAX
-         );
-      }
-   } else {
-      /* Стандартная логика для других GPU */
-      if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
-         dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+   if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
+      dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
 
-      if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch)
-         dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
-   }
-   /* ========== КОНЕЦ ОПТИМИЗАЦИИ ========== */
+   if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch)
+      dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
    
    cmd->vsc_prim_strm_pitch = dev->vsc_prim_strm_pitch;
    cmd->vsc_draw_strm_pitch = dev->vsc_draw_strm_pitch;
@@ -280,18 +250,6 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    cmd->vsc_draw_strm_size_offset = cmd->vsc_draw_strm_offset + draw_strm_size;
    cmd->vsc_state_offset = cmd->vsc_draw_strm_size_offset + draw_strm_size_size;
 
-   /* ========== ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА ДЛЯ A810 ========== */
-   /* Проверяем не слишком ли большие буферы получились */
-   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-      uint32_t total_vsc_size = prim_strm_size + draw_strm_size + 
-                                draw_strm_size_size + state_size;
-      if (total_vsc_size > 512 * 1024) { /* 512KB лимит */
-         mesa_logw("A810: VSC buffers large (%u KB), but letting it ride", 
-                   total_vsc_size / 1024);
-         /* Пока просто логируем, не форсируем sysmem */
-      }
-   }
-   /* ========== КОНЕЦ ПРОВЕРКИ ========== */
 }
 
 static void
