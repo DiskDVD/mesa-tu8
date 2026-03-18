@@ -142,7 +142,7 @@ class A6xxGPUInfo(GPUInfo):
             compute_lb_size = 0
         else:
             # A810: увеличен compute_lb_size для лучшей производительности
-            compute_lb_size = 80 * 1024  # было 40KB
+            compute_lb_size = 40 * 1024  # было 40KB
 
         super().__init__(chip, gmem_align_w = 16, gmem_align_h = 4,
                          tile_align_w = tile_align_w,
