@@ -1668,7 +1668,7 @@ add_gpus([
         tile_align_w = 32,
         tile_align_h = 16,
         tile_max_w = 128,
-        tile_max_h = 128,
+        tile_max_h = 64,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
