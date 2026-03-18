@@ -37,6 +37,7 @@
 #include "tu_formats.h"
 #include "tu_rmv.h"
 #include "bvh/tu_build_interface.h"
+#include "freedreno_dev_info.h"
 
 /* Нужно для определения чипа Adreno 810 */
 #include "freedreno_dev_info.h"
