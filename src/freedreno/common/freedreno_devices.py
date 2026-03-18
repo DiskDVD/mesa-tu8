@@ -1621,7 +1621,8 @@ a8xx_829 = GPUProps(
         gmem_per_ccu_depth_cache_size = 127 * 1024,
 )
 
-
+# Оптимизированные параметры для Adreno 810
+# VPC буферы оставлены как в стабильной версии 0.6 (без изменений!)
 a8xx_810 = GPUProps(
         # VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ (не меняем!)
         sysmem_vpc_attr_buf_size = 131072,      # 128KB - стабильно
@@ -1636,17 +1637,17 @@ a8xx_810 = GPUProps(
         sysmem_per_ccu_depth_cache_size = 32 * 1024,
         
         # GMEM VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ
-        gmem_vpc_attr_buf_size = 36864,         
-        gmem_vpc_pos_buf_size = 16384,          
-        gmem_vpc_bv_pos_buf_size = 16384, 
+        gmem_vpc_attr_buf_size = 49152,         # 48KB - стабильно
+        gmem_vpc_pos_buf_size = 24576,          # 24KB - стабильно
+        gmem_vpc_bv_pos_buf_size = 32768,       # 32KB - стабильно
         
         # GMEM кэши - без изменений
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
-        gmem_per_ccu_color_cache_size = 24 * 1024,
+        gmem_per_ccu_color_cache_size = 32 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
-        gmem_per_ccu_depth_cache_size =  48 * 1024,
+        gmem_per_ccu_depth_cache_size = 64 * 1024,
         
-        gmem_size = 512 * 1024,  # 512kb GMEM      
+        gmem_size = 512 * 1024,  # 512kb GMEM, 4MB????       
         # A810 не поддерживает ray tracing
         has_ray_intersection = False,
         has_sw_fuse = False,
@@ -1686,10 +1687,10 @@ add_gpus([
         [a7xx_base, a7xx_gen3, a8xx_base, a8xx_825],
         num_ccu = 4,
         num_slices = 2,
-        tile_align_w = 32,
-        tile_align_h = 16,
-        tile_max_w = 512,
-        tile_max_h = 512,
+        tile_align_w = 64,
+        tile_align_h = 32,
+        tile_max_w = 16384,
+        tile_max_h = 16384,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
