@@ -1217,7 +1217,7 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->pointSizeRange[1] = 4092;
    props->lineWidthRange[0] = pdevice->info->props.line_width_min;
    props->lineWidthRange[1] = pdevice->info->props.line_width_max;
-   props->pointSizeGranularity =        0.0625;
+   props->pointSizeGranularity = 	0.0625;
    props->lineWidthGranularity =
       pdevice->info->props.line_width_max == 1.0 ? 0.0 : 0.5;
    props->strictLines = !pdevice->info->props.is_a702;
@@ -2959,8 +2959,13 @@ if (device->physical_device->dev_id.gpu_id == 810) {
    }
 
    /* initial sizes, these will increase if there is overflow */
+if (device->physical_device->dev_id.gpu_id == 810) {
+   device->vsc_draw_strm_pitch = 0x2000 + VSC_PAD; /* 8KB */
+   device->vsc_prim_strm_pitch = 0x2000 + VSC_PAD; /* 8KB */
+} else {
    device->vsc_draw_strm_pitch = 0x1000 + VSC_PAD;
    device->vsc_prim_strm_pitch = 0x4000 + VSC_PAD;
+}
 
 if (device->vk.enabled_features.customBorderColors)
    global_size += TU_BORDER_COLOR_COUNT * sizeof(struct bcolor_entry);

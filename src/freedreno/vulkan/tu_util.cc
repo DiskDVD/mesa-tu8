@@ -235,6 +235,17 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
    uint32_t tile_align_h = dev->physical_device->info->tile_align_h;
    struct tu_tiling_config *tiling = &fb->tiling[gmem_layout];
 
+   /* Правильная проверка для A810 через gpu_id */
+   bool is_a810 = (dev->physical_device->dev_id.gpu_id == 810);
+
+   if (is_a810) {
+      /* Для A810 с 512KB GMEM используем меньшие тайлы и другое выравнивание */
+      tile_align_h = 16;  /* Вместо 32 */
+      /* Принудительно ограничиваем максимальные размеры тайлов */
+      fb->max_tile_w_constraint = MIN2(fb->max_tile_w_constraint, 128);
+      fb->max_tile_h_constraint = MIN2(fb->max_tile_h_constraint, 128);
+   }
+
    *tiling = (struct tu_tiling_config) {
       /* Put in dummy values that will assertion fail in register setup using
        * them, since you shouldn't be doing gmem work if gmem is not possible.
@@ -262,6 +273,11 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
     * the tile width and height so we need to adjust one of them.
     */
    uint32_t gmem_align_log2 = 12;
+
+   /* Для A810 может потребоваться большее выравнивание GMEM */
+   if (is_a810) {
+      gmem_align_log2 = 16;  /* 64KB выравнивание */
+   }
 
    const uint32_t gmem_align = 1 << gmem_align_log2;
    uint32_t min_layer_stride = tile_align_h * tile_align_w * pass->min_cpp;
@@ -297,6 +313,12 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
    uint32_t max_tile_height =
       MIN3(dev->physical_device->info->tile_max_h,
            align(fb->height, tile_align_h), fb->max_tile_h_constraint);
+
+   /* Для A810 дополнительно ограничиваем максимальные размеры */
+   if (is_a810) {
+      max_tile_width = MIN2(max_tile_width, 128);
+      max_tile_height = MIN2(max_tile_height, 128);
+   }
 
    for (tile_size.width = tile_align_w; tile_size.width <= max_tile_width;
         tile_size.width += tile_align_w) {
@@ -356,6 +378,12 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       }
    }
 
+   /* Для A810 проверяем, что тайлы не слишком большие */
+   if (is_a810 && tiling->possible) {
+      if (tiling->tile0.width > 128 || tiling->tile0.height > 128) {
+         tiling->possible = false;
+      }
+   }
 }
 
 static bool
@@ -363,6 +391,11 @@ is_hw_binning_possible(const struct tu_vsc_config *vsc,
                         const struct tu_device *dev)
 {
    uint32_t tiles_per_pipe = vsc->pipe0.width * vsc->pipe0.height;
+
+   /* Для A810 лимит может быть больше */
+   if (dev->physical_device->dev_id.gpu_id == 810) {
+      return tiles_per_pipe <= 64;  /* A810 может поддерживать до 64 тайлов на пайп */
+   }
 
    /* Similar to older gens, # of tiles per pipe cannot be more than 32.
     * But there are no hangs with 16 or more tiles per pipe in either
@@ -378,6 +411,8 @@ tu_tiling_config_update_pipe_layout(struct tu_vsc_config *vsc,
 {
    const uint32_t max_pipe_count =
       dev->physical_device->info->num_vsc_pipes;
+
+   bool is_a810 = (dev->physical_device->dev_id.gpu_id == 810);
 
    /* If there is a fragment density map and bin merging is enabled, we will
     * likely be able to merge some bins. Bins can only be merged if they are
