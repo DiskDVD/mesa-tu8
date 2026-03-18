@@ -313,26 +313,58 @@ template <chip CHIP>
 static void
 tu_emit_vsc(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 {
+   /* ===== A810: ДОПОЛНИТЕЛЬНАЯ СИНХРОНИЗАЦИЯ ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Сбрасываем VSC перед настройкой */
+      tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
+      
+      /* Сбрасываем счетчики для первого pipe */
+      tu_cs_emit_pkt7(cs, CP_REG_RMW, 3);
+      tu_cs_emit(cs, CP_REG_RMW_0_DST_REG(REG_A6XX_VSC_PIPE_DATA_DRAW_SIZE(0)) |
+                     CP_REG_RMW_0_SRC1_ADD);
+      tu_cs_emit(cs, 0);
+      tu_cs_emit(cs, 0);
+      
+      tu_cs_emit_pkt7(cs, CP_REG_RMW, 3);
+      tu_cs_emit(cs, CP_REG_RMW_0_DST_REG(REG_A6XX_VSC_PIPE_DATA_PRIM_SIZE(0)) |
+                     CP_REG_RMW_0_SRC1_ADD);
+      tu_cs_emit(cs, 0);
+      tu_cs_emit(cs, 0);
+      
+      tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
+   }
+   /* ===== КОНЕЦ ===== */
+
    if (CHIP == A6XX) {
       tu_cs_emit_pkt4(cs, REG_A6XX_VSC_SIZE_BASE, 2);
       tu_emit_vis_stream_patchpoint(cmd, cs, cmd->vsc_draw_strm_size_offset);
+      
       tu_cs_emit_pkt4(cs, REG_A6XX_VSC_PIPE_DATA_PRIM_BASE, 2);
       tu_emit_vis_stream_patchpoint(cmd, cs, cmd->vsc_prim_strm_offset);
+      
       tu_cs_emit_pkt4(cs, REG_A6XX_VSC_PIPE_DATA_DRAW_BASE, 2);
       tu_emit_vis_stream_patchpoint(cmd, cs, cmd->vsc_draw_strm_offset);
    } else {
       tu_cs_emit_pkt7(cs, CP_SET_PSEUDO_REG, 3 * 3);
+      
       tu_cs_emit(cs, A6XX_CP_SET_PSEUDO_REG__0_PSEUDO_REG(VSC_PIPE_DATA_DRAW_BASE));
       tu_emit_vis_stream_patchpoint(cmd, cs, cmd->vsc_draw_strm_offset);
+      
       tu_cs_emit(cs, A6XX_CP_SET_PSEUDO_REG__0_PSEUDO_REG(VSC_SIZE_BASE));
       tu_emit_vis_stream_patchpoint(cmd, cs, cmd->vsc_draw_strm_size_offset);
+      
       tu_cs_emit(cs, A6XX_CP_SET_PSEUDO_REG__0_PSEUDO_REG(VSC_PIPE_DATA_PRIM_BASE));
       tu_emit_vis_stream_patchpoint(cmd, cs, cmd->vsc_prim_strm_offset);
    }
 
+   /* ===== A810: ФИНАЛЬНАЯ СИНХРОНИЗАЦИЯ ===== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      tu_cs_emit_pkt7(cs, CP_WAIT_FOR_ME, 0);
+   }
+   /* ===== КОНЕЦ ===== */
+
    cmd->vsc_initialized = true;
 }
-
 struct tu_set_render_mode {
    enum a6xx_marker mode;
    bool uses_gmem;
