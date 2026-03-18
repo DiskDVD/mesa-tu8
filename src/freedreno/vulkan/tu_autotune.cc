@@ -589,6 +589,113 @@ tu_autotune_use_bypass(struct tu_autotune *at,
    if (!at->enabled || simultaneous_use)
       return fallback_use_bypass(pass, framebuffer, cmd_buffer);
 
+   /* ========== A810 v2.1: МАКСИМАЛЬНАЯ ПРОИЗВОДИТЕЛЬНОСТЬ ========== */
+   if (cmd_buffer->device->physical_device->dev_id.gpu_id == 810) {
+      
+      /* === ЧАСТЬ 1: ЭКОНОМИЯ CPU === */
+      static int frame_counter = 0;
+      static bool last_decision = true;
+      static uint64_t last_key = 0;
+      
+      frame_counter++;
+      
+      uint64_t renderpass_key = hash_renderpass_instance(pass, framebuffer, cmd_buffer);
+      
+      /* Каждый 2-й кадр используем прошлое решение (экономия CPU) */
+      if (frame_counter % 2 == 0 && last_key == renderpass_key) {
+         *autotune_result = NULL;
+         return last_decision;
+      }
+      
+      /* === ЧАСТЬ 2: ПРОВЕРКА GMEM === */
+      uint32_t estimated_gmem_needed = 0;
+      bool has_problematic_format = false;
+      
+      for (unsigned i = 0; i < cmd_buffer->state.pass->attachment_count; i++) {
+         if (cmd_buffer->state.attachments[i] && 
+             cmd_buffer->state.attachments[i]->image) {
+            
+            /* Считаем память (грубо) */
+            estimated_gmem_needed += 32 * 32 * 4;
+            
+            /* Проверяем проблемные форматы для GMEM */
+            VkFormat fmt = cmd_buffer->state.attachments[i]->image->vk.format;
+            if (fmt == VK_FORMAT_R8G8B8A8_UNORM ||
+                fmt == VK_FORMAT_B8G8R8A8_UNORM ||
+                fmt == VK_FORMAT_R16G16B16A16_SFLOAT) {
+               has_problematic_format = true;
+            }
+         }
+      }
+      
+      /* Если GMEM не влезает в 512KB - сразу SYSMEM */
+      if (estimated_gmem_needed > 384 * 1024) {
+         *autotune_result = NULL;
+         cmd_buffer->state.rp.gmem_disable_reason = "A810: GMEM overflow";
+         last_decision = true;
+         last_key = renderpass_key;
+         mesa_logw("A810: GMEM overflow, forcing SYSMEM");
+         return true;
+      }
+      
+      /* === ЧАСТЬ 3: АВТОТЮНЕР С ШТРАФАМИ === */
+      *autotune_result = create_history_result(at, renderpass_key);
+      
+      uint32_t avg_samples = 0;
+      if (get_history(at, renderpass_key, &avg_samples)) {
+         const uint32_t pass_pixel_count =
+            get_render_pass_pixel_count(cmd_buffer);
+         
+         uint64_t sysmem_bandwidth =
+            (uint64_t)pass->sysmem_bandwidth_per_pixel * pass_pixel_count;
+         uint64_t gmem_bandwidth =
+            (uint64_t)pass->gmem_bandwidth_per_pixel * pass_pixel_count;
+         
+         const uint64_t total_draw_call_bandwidth =
+            estimate_drawcall_bandwidth(cmd_buffer, avg_samples);
+         
+         sysmem_bandwidth += total_draw_call_bandwidth;
+         
+         /* ШТРАФ 1: GMEM дороже на 30% (было 10%) */
+         gmem_bandwidth = (gmem_bandwidth * 13 + total_draw_call_bandwidth) / 10;
+         
+         /* ШТРАФ 2: Если проблемные форматы - ещё +20% */
+         if (has_problematic_format) {
+            gmem_bandwidth = gmem_bandwidth * 12 / 10;
+         }
+         
+         /* ШТРАФ 3: Если мало drawcall'ов - GMEM неэффективен */
+         if (cmd_buffer->state.rp.drawcall_count < 10) {
+            gmem_bandwidth = gmem_bandwidth * 15 / 10;
+         }
+         
+         const bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;
+         
+         /* Логируем редко, чтобы не грузить CPU */
+         if (frame_counter % 60 == 0) {
+            mesa_logi("A810: sysmem=%llu gmem=%llu %s", 
+                      (unsigned long long)sysmem_bandwidth, 
+                      (unsigned long long)gmem_bandwidth,
+                      select_sysmem ? "SYSMEM" : "GMEM");
+            if (has_problematic_format) {
+               mesa_logi("A810: Problematic format detected, GMEM penalized");
+            }
+         }
+         
+         last_decision = select_sysmem;
+         last_key = renderpass_key;
+         return select_sysmem;
+      }
+      
+      /* Нет истории - используем fallback */
+      bool fallback = fallback_use_bypass(pass, framebuffer, cmd_buffer);
+      last_decision = fallback;
+      last_key = renderpass_key;
+      return fallback;
+   }
+   /* ========== КОНЕЦ A810 ========== */
+
+   /* Оригинальный код для других GPU */
    /* We use 64bit hash as a key since we don't fear rare hash collision,
     * the worst that would happen is sysmem being selected when it should
     * have not, and with 64bit it would be extremely rare.
