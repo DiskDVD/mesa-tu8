@@ -1673,7 +1673,7 @@ add_gpus([
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
-        max_waves = 32,  # A810: увеличено с 16 до 32 для лучшей производительности
+        max_waves = 16,  # A810: увеличено с 16 до 32 для лучшей производительности
         magic_regs = dict(
         ),
         raw_magic_regs = a8xx_gen2_raw_magic_regs,
