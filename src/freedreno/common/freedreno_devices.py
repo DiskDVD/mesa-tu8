@@ -1654,6 +1654,7 @@ a8xx_810 = GPUProps(
         
         # GMEM включен для максимальной производительности
         disable_gmem = False,
+        has_coherent_ubwc_flag_caches = True,
 )
 
 
