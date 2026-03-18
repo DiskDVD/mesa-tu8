@@ -1653,20 +1653,25 @@ case 7:
 case 8: {
    device->dev_info = info;
    device->info = &device->dev_info;
-// --- НАЧАЛО ФИКСА GMEM ДЛЯ A810 ---
-   if (device->dev_id.gpu_id == 810) {
-       // 1. Урезаем общий размер до физического
-       device->gmem_size = 512 * 1024;
-       
-       // 2. Уменьшаем аппетиты кэша CCU, чтобы они влезли в 512КБ
-       device->config_gmem.color_ccu_offset = 0x0; 
-       device->config_gmem.depth_ccu_offset = 0x40000; // Сдвиг на 256KB
-       
-       // 3. Сжимаем буферы VPC (атрибуты и позиции вершин)
-       device->config_gmem.vpc_attr_buf_size = 0x10000; // 64KB
-       device->config_gmem.vpc_pos_buf_size = 0x8000;   // 32KB
-       device->config_gmem.vpc_bv_pos_buf_size = 0x8000; // 32KB
-   }
+// --- ГЛУБОКИЙ ФИКС VPC/GMEM ДЛЯ A810 (ВАРИАНТ 2) ---
+      if (device->dev_id.gpu_id == 810) {
+          device->gmem_size = 512 * 1024;
+          
+          // Резко уменьшаем буферы VPC. Возможно, 48КБ для Attr — это всё еще много.
+          // Попробуем минимально возможные значения, чтобы проверить теорию.
+          device->config_gmem.vpc_attr_buf_size = 16384;   // 16KB
+          device->config_gmem.vpc_pos_buf_size = 16384;    // 16KB
+          device->config_gmem.vpc_bv_pos_buf_size = 16384; // 16KB
+          
+          // Сдвигаем CCU максимально далеко в конец 512КБ
+          device->config_gmem.color_ccu_offset = 0x00000; 
+          device->config_gmem.depth_ccu_offset = 0x60000; // Отступ 384KB
+          
+          // Включаем флаг принудительного использования мелких тайлов на уровне железа
+          // (если это поле доступно в твоей структуре)
+          device->dev_info.tile_align_w = 16;
+          device->dev_info.tile_align_h = 16;
+      }
 // --- КОНЕЦ ФИКСА ---
    
 
