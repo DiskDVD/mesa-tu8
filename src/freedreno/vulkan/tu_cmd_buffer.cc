@@ -28,10 +28,10 @@
 #include "common/freedreno_vrs.h"
  /* ===== ОПРЕДЕЛЕНИЯ ДЛЯ ADRENO 810 ===== */
 #define A810_GMEM_SIZE (512 * 1024)           
-#define A810_VSC_DRAW_SIZE 0x6000              
-#define A810_VSC_PRIM_SIZE 0x6000              
-#define A810_VSC_DRAW_MAX 0x8000                
-#define A810_VSC_PRIM_MAX 0x8000 
+#define A810_VSC_DRAW_SIZE 0x4000              
+#define A810_VSC_PRIM_SIZE 0x4000              
+#define A810_VSC_DRAW_MAX 0x5000                
+#define A810_VSC_PRIM_MAX 0x5000 
 
 /* ===== ФУНКЦИИ МОНИТОРИНГА ДЛЯ ADRENO 810 ===== */
 static void
