@@ -227,51 +227,47 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
 if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-   /* Проверяем, будет ли использован GMEM в этом рендерпасе */
-   struct tu_renderpass_result *dummy = NULL;
-   bool gmem_needed = !use_sysmem_rendering(cmd, &dummy);
+   /* Проверяем, будет ли использован GMEM (флаг уже должен быть установлен) */
+   bool gmem_needed = !cmd->state.rp.gmem_disable_reason && 
+                      cmd->state.tiling && 
+                      cmd->state.tiling->possible;
    
    if (gmem_needed) {
-      /* GMEM режим - экономим память, VSC буферы меньше */
+      /* GMEM режим - экономим память */
       if (dev->vsc_draw_strm_pitch < 0x3000) {
-         dev->vsc_draw_strm_pitch = 0x3000;  // 12KB
+         dev->vsc_draw_strm_pitch = 0x3000;
          mesa_logw("A810: GMEM mode - VSC draw stream set to 12KB");
       }
       if (dev->vsc_prim_strm_pitch < 0x3000) {
-         dev->vsc_prim_strm_pitch = 0x3000;  // 12KB
+         dev->vsc_prim_strm_pitch = 0x3000;
          mesa_logw("A810: GMEM mode - VSC prim stream set to 12KB");
       }
    } else {
-      /* SYSMEM режим - можно больше для производительности */
+      /* SYSMEM режим - можно больше */
       if (dev->vsc_draw_strm_pitch < 0x4000) {
-         dev->vsc_draw_strm_pitch = 0x4000;  // 16KB
+         dev->vsc_draw_strm_pitch = 0x4000;
          mesa_logw("A810: SYSMEM mode - VSC draw stream set to 16KB");
       }
       if (dev->vsc_prim_strm_pitch < 0x4000) {
-         dev->vsc_prim_strm_pitch = 0x4000;  // 16KB
+         dev->vsc_prim_strm_pitch = 0x4000;
          mesa_logw("A810: SYSMEM mode - VSC prim stream set to 16KB");
       }
    }
    
-   /* Если все еще переполнение - увеличиваем, но осторожно */
+   /* Следим за переполнением */
    if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch && 
-       dev->vsc_draw_strm_pitch < 0x5000) {  // максимум 20KB
+       dev->vsc_draw_strm_pitch < 0x5000) {
       dev->vsc_draw_strm_pitch = 0x5000;
       mesa_logw("A810: VSC draw stream increased to 20KB due to overflow");
    }
    
    if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch &&
-       dev->vsc_prim_strm_pitch < 0x5000) {  // максимум 20KB
+       dev->vsc_prim_strm_pitch < 0x5000) {
       dev->vsc_prim_strm_pitch = 0x5000;
       mesa_logw("A810: VSC prim stream increased to 20KB due to overflow");
    }
-   
-   /* Сбрасываем счётчики переполнения */
-   global->vsc_draw_overflow = 0;
-   global->vsc_prim_overflow = 0;
 }
 /* ========== КОНЕЦ ОПТИМИЗАЦИИ ========== */
-   
    cmd->vsc_prim_strm_pitch = dev->vsc_prim_strm_pitch;
    cmd->vsc_draw_strm_pitch = dev->vsc_draw_strm_pitch;
 
