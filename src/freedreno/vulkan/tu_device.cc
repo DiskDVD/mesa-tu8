@@ -1653,6 +1653,22 @@ case 7:
 case 8: {
    device->dev_info = info;
    device->info = &device->dev_info;
+// --- НАЧАЛО ФИКСА GMEM ДЛЯ A810 ---
+   if (device->dev_id.gpu_id == 810) {
+       // 1. Урезаем общий размер до физического
+       device->gmem_size = 512 * 1024;
+       
+       // 2. Уменьшаем аппетиты кэша CCU, чтобы они влезли в 512КБ
+       device->config_gmem.color_ccu_offset = 0x0; 
+       device->config_gmem.depth_ccu_offset = 0x40000; // Сдвиг на 256KB
+       
+       // 3. Сжимаем буферы VPC (атрибуты и позиции вершин)
+       device->config_gmem.vpc_attr_buf_size = 0x10000; // 64KB
+       device->config_gmem.vpc_pos_buf_size = 0x8000;   // 32KB
+       device->config_gmem.vpc_bv_pos_buf_size = 0x8000; // 32KB
+   }
+// --- КОНЕЦ ФИКСА ---
+   
 
    /* A810: больше не пытаемся изменить const поле */
    
