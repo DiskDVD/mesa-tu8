@@ -35,25 +35,6 @@ tu_cs_init(struct tu_cs *cs,
 
    cs->device = device;
    cs->mode = mode;
-   
-   /* ========== A810: АДАПТИВНЫЙ СТАРТОВЫЙ РАЗМЕР ========== */
-   if (device->physical_device->dev_id.gpu_id == 810) {
-      /* Для командных буферов - сразу 128KB (иначе 400 FPS не вывезти) */
-      if (strstr(name, "cmd cs")) {
-         initial_size = MAX2(initial_size, 128 * 1024);
-         mesa_logw("A810: Command buffer initial size set to 128KB");
-      }
-      /* Для draw cs - 64KB достаточно */
-      else if (strstr(name, "draw cs")) {
-         initial_size = MAX2(initial_size, 64 * 1024);
-      }
-      /* Для sub_cs - 32KB минимум */
-      else if (strstr(name, "draw sub cs")) {
-         initial_size = MAX2(initial_size, 32 * 1024);
-      }
-   }
-   /* ========== КОНЕЦ ========== */
-   
    cs->next_bo_size = initial_size;
    cs->name = name;
 }
@@ -186,6 +167,7 @@ tu_cs_add_bo(struct tu_cs *cs, uint32_t size)
    struct tu_bo *new_bo;
 
    /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
+   /* A810: увеличиваем выравнивание для больших буферов */
    if (cs->device->physical_device->dev_id.gpu_id == 810) {
       /* Для больших буферов просим выравнивание по 64KB */
       if (size > 4096) {
@@ -197,7 +179,7 @@ tu_cs_add_bo(struct tu_cs *cs, uint32_t size)
          size = align(size, 1024 * 1024 / sizeof(uint32_t));
       }
    }
-   /* ========== КОНЕЦ ========== */
+   /* ========== КОНЕЦ ОПТИМИЗАЦИИ ========== */
 
    VkResult result =
       tu_bo_init_new(cs->device, NULL, &new_bo, size * sizeof(uint32_t),
@@ -517,54 +499,31 @@ tu_cs_reserve_space(struct tu_cs *cs, uint32_t reserved_size)
       /* Double the size for the next bo. */
       new_size = tu_sanitize_ib_size(new_size << 1);
 
-      /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 v2.1 ========== */
+      /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
+      /* A810: более агрессивный рост для больших батчей */
       if (cs->device->physical_device->dev_id.gpu_id == 810) {
-         /* Счётчик аллокаций для адаптивного роста */
-         static uint32_t alloc_counter = 0;
-         alloc_counter++;
-         
-         /* База: сколько места реально нужно */
-         uint32_t needed = MAX2(cs->next_bo_size, reserved_size);
-         
-         /* Агрессивность роста зависит от частоты аллокаций */
-         float aggression = 1.0f;
-         if (alloc_counter > 100) {  // Если много аллокаций - растем быстрее
-            aggression = 2.0f;
-         } else if (alloc_counter > 50) {
-            aggression = 1.5f;
-         }
-         
-         /* Размер буфера с учётом агрессивности */
-         uint32_t target_size;
-         if (needed < 64 * 1024) {
-            target_size = (uint32_t)(needed * 4 * aggression);
-         } else if (needed < 256 * 1024) {
-            target_size = (uint32_t)(needed * 3 * aggression);
+         /* Для A810 растем быстрее, но не слишком */
+         if (new_size < 64 * 1024) {
+            /* Маленькие буферы: рост x4 */
+            new_size = tu_sanitize_ib_size(new_size << 2);
+         } else if (new_size < 256 * 1024) {
+            /* Средние буферы: рост x3 */
+            new_size = tu_sanitize_ib_size(new_size * 3);
          } else {
-            target_size = (uint32_t)(needed * 2 * aggression);
+            /* Большие буферы: рост x2 как обычно */
+            new_size = tu_sanitize_ib_size(new_size << 1);
          }
          
-         /* Ограничения под 8GB RAM */
-         target_size = MIN2(target_size, 1024 * 1024);  // 1MB максимум
-         target_size = MAX2(target_size, 32 * 1024);    // 32KB минимум
-         
-         /* Применяем новый размер */
-         if (cs->next_bo_size < target_size) {
-            cs->next_bo_size = tu_sanitize_ib_size(target_size);
-            mesa_logw("A810: CS buffer grown to %u KB (aggression: %.1f)", 
-                      cs->next_bo_size / 1024, aggression);
-         }
-         
-         /* Сбрасываем счётчик если долго нет аллокаций */
-         if (--alloc_counter > 1000) alloc_counter = 1000;
+         /* Ограничиваем максимальный размер для A810 */
+         new_size = MIN2(new_size, 1024 * 1024); /* 1MB максимум */
       } else {
          /* Другие GPU: обычный рост */
          new_size = tu_sanitize_ib_size(new_size << 1);
-         
-         if (cs->next_bo_size < new_size)
-            cs->next_bo_size = new_size;
       }
       /* ========== КОНЕЦ ОПТИМИЗАЦИИ ========== */
+
+      if (cs->next_bo_size < new_size)
+         cs->next_bo_size = new_size;
    }
 
    assert(tu_cs_get_space(cs) >= reserved_size);
