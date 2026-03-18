@@ -1653,25 +1653,7 @@ case 7:
 case 8: {
    device->dev_info = info;
    device->info = &device->dev_info;
-
-// --- ФИКС "БЕЗОПАСНЫЙ GMEM" ДЛЯ A810 ---
-      if (device->dev_id.gpu_id == 810) {
-          device->gmem_size = 512 * 1024;
-          
-          /* ОТКЛЮЧАЕМ CCU В GMEM: это уберет наложение данных */
-          device->config_gmem.color_ccu_offset = 0xFFFFFFFF; 
-          device->config_gmem.depth_ccu_offset = 0xFFFFFFFF; 
-          
-          /* Оставляем минимум под VPC, чтобы геометрия не сыпалась */
-          device->config_gmem.vpc_attr_buf_size = 32768; 
-          device->config_gmem.vpc_pos_buf_size = 16384;
-          device->config_gmem.vpc_bv_pos_buf_size = 16384;
-
-          
-      }
-// --- КОНЕЦ ФИКСА ---
    
-
    /* A810: больше не пытаемся изменить const поле */
    
    device->usable_gmem_size_gmem =
