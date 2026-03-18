@@ -28,10 +28,10 @@
 #include "common/freedreno_vrs.h"
  /* ===== ОПРЕДЕЛЕНИЯ ДЛЯ ADRENO 810 ===== */
 #define A810_GMEM_SIZE (512 * 1024)           
-#define A810_VSC_DRAW_SIZE 0x4000              
-#define A810_VSC_PRIM_SIZE 0x4000              
-#define A810_VSC_DRAW_MAX 0x5000                
-#define A810_VSC_PRIM_MAX 0x5000 
+#define A810_VSC_DRAW_SIZE 0x3000              
+#define A810_VSC_PRIM_SIZE 0x3000              
+#define A810_VSC_DRAW_MAX 0x4000                
+#define A810_VSC_PRIM_MAX 0x4000 
 
 /* ===== ФУНКЦИИ МОНИТОРИНГА ДЛЯ ADRENO 810 ===== */
 static void
@@ -225,49 +225,43 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
 
    uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
-/* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
-if (cmd->device->physical_device->dev_id.gpu_id == 810) {
-   /* Проверяем, будет ли использован GMEM (флаг уже должен быть установлен) */
-   bool gmem_needed = !cmd->state.rp.gmem_disable_reason && 
-                      cmd->state.tiling && 
-                      cmd->state.tiling->possible;
-   
-   if (gmem_needed) {
-      /* GMEM режим - экономим память */
-      if (dev->vsc_draw_strm_pitch < 0x3000) {
-         dev->vsc_draw_strm_pitch = 0x3000;
-         mesa_logw("A810: GMEM mode - VSC draw stream set to 12KB");
+
+         /* ========== ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810 ========== */
+   if (cmd->device->physical_device->dev_id.gpu_id == 810) {
+      /* Фиксируем оптимальные значения 0x3000 для обоих буферов */
+      if (dev->vsc_draw_strm_pitch < A810_VSC_DRAW_SIZE) {
+         dev->vsc_draw_strm_pitch = A810_VSC_DRAW_SIZE;
       }
-      if (dev->vsc_prim_strm_pitch < 0x3000) {
-         dev->vsc_prim_strm_pitch = 0x3000;
-         mesa_logw("A810: GMEM mode - VSC prim stream set to 12KB");
+      if (dev->vsc_prim_strm_pitch < A810_VSC_PRIM_SIZE) {
+         dev->vsc_prim_strm_pitch = A810_VSC_PRIM_SIZE;
+      }
+      
+      /* Если все еще переполнение - увеличиваем, но осторожно */
+      if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch && 
+          dev->vsc_draw_strm_pitch < A810_VSC_DRAW_MAX) {
+         dev->vsc_draw_strm_pitch = MIN2(
+            dev->vsc_draw_strm_pitch + 0x200, /* +512 байт */
+            A810_VSC_DRAW_MAX
+         );
+      }
+      
+      if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch &&
+          dev->vsc_prim_strm_pitch < A810_VSC_PRIM_MAX) {
+         dev->vsc_prim_strm_pitch = MIN2(
+            dev->vsc_prim_strm_pitch + 0x200, /* +512 байт */
+            A810_VSC_PRIM_MAX
+         );
       }
    } else {
-      /* SYSMEM режим - можно больше */
-      if (dev->vsc_draw_strm_pitch < 0x4000) {
-         dev->vsc_draw_strm_pitch = 0x4000;
-         mesa_logw("A810: SYSMEM mode - VSC draw stream set to 16KB");
-      }
-      if (dev->vsc_prim_strm_pitch < 0x4000) {
-         dev->vsc_prim_strm_pitch = 0x4000;
-         mesa_logw("A810: SYSMEM mode - VSC prim stream set to 16KB");
-      }
+      /* Стандартная логика для других GPU */
+      if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
+         dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+
+      if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch)
+         dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
    }
+   /* ========== КОНЕЦ ОПТИМИЗАЦИИ ========== */
    
-   /* Следим за переполнением */
-   if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch && 
-       dev->vsc_draw_strm_pitch < 0x5000) {
-      dev->vsc_draw_strm_pitch = 0x5000;
-      mesa_logw("A810: VSC draw stream increased to 20KB due to overflow");
-   }
-   
-   if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch &&
-       dev->vsc_prim_strm_pitch < 0x5000) {
-      dev->vsc_prim_strm_pitch = 0x5000;
-      mesa_logw("A810: VSC prim stream increased to 20KB due to overflow");
-   }
-}
-/* ========== КОНЕЦ ОПТИМИЗАЦИИ ========== */
    cmd->vsc_prim_strm_pitch = dev->vsc_prim_strm_pitch;
    cmd->vsc_draw_strm_pitch = dev->vsc_draw_strm_pitch;
 
