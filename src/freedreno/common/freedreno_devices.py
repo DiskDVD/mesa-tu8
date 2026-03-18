@@ -1621,8 +1621,7 @@ a8xx_829 = GPUProps(
         gmem_per_ccu_depth_cache_size = 127 * 1024,
 )
 
-# Оптимизированные параметры для Adreno 810
-# VPC буферы оставлены как в стабильной версии 0.6 (без изменений!)
+
 a8xx_810 = GPUProps(
         # VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ (не меняем!)
         sysmem_vpc_attr_buf_size = 131072,      # 128KB - стабильно
@@ -1645,9 +1644,9 @@ a8xx_810 = GPUProps(
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
         gmem_per_ccu_color_cache_size = 24 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
-        gmem_per_ccu_depth_cache_size = 48 * 1024,
+        gmem_per_ccu_depth_cache_size =  48 * 1024,
         
-        gmem_size = 512 * 1024,  # 512kb GMEM, 4MB????       
+        gmem_size = 512 * 1024,  # 512kb GMEM      
         # A810 не поддерживает ray tracing
         has_ray_intersection = False,
         has_sw_fuse = False,
