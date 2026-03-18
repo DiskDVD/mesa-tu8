@@ -1678,6 +1678,8 @@ add_gpus([
         magic_regs = dict(
         ),
         raw_magic_regs = a8xx_gen2_raw_magic_regs,
+        vsc_pitch = 0x4000,
+        pipeline_cache_mb = 32,
     ))
 
 # gen8_6_0
