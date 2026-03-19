@@ -1637,15 +1637,15 @@ a8xx_810 = GPUProps(
         sysmem_per_ccu_depth_cache_size = 32 * 1024,
         
         # GMEM VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ
-        gmem_vpc_attr_buf_size = 57344,         # 48KB - стабильно
-        gmem_vpc_pos_buf_size = 28672,          # 24KB - стабильно
-        gmem_vpc_bv_pos_buf_size = 36384,       # 32KB - стабильно
+        gmem_vpc_attr_buf_size = 49152,         # 48KB - стабильно
+        gmem_vpc_pos_buf_size = 24576,          # 24KB - стабильно
+        gmem_vpc_bv_pos_buf_size = 32768,       # 32KB - стабильно
         
         # GMEM кэши - без изменений
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
-        gmem_per_ccu_color_cache_size = 64 * 1024,
+        gmem_per_ccu_color_cache_size = 48 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
-        gmem_per_ccu_depth_cache_size = 96 * 1024,
+        gmem_per_ccu_depth_cache_size = 80* 1024,
         
         gmem_size = 576 * 1024,  # 576kb GMEM      
         # A810 не поддерживает ray tracing
