@@ -104,11 +104,58 @@ fd6_calc_gmem_cache_offsets(const struct fd_dev_info *info, unsigned gmemsize_by
       sysmem->vpc_attr_buf_size = info->props.sysmem_vpc_attr_buf_size;
       sysmem->vpc_attr_buf_offset = sysmem->color_ccu_offset + color_cache_size;
 
+      /* ===== ЗАЩИТА ОТ UNDERFLOW ДЛЯ A810 И ДРУГИХ ЧИПОВ ===== */
       gmem->vpc_attr_buf_size = info->props.gmem_vpc_attr_buf_size;
-      gmem->vpc_attr_buf_offset = gmemsize_bytes -
-         (gmem->vpc_attr_buf_size * info->num_ccu);
-
-      gmem->color_ccu_offset = gmem->vpc_attr_buf_offset - color_cache_size_gmem;
+      
+      /* Проверка переполнения VPC буфера */
+      uint32_t vpc_total = gmem->vpc_attr_buf_size * info->num_ccu;
+      if (vpc_total > gmemsize_bytes) {
+         /* Если не влезает - уменьшаем до 75% GMEM */
+         uint32_t max_vpc = gmemsize_bytes * 3 / 4;  // 75% от GMEM
+         gmem->vpc_attr_buf_size = max_vpc / info->num_ccu;
+         /* Выравниваем для безопасности */
+         gmem->vpc_attr_buf_size = (gmem->vpc_attr_buf_size / 1024) * 1024;
+         vpc_total = gmem->vpc_attr_buf_size * info->num_ccu;
+         
+         /* Логируем только для A810, чтобы не засорять другие чипы */
+         if (info->chip >= 8 && info->num_ccu == 2) {
+            mesa_logw("GMEM: VPC buffer reduced to %u KB (was %u KB) due to size constraints",
+                      gmem->vpc_attr_buf_size / 1024,
+                      info->props.gmem_vpc_attr_buf_size / 1024);
+         }
+      }
+      
+      /* Расчёт смещения VPC буфера */
+      gmem->vpc_attr_buf_offset = gmemsize_bytes - vpc_total;
+      
+      /* Проверка переполнения цветового кэша */
+      uint32_t color_ccu_total = color_cache_size_gmem;
+      if (gmem->vpc_attr_buf_offset < color_ccu_total) {
+         /* Если не влезает - уменьшаем цветовой кэш */
+         color_ccu_total = gmem->vpc_attr_buf_offset;
+         gmem->color_cache_size = color_ccu_total / info->num_ccu;
+         
+         if (info->chip >= 8 && info->num_ccu == 2) {
+            mesa_logw("GMEM: Color CCU reduced to %u KB per CCU due to space constraints",
+                      gmem->color_cache_size / 1024);
+         }
+      }
+      
+      /* Финальный расчёт смещения цветового кэша */
+      gmem->color_ccu_offset = gmem->vpc_attr_buf_offset - color_ccu_total;
+      
+      /* Финальная проверка: всё должно быть положительно */
+      if (gmem->color_ccu_offset < 0) {
+         /* Если всё равно отрицательно - экстренное восстановление */
+         gmem->color_ccu_offset = 0;
+         gmem->vpc_attr_buf_offset = color_ccu_total;
+         gmem->vpc_attr_buf_size = (gmemsize_bytes - color_ccu_total) / info->num_ccu;
+         
+         mesa_logw("GMEM: Emergency recovery applied, VPC=%u KB, Color=%u KB",
+                   gmem->vpc_attr_buf_size / 1024,
+                   gmem->color_cache_size / 1024);
+      }
+      /* ===== КОНЕЦ ЗАЩИТЫ ===== */
 
       return gmem->vpc_attr_buf_offset;
    } else {
