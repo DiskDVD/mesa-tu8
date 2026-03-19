@@ -46,6 +46,9 @@
 #include "tu_tracepoints.h"
 #include "tu_wsi.h"
 
+#include "git_sha1.h"
+#include "tu_version.h"
+
 #if DETECT_OS_ANDROID
 #include <vndk/hardware_buffer.h>
 #endif
@@ -174,13 +177,12 @@ get_device_extensions(const struct tu_physical_device *device,
       .KHR_bind_memory2 = true,
       .KHR_buffer_device_address = true,
       .KHR_calibrated_timestamps = device->info->props.has_persistent_counter,
-      .KHR_compute_shader_derivatives = true,
+      .KHR_compute_shader_derivatives = device->info->chip >= 7,
       .KHR_copy_commands2 = true,
       // TODO workaround for https://github.com/KhronosGroup/VK-GL-CTS/issues/525
       .KHR_create_renderpass2 = true, // tu_has_multiview(device),
       .KHR_dedicated_allocation = true,
       .KHR_deferred_host_operations = true,
-      .KHR_depth_clamp_zero_one = true,
       .KHR_depth_stencil_resolve = true,
       .KHR_descriptor_update_template = true,
       .KHR_device_group = true,
@@ -274,7 +276,6 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_conservative_rasterization = device->info->chip >= 7,
       .EXT_custom_border_color = true,
       .EXT_custom_resolve = true,
-      .EXT_depth_clamp_control = true,
       .EXT_depth_clamp_zero_one = true,
       .EXT_depth_clip_control = true,
       .EXT_depth_clip_enable = true,
@@ -338,7 +339,6 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_shader_module_identifier = true,
       .EXT_shader_replicated_composites = true,
       .EXT_shader_stencil_export = true,
-      .EXT_shader_uniform_buffer_unsized_array = true,
       .EXT_shader_viewport_index_layer = tu_has_multiview(device),
       .EXT_subgroup_size_control = tu_is_vk_1_1(device),
 #ifdef TU_USE_WSI_PLATFORM
@@ -359,7 +359,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .GOOGLE_hlsl_functionality1 = true,
       .GOOGLE_user_type = true,
       .IMG_filter_cubic = device->info->props.has_tex_filter_cubic,
-      .NV_compute_shader_derivatives = true,
+      .NV_compute_shader_derivatives = device->info->chip >= 7,
       .QCOM_fragment_density_map_offset = true,
       .QCOM_image_processing = device->info->props.has_image_processing,
       .QCOM_multiview_per_view_render_areas = true,
@@ -535,7 +535,7 @@ tu_get_features(struct tu_physical_device *pdevice,
 
    /* VK_KHR_compute_shader_derivatives */
    features->computeDerivativeGroupQuads = pdevice->info->chip >= 7;
-   features->computeDerivativeGroupLinear = true;
+   features->computeDerivativeGroupLinear = pdevice->info->chip >= 7;
 
    /* VK_KHR_dynamic_rendering_local_read */
    features->dynamicRenderingLocalRead = true;
@@ -631,10 +631,7 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->customBorderColors = true;
    features->customBorderColorWithoutFormat = true;
 
-   /* VK_EXT_depth_clamp_control */
-   features->depthClampControl = true;
-
-   /* VK_KHR_depth_clamp_zero_one */
+   /* VK_EXT_depth_clamp_zero_one */
    features->depthClampZeroOne = true;
 
    /* VK_EXT_depth_clip_control */
@@ -796,9 +793,6 @@ tu_get_features(struct tu_physical_device *pdevice,
    /* VK_EXT_shader_replicated_composites */
    features->shaderReplicatedComposites = true;
 
-   /* VK_EXT_shader_uniform_buffer_unsized_array */
-   features->shaderUniformBufferUnsizedArray = true;
-
 #ifdef TU_USE_WSI_PLATFORM
    /* VK_KHR_swapchain_maintenance1 */
    features->swapchainMaintenance1 = true;
@@ -945,6 +939,12 @@ tu_get_physical_device_properties_1_2(struct tu_physical_device *pdevice,
       };
    }
 
+   if (TU_DEBUG(DECK_EMU)) {
+      p->driverID = VK_DRIVER_ID_MESA_RADV;
+      memset(p->driverName, 0, sizeof(p->driverName));
+      snprintf(p->driverName, VK_MAX_DRIVER_NAME_SIZE, "radv");
+   }
+
    p->denormBehaviorIndependence =
       VK_SHADER_FLOAT_CONTROLS_INDEPENDENCE_ALL;
    p->roundingModeIndependence =
@@ -988,21 +988,21 @@ tu_get_physical_device_properties_1_2(struct tu_physical_device *pdevice,
    p->robustBufferAccessUpdateAfterBind                  = true;
    p->quadDivergentImplicitLod                           = false;
 
-   p->maxUpdateAfterBindDescriptorsInAllPools            = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindSamplers       = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindUniformBuffers = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindStorageBuffers = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindSampledImages  = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindStorageImages  = max_descriptor_set_size;
+   p->maxUpdateAfterBindDescriptorsInAllPools            = 500000;
+   p->maxPerStageDescriptorUpdateAfterBindSamplers       = 500000;
+   p->maxPerStageDescriptorUpdateAfterBindUniformBuffers = 500000;
+   p->maxPerStageDescriptorUpdateAfterBindStorageBuffers = 500000;
+   p->maxPerStageDescriptorUpdateAfterBindSampledImages  = 500000;
+   p->maxPerStageDescriptorUpdateAfterBindStorageImages  = 500000;
    p->maxPerStageDescriptorUpdateAfterBindInputAttachments = MAX_RTS;
-   p->maxPerStageUpdateAfterBindResources                = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindSamplers            = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindUniformBuffers      = max_descriptor_set_size;
+   p->maxPerStageUpdateAfterBindResources                = 500000;
+   p->maxDescriptorSetUpdateAfterBindSamplers            = 500000;
+   p->maxDescriptorSetUpdateAfterBindUniformBuffers      = 500000;
    p->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = MAX_DYNAMIC_UNIFORM_BUFFERS;
-   p->maxDescriptorSetUpdateAfterBindStorageBuffers      = max_descriptor_set_size;
+   p->maxDescriptorSetUpdateAfterBindStorageBuffers      = 500000;
    p->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = MAX_DYNAMIC_STORAGE_BUFFERS;
-   p->maxDescriptorSetUpdateAfterBindSampledImages       = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindStorageImages       = max_descriptor_set_size;
+   p->maxDescriptorSetUpdateAfterBindSampledImages       = 500000;
+   p->maxDescriptorSetUpdateAfterBindStorageImages       = 500000;
    p->maxDescriptorSetUpdateAfterBindInputAttachments    = MAX_RTS;
 
    p->supportedDepthResolveModes    =
@@ -1153,7 +1153,6 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->maxFragmentDualSrcAttachments = 1;
    props->maxFragmentCombinedOutputResources = MAX_RTS + max_descriptor_set_size * 2;
    props->maxComputeSharedMemorySize = pdevice->info->cs_shared_mem_size;
-   /* keep in sync with nir_shader_compiler_options */
    props->maxComputeWorkGroupCount[0] =
       props->maxComputeWorkGroupCount[1] =
       props->maxComputeWorkGroupCount[2] = 65535;
@@ -1238,6 +1237,11 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->deviceID = pdevice->dev_id.chip_id;
    props->deviceType = VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
 
+   if (TU_DEBUG(DECK_EMU)) {
+      props->vendorID = 0x1002;
+      props->deviceID = 0x163F;
+   }
+
    /* Vulkan 1.4 */
    props->dynamicRenderingLocalReadDepthStencilAttachments = true;
    props->dynamicRenderingLocalReadMultisampledAttachments = true;
@@ -1249,8 +1253,15 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->sparseResidencyAlignedMipSize = false;
    props->sparseResidencyNonResidentStrict = true;
 
-   strcpy(props->deviceName, pdevice->name);
+   char devname[128];
+   strcpy(devname, pdevice->name);
+   strcat(devname, MESA_GIT_SHA1 "/" TUGEN8_DRV_VERSION);
+   strcpy(props->deviceName, devname);
    memcpy(props->pipelineCacheUUID, pdevice->cache_uuid, VK_UUID_SIZE);
+
+   if (TU_DEBUG(DECK_EMU)) {
+      strcpy(props->deviceName, "AMD Custom GPU 0405 (RADV VANGOGH)");
+   }
 
    tu_get_physical_device_properties_1_1(pdevice, props);
    tu_get_physical_device_properties_1_2(pdevice, props);
@@ -1416,7 +1427,7 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->samplerDescriptorBufferAddressSpaceSize = ~0ull;
    props->resourceDescriptorBufferAddressSpaceSize = ~0ull;
    props->descriptorBufferAddressSpaceSize = ~0ull;
-   props->combinedImageSamplerDensityMapDescriptorSize = 3 * FDL6_TEX_CONST_DWORDS * 4;
+   props->combinedImageSamplerDensityMapDescriptorSize = 2 * FDL6_TEX_CONST_DWORDS * 4;
 
    /* VK_EXT_legacy_vertex_attributes */
    props->nativeUnalignedPerformance = true;
@@ -1539,7 +1550,7 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->fullyCoveredFragmentShaderInputVariable = false;
    props->conservativeRasterizationPostDepthCoverage = false;
 
-   /* VK_EXT_fragment_density_map_offset */
+   /* VK_QCOM_fragment_density_map_offset */
    props->fragmentDensityOffsetGranularity = (VkExtent2D) { 
       TU_FDM_OFFSET_GRANULARITY, TU_FDM_OFFSET_GRANULARITY
    };
@@ -1636,27 +1647,41 @@ tu_physical_device_init(struct tu_physical_device *device,
       return vk_startup_errorf(instance, VK_ERROR_OUT_OF_HOST_MEMORY,
                                "device name alloc fail");
    }
+switch (fd_dev_gen(&device->dev_id)) {
+case 6:
+case 7:
+case 8: {
+   device->dev_info = info;
+   device->info = &device->dev_info;
 
-   switch (fd_dev_gen(&device->dev_id)) {
-   case 6:
-   case 7:
-   case 8: {
-      device->dev_info = info;
-      device->info = &device->dev_info;
+   /* A810: больше не пытаемся изменить const поле */
+   
+   device->usable_gmem_size_gmem =
+      fd6_calc_gmem_cache_offsets(&info, device->gmem_size,
+                                  &device->config_gmem,
+                                  &device->config_sysmem);
 
-      device->usable_gmem_size_gmem =
-         fd6_calc_gmem_cache_offsets(&info, device->gmem_size,
-                                     &device->config_gmem,
-                                     &device->config_sysmem);
-
-      if (instance->reserve_descriptor_set) {
-         device->usable_sets = device->reserved_set_idx = device->info->props.max_sets - 1;
-      } else {
-         device->usable_sets = device->info->props.max_sets;
-         device->reserved_set_idx = -1;
-      }
-      break;
+   /* A810: отладочный вывод GMEM */
+   if (device->dev_id.gpu_id == 810) {
+      mesa_logi("A810 GMEM config:");
+      mesa_logi("  GMEM size: %u KB", device->gmem_size / 1024);
+      mesa_logi("  Usable GMEM: %u KB", device->usable_gmem_size_gmem / 1024);
+      mesa_logi("  Color cache offset: 0x%x", device->config_gmem.color_ccu_offset);
+      mesa_logi("  Depth cache offset: 0x%x", device->config_gmem.depth_ccu_offset);
+      mesa_logi("  VPC attr buf size: %u", device->config_gmem.vpc_attr_buf_size);
+      mesa_logi("  VPC pos buf size: %u", device->config_gmem.vpc_pos_buf_size);
+      mesa_logi("  VPC BV pos buf size: %u", device->config_gmem.vpc_bv_pos_buf_size);
    }
+
+   if (instance->reserve_descriptor_set) {
+      device->usable_sets = device->reserved_set_idx = device->info->props.max_sets - 1;
+   } else {
+      device->usable_sets = device->info->props.max_sets;
+      device->reserved_set_idx = -1;
+   }
+   break;
+}
+
    default:
       result = vk_startup_errorf(instance, VK_ERROR_INITIALIZATION_FAILED,
                                  "device %s is unsupported", device->name);
@@ -1768,7 +1793,9 @@ tu_physical_device_init(struct tu_physical_device *device,
     */
    char buf[VK_UUID_SIZE * 2 + 1];
    mesa_bytes_to_hex(buf, device->cache_uuid, VK_UUID_SIZE);
-   device->vk.disk_cache = disk_cache_create(device->name, buf, 0);
+   
+   /* A810: используем стандартный disk_cache */
+   device->vk.disk_cache = disk_cache_create(device->name, buf,0);
 
    device->vk.pipeline_cache_import_ops = cache_import_ops;
 
@@ -1947,6 +1974,16 @@ tu_physical_device_get_global_priority_properties(const struct tu_physical_devic
                                                   enum tu_queue_type type,
                                                   VkQueueFamilyGlobalPriorityPropertiesKHR *props)
 {
+   /* A810: все 4 уровня приоритета */
+   if (pdevice->info->chip >= A8XX) {
+      props->priorityCount = 4;
+      props->priorities[0] = VK_QUEUE_GLOBAL_PRIORITY_LOW_KHR;
+      props->priorities[1] = VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR;
+      props->priorities[2] = VK_QUEUE_GLOBAL_PRIORITY_HIGH_KHR;
+      props->priorities[3] = VK_QUEUE_GLOBAL_PRIORITY_REALTIME_KHR;
+      return;
+   }
+   
    /* drm/msm only supports one priority for VM_BIND queues */
    if (type == TU_QUEUE_SPARSE) {
       props->priorityCount = 1;
@@ -2499,10 +2536,24 @@ static const struct debug_named_value tu_reg_stomper_options[] = {
 };
 
 template <chip CHIP>
-static void
-stomp_regs(struct tu_cs *cs, const uint16_t *regs, size_t count,
-           uint32_t first_reg, uint32_t last_reg, bool inverse)
+static inline void
+tu_cs_dbg_stomp_regs(struct tu_cs *cs,
+                     bool is_rp_blit,
+                     uint32_t first_reg,
+                     uint32_t last_reg,
+                     bool inverse)
 {
+   const uint16_t *regs = NULL;
+   size_t count = 0;
+
+   if (is_rp_blit) {
+      regs = &RP_BLIT_REGS<CHIP>[0];
+      count = ARRAY_SIZE(RP_BLIT_REGS<CHIP>);
+   } else {
+      regs = &CMD_REGS<CHIP>[0];
+      count = ARRAY_SIZE(CMD_REGS<CHIP>);
+   }
+
    for (size_t i = 0; i < count; i++) {
       if (inverse) {
          if (regs[i] >= first_reg && regs[i] <= last_reg)
@@ -2514,30 +2565,6 @@ stomp_regs(struct tu_cs *cs, const uint16_t *regs, size_t count,
 
       if (fd_reg_stomp_allowed(CHIP, regs[i]))
          tu_cs_emit_write_reg(cs, regs[i], 0xffffffff);
-   }
-}
-
-template <chip CHIP>
-static inline void
-tu_cs_dbg_stomp_regs(struct tu_cs *cs,
-                     bool is_rp_blit,
-                     uint32_t first_reg,
-                     uint32_t last_reg,
-                     bool inverse)
-{
-   if (is_rp_blit) {
-      stomp_regs<CHIP>(cs, &DRAW_REGS<CHIP>[0], ARRAY_SIZE(DRAW_REGS<CHIP>),
-                       first_reg, last_reg, inverse);
-      stomp_regs<CHIP>(cs, &BLIT_REGS<CHIP>[0], ARRAY_SIZE(BLIT_REGS<CHIP>),
-                       first_reg, last_reg, inverse);
-      stomp_regs<CHIP>(cs, &COMPUTE_REGS<CHIP>[0], ARRAY_SIZE(COMPUTE_REGS<CHIP>),
-                       first_reg, last_reg, inverse);
-      tu_init_hw_rp<CHIP>(cs);
-   } else {
-      stomp_regs<CHIP>(cs, &CMD_REGS<CHIP>[0], ARRAY_SIZE(CMD_REGS<CHIP>),
-                       first_reg, last_reg, inverse);
-      stomp_regs<CHIP>(cs, &RESOLVE_REGS<CHIP>[0], ARRAY_SIZE(RESOLVE_REGS<CHIP>),
-                       first_reg, last_reg, inverse);
    }
 }
 
@@ -2764,7 +2791,9 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       break;
    case 8:
       /* gen8 TODO: */
-      tu_env.debug |= TU_DEBUG_FLUSHALL;  /* dEQP-VK.draw.\*from_compute\* */
+      /* Commented as we do not care about CTS fails
+      tu_env.debug |= TU_DEBUG_FLUSHALL;  /\* dEQP-VK.draw.\*from_compute\* *\/
+      */
       vk_device_dispatch_table_from_entrypoints(
          &dispatch_table, &tu_device_entrypoints_a8xx, false);
    }
@@ -2788,8 +2817,17 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
    }
 
    device->instance = physical_device->instance;
-   device->physical_device = physical_device;
-   device->device_idx = device->physical_device->device_count++;
+device->physical_device = physical_device;
+
+/* A810: принудительная проверка GMEM */
+if (device->physical_device->dev_id.gpu_id == 810) {
+   if (device->physical_device->gmem_size != 512 * 1024) {
+      mesa_logw("A810: GMEM size is %u KB, expected 512 KB", 
+                device->physical_device->gmem_size / 1024);
+   }
+}
+
+device->device_idx = device->physical_device->device_count++;
 
    result = tu_drm_device_init(device);
    if (result != VK_SUCCESS) {
@@ -2844,9 +2882,13 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       vk_device_set_drm_fd(&device->vk, device->fd);
 
    struct tu6_global *global = NULL;
-   uint32_t global_size = sizeof(struct tu6_global);
-   struct vk_pipeline_cache_create_info pcc_info = { };
+uint32_t global_size = sizeof(struct tu6_global);
+struct vk_pipeline_cache_create_info pcc_info = { };
 
+uint32_t suballoc_size = 256 * 1024;
+if (device->physical_device->dev_id.gpu_id == 810) {
+   suballoc_size = 512 * 1024; /* 512KB для A810 */
+}
    for (unsigned i = 0; i < pCreateInfo->queueCreateInfoCount; i++) {
       const VkDeviceQueueCreateInfo *queue_create =
          &pCreateInfo->pQueueCreateInfos[i];
@@ -2917,21 +2959,28 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
    }
 
    /* initial sizes, these will increase if there is overflow */
+if (device->physical_device->dev_id.gpu_id == 810) {
+   device->vsc_draw_strm_pitch = 0x2000 + VSC_PAD; /* 8KB */
+   device->vsc_prim_strm_pitch = 0x2000 + VSC_PAD; /* 8KB */
+} else {
    device->vsc_draw_strm_pitch = 0x1000 + VSC_PAD;
    device->vsc_prim_strm_pitch = 0x4000 + VSC_PAD;
+}
 
-   if (device->vk.enabled_features.customBorderColors)
-      global_size += TU_BORDER_COLOR_COUNT * sizeof(struct bcolor_entry);
+if (device->vk.enabled_features.customBorderColors)
+   global_size += TU_BORDER_COLOR_COUNT * sizeof(struct bcolor_entry);
 
-   tu_bo_suballocator_init(
-      &device->pipeline_suballoc, device, 128 * 1024,
-      (enum tu_bo_alloc_flags) (TU_BO_ALLOC_GPU_READ_ONLY |
-                                TU_BO_ALLOC_ALLOW_DUMP |
-                                TU_BO_ALLOC_INTERNAL_RESOURCE),
-      "pipeline_suballoc");
-   tu_bo_suballocator_init(&device->autotune_suballoc, device,
-                           128 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE,
-                           "autotune_suballoc");
+/* A810: увеличен размер suballocator для лучшей производительности */
+tu_bo_suballocator_init(
+   &device->pipeline_suballoc, device, suballoc_size,
+   (enum tu_bo_alloc_flags) (TU_BO_ALLOC_GPU_READ_ONLY |
+                             TU_BO_ALLOC_ALLOW_DUMP |
+                             TU_BO_ALLOC_INTERNAL_RESOURCE),
+   "pipeline_suballoc");
+tu_bo_suballocator_init(&device->autotune_suballoc, device,
+                        suballoc_size, TU_BO_ALLOC_INTERNAL_RESOURCE,
+                        "autotune_suballoc");
+   
    if (is_kgsl(physical_device->instance)) {
       tu_bo_suballocator_init(&device->kgsl_profiling_suballoc, device,
                               128 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE,
