@@ -1668,15 +1668,15 @@ add_gpus([
         [a7xx_base, a7xx_gen3, a8xx_base, a8xx_810],
         num_ccu = 2,
         num_slices = 1,
-        tile_align_w = 64,
-        tile_align_h = 64,
+        tile_align_w = 128,
+        tile_align_h = 128,
         tile_max_w = 192,
         tile_max_h = 192,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 8,
-        max_waves = 14,  # A810: увеличено с 16 до 32 для лучшей производительности
+        max_waves = 12,  # A810: увеличено с 16 до 32 для лучшей производительности
         magic_regs = dict(
         ),
         raw_magic_regs = a8xx_gen2_raw_magic_regs,
