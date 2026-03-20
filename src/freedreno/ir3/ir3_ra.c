@@ -1477,10 +1477,6 @@ ir3_ra_handle_unavailable_merge_set(struct ir3_register *reg)
 static physreg_t
 get_reg(struct ra_ctx *ctx, struct ra_file *file, struct ir3_register *reg)
 {
-   /* Для A810: оптимизация приоритета регистров */
-   bool is_a810 = (ctx->compiler->info->chip == 8 && 
-                   ctx->compiler->dev_id->gpu_id == 810);
-   
    /* For subreg moves (see ir3_is_subreg_move), try to allocate half of their
     * full src for their dst. If this succeeds, the instruction can be removed.
     */
@@ -1503,7 +1499,12 @@ get_reg(struct ra_ctx *ctx, struct ra_file *file, struct ir3_register *reg)
       ir3_ra_handle_unavailable_merge_set(reg);
    }
 
-   /* Для A810: увеличиваем шанс использования src регистра */
+   /* For repeated instructions whose merge set is unique (i.e., only used for
+    * these repeated instructions), try to first allocate one of their sources
+    * (for the same reason as for ALU/SFU instructions explained below). This
+    * also prevents us from allocating a new register range for this merge set
+    * when the one from a source could be reused.
+    */
    if (ir3_instr_is_rpt(reg->instr) && rpt_has_unique_merge_set(reg->instr)) {
       physreg_t src_reg = try_allocate_src(ctx, file, reg);
       if (src_reg != (physreg_t)~0)
@@ -2395,9 +2396,9 @@ handle_block(struct ra_ctx *ctx, struct ir3_block *block)
 
    /* Handle live-ins, phis, and input meta-instructions. These all appear
     * live at the beginning of the block, and interfere with each other
-    * therefore need to be allocated "in parallel". This means that we have
-    * to allocate all of them, inserting them into the file, and then delay
-    * updating the IR until all of them are allocated.
+    * therefore need to be allocated "in parallel". This means that we
+    * have to allocate all of them, inserting them into the file, and then
+    * delay updating the IR until all of them are allocated.
     *
     * Handle precolored inputs first, because we need to make sure that other
     * inputs don't overwrite them. We shouldn't have both live-ins/phi nodes
@@ -2527,14 +2528,6 @@ calc_target_full_pressure(struct ir3_shader_variant *v, unsigned pressure)
    unsigned reg_count = DIV_ROUND_UP(pressure, 2 * 4);
 
    bool double_threadsize = ir3_should_double_threadsize(v, reg_count);
-
-   /* Для A810: оптимизация target pressure */
-   if (v->compiler->info->chip == 8 && v->compiler->dev_id->gpu_id == 810) {
-      /* A810 может работать с большим давлением на регистры благодаря GMEM */
-      if (pressure > 32) {
-         double_threadsize = true;
-      }
-   }
 
    unsigned target = reg_count;
    unsigned reg_independent_max_waves =
@@ -2762,13 +2755,6 @@ ir3_ra_get_reg_file_limits(struct ir3_shader_variant *v)
       .shared = RA_SHARED_SIZE,
       .shared_half = RA_SHARED_HALF_SIZE,
    };
-
-   /* Для A810: увеличиваем лимиты регистров */
-   if (v->compiler->info->chip == 8 && v->compiler->dev_id->gpu_id == 810) {
-      /* A810 с 576KB GMEM может использовать больше регистров */
-      limit_pressure.full = RA_FULL_SIZE * 1.1;  /* +10% */
-      limit_pressure.half = RA_HALF_SIZE * 1.1;  /* +10% */
-   }
 
    if (mesa_shader_stage_is_compute(v->type) &&
        v->shader->nir->info.uses_control_barrier) {
