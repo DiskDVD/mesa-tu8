@@ -1479,7 +1479,7 @@ get_reg(struct ra_ctx *ctx, struct ra_file *file, struct ir3_register *reg)
 {
    /* Для A810: оптимизация приоритета регистров */
    bool is_a810 = (ctx->compiler->info->chip == 8 && 
-                   ctx->compiler->dev_id.gpu_id == 810);
+                   ctx->compiler->dev_id->gpu_id == 810);
    
    /* For subreg moves (see ir3_is_subreg_move), try to allocate half of their
     * full src for their dst. If this succeeds, the instruction can be removed.
@@ -2529,7 +2529,7 @@ calc_target_full_pressure(struct ir3_shader_variant *v, unsigned pressure)
    bool double_threadsize = ir3_should_double_threadsize(v, reg_count);
 
    /* Для A810: оптимизация target pressure */
-   if (v->compiler->info->chip == 8 && v->compiler->dev_id.gpu_id == 810) {
+   if (v->compiler->info->chip == 8 && v->compiler->dev_id->gpu_id == 810) {
       /* A810 может работать с большим давлением на регистры благодаря GMEM */
       if (pressure > 32) {
          double_threadsize = true;
@@ -2764,7 +2764,7 @@ ir3_ra_get_reg_file_limits(struct ir3_shader_variant *v)
    };
 
    /* Для A810: увеличиваем лимиты регистров */
-   if (v->compiler->info->chip == 8 && v->compiler->dev_id.gpu_id == 810) {
+   if (v->compiler->info->chip == 8 && v->compiler->dev_id->gpu_id == 810) {
       /* A810 с 576KB GMEM может использовать больше регистров */
       limit_pressure.full = RA_FULL_SIZE * 1.1;  /* +10% */
       limit_pressure.half = RA_HALF_SIZE * 1.1;  /* +10% */
