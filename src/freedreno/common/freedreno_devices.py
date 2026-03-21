@@ -1623,7 +1623,7 @@ a8xx_829 = GPUProps(
         gmem_size = 2 * 1024 * 1024,
         has_ray_intersection = True,
         has_sw_fuse = False,
-        has_coherent_ubws_flag_caches = True,
+        has_coherent_ubwc_flag_caches = True,
         has_fs_tex_prefetch = True,
 )
 
