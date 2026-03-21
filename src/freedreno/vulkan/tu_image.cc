@@ -14,6 +14,7 @@
 
 #include "util/u_debug.h"
 #include "util/format/u_format.h"
+#include "util/u_math.h"
 #include "vk_android.h"
 #include "vk_debug_utils.h"
 #include "vk_util.h"
@@ -327,30 +328,23 @@ ubwc_possible(struct tu_device *device,
    if (info->props.is_a702)
       return false;
 
-   /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Используем chip из info для определения поколения,
-    * а gpu_id получаем через fd_dev_gpu_id если нужно точное совпадение */
-   if (info->chip == 6 && device && device->physical_device) {
-      /* Создаем fd_dev_id из device для получения точного gpu_id */
-      struct fd_dev_id id = {
-         .gpu_id = device->physical_device->dev_id.gpu_id,
-         .chip_id = device->physical_device->dev_id.chip_id,
-      };
-      uint32_t gpu_id = fd_dev_gpu_id(&id);
+   /* ========== A810: ВКЛЮЧАЕМ UBWC ДЛЯ SYSMEM ========== */
+   /* Для A810 разрешаем UBWC даже в sysmem режиме */
+   if (device && device->physical_device->dev_id.gpu_id == 810) {
+      /* Пропускаем только случаи, где UBWC точно невозможен */
+      if (flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)
+         return false;
+      if (vk_format_is_compressed(format) ||
+          format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 ||
+          format == VK_FORMAT_S8_UINT)
+         return false;
+      if (type == VK_IMAGE_TYPE_3D && mip_levels > 1)
+         return false;
       
-      if (gpu_id == 810 && !(flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
-          !(flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) &&
-          !vk_format_is_compressed(format) &&
-          format != VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 &&
-          format != VK_FORMAT_S8_UINT) {
-         
-         if (type != VK_IMAGE_TYPE_3D || mip_levels <= 1) {
-            if (!((usage | stencil_usage) & VK_IMAGE_USAGE_STORAGE_BIT) ||
-                info->props.supports_uav_ubwc) {
-               return true;
-            }
-         }
-      }
+      /* Для всего остального включаем UBWC */
+      return true;
    }
+   /* ========== КОНЕЦ БЛОКА A810 ========== */
 
    /* UBWC isn't possible with sparse residency, because unbound blocks may
     * have leftover fast-clear data and therefore may show up as non-zero.
@@ -524,6 +518,15 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
       tile_mode = TILE6_LINEAR;
       image->ubwc_enabled = false;
    }
+
+   /* ========== A810: СОХРАНЯЕМ UBWC ДЛЯ SYSMEM ========== */
+   /* Не отключаем UBWC для A810 даже если force_linear_tile не установлен */
+   if (device->physical_device->dev_id.gpu_id == 810 && 
+       !image->force_linear_tile) {
+      /* UBWC уже включён, просто убеждаемся что не отключится */
+      image->ubwc_enabled = true;
+   }
+   /* ========== КОНЕЦ ========== */
 
    /* Whether a view of the image with an R8G8 format could be made. */
    bool has_r8g8 = tu_is_r8g8(vk_format_to_pipe_format(image->vk.format));
@@ -749,6 +752,16 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
       /* Для A810 TILE6_3 дает лучшую производительность */
       image->force_linear_tile = false;
    }
+
+   /* ========== A810: ФОРСИРУЕМ UBWC В SYSMEM ========== */
+   if (device->physical_device->dev_id.gpu_id == 810 &&
+       !(pCreateInfo->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
+       !(pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)) {
+      /* Принудительно включаем UBWC для A810 */
+      image->ubwc_enabled = true;
+      image->force_linear_tile = false;
+   }
+   /* ========== КОНЕЦ ========== */
 
    if (image->force_linear_tile ||
        !ubwc_possible(device, image->vk.format, pCreateInfo->imageType,
