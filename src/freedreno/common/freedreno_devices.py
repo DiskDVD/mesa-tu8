@@ -1625,16 +1625,16 @@ a8xx_829 = GPUProps(
 # VPC буферы оставлены как в стабильной версии 0.6 (без изменений!)
 a8xx_810 = GPUProps(
         # VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ (не меняем!)
-        sysmem_vpc_attr_buf_size = 131072,      # 128KB - стабильно
-        sysmem_vpc_pos_buf_size = 65536,        # 64KB - стабильно
-        sysmem_vpc_bv_pos_buf_size = 32768,     # 32KB - стабильно
+        sysmem_vpc_attr_buf_size = 65536,      # 128KB - стабильно
+        sysmem_vpc_pos_buf_size = 32768,        # 64KB - стабильно
+        sysmem_vpc_bv_pos_buf_size = 16384,     # 32KB - стабильно
         
         # Эти значения - максимальный размер depth/color cache для текущей конфигурации A8XX Gen2 sysmem
         # Большие значения могут вызвать integer underflow в расчетах freedreno gmem
         sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
-        sysmem_per_ccu_color_cache_size = 32 * 1024,
+        sysmem_per_ccu_color_cache_size = 16 * 1024,
         sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
-        sysmem_per_ccu_depth_cache_size = 32 * 1024,
+        sysmem_per_ccu_depth_cache_size = 16 * 1024,
         
         # GMEM VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ
         gmem_vpc_attr_buf_size = 49152,         # 48KB - стабильно
@@ -1669,7 +1669,7 @@ add_gpus([
         num_ccu = 2,
         num_slices = 1,
         tile_align_w = 32,
-        tile_align_h = 32,
+        tile_align_h = 16,
         tile_max_w = 192,
         tile_max_h = 192,
         num_vsc_pipes = 32,
