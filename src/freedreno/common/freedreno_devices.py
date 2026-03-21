@@ -1619,11 +1619,10 @@ a8xx_829 = GPUProps(
         gmem_per_ccu_color_cache_size = 256 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
         gmem_per_ccu_depth_cache_size = 512 * 1024,
+    
         gmem_size = 2 * 1024 * 1024,
-
         has_ray_intersection = True,
         has_sw_fuse = False,
-        disable_gmem = False,
         has_coherent_ubws_flag_caches = True,
         has_fs_tex_prefetch = True,
 )
@@ -1718,7 +1717,7 @@ add_gpus([
     GPUId(chip_id=0xffff44030A00, name="FD829"),
     ], A6xxGPUInfo(
         CHIP.A8XX,
-        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_829, GPUProps(disable_gmem = True,),],
+        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_829, GPUProps(disable_gmem = False,),],
         num_ccu = 4,
         num_slices = 2,
         tile_align_w = 64,
