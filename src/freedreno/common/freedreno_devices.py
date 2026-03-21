@@ -1618,7 +1618,7 @@ a8xx_829 = GPUProps(
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
         gmem_per_ccu_color_cache_size = 128 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
-        gmem_per_ccu_depth_cache_size = 256 * 1024,
+        gmem_per_ccu_depth_cache_size = 128 * 1024,
     
         gmem_size = 2 * 1024 * 1024,
         has_ray_intersection = True,
