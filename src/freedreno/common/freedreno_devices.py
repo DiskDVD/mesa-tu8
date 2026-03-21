@@ -1609,16 +1609,16 @@ a8xx_829 = GPUProps(
         sysmem_vpc_pos_buf_size = 32768,
         sysmem_vpc_bv_pos_buf_size = 16384,
         sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
-        sysmem_per_ccu_color_cache_size = 64 * 1024,
+        sysmem_per_ccu_color_cache_size = 256 * 1024,
         sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
-        sysmem_per_ccu_depth_cache_size = 64 * 1024,
+        sysmem_per_ccu_depth_cache_size = 128 * 1024,
         gmem_vpc_attr_buf_size = 49152,
         gmem_vpc_pos_buf_size = 24576,
         gmem_vpc_bv_pos_buf_size = 24576,
         gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
-        gmem_per_ccu_color_cache_size = 64 * 1024,
+        gmem_per_ccu_color_cache_size = 256 * 1024,
         gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
-        gmem_per_ccu_depth_cache_size = 64 * 1024,
+        gmem_per_ccu_depth_cache_size = 128 * 1024,
     
         gmem_size = 2 * 1024 * 1024,
         has_ray_intersection = True,
@@ -1628,12 +1628,11 @@ a8xx_829 = GPUProps(
 )
 
 # Оптимизированные параметры для Adreno 810
-# VPC буферы оставлены как в стабильной версии 0.6 (без изменений!)
 a8xx_810 = GPUProps(
-        # VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ (не меняем!)
-        sysmem_vpc_attr_buf_size = 65536,      # 128KB - стабильно
-        sysmem_vpc_pos_buf_size = 32768,        # 64KB - стабильно
-        sysmem_vpc_bv_pos_buf_size = 16384,     # 32KB - стабильно
+        # VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ
+        sysmem_vpc_attr_buf_size = 65536,      # Данные значения VPC буфферов как выяснилось дает максимальное значения.
+        sysmem_vpc_pos_buf_size = 32768,
+        sysmem_vpc_bv_pos_buf_size = 16384, 
         
         # Эти значения - максимальный размер depth/color cache для текущей конфигурации A8XX Gen2 sysmem
         # Большие значения могут вызвать integer underflow в расчетах freedreno gmem
@@ -1666,7 +1665,7 @@ a8xx_810 = GPUProps(
 )
 
 
-# gen8_3_0 - Adreno 810 с увеличенным max_waves
+# gen8_3_0 - Adreno 810 
 add_gpus([
         GPUId(chip_id=0x44010000, name="FD810"),
     ], A6xxGPUInfo(
@@ -1681,8 +1680,8 @@ add_gpus([
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
-        fibers_per_sp = 128 * 2 * 8,
-        max_waves = 12,  # A810: увеличено с 16 до 32 для лучшей производительности
+        fibers_per_sp = 128 * 2 * 16,
+        max_waves = 16,
         magic_regs = dict(
         ),
         raw_magic_regs = a8xx_gen2_raw_magic_regs,
