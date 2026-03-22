@@ -1672,15 +1672,7 @@ case 8: {
       mesa_logi("  VPC pos buf size: %u", device->config_gmem.vpc_pos_buf_size);
       mesa_logi("  VPC BV pos buf size: %u", device->config_gmem.vpc_bv_pos_buf_size);
    }
-      /* ========== ДОБАВЬ ЭТОТ БЛОК ========== */
-   /* A829: отключаем timeline semaphores (временный костыль) */
-   if (device->dev_id.gpu_id == 829) {
-      device->sync_types = VK_SYNC_TYPE_SEMAPHORE_FD;
-      mesa_logi("A829: timeline semaphores disabled for compatibility");
-   } else {
-      device->sync_types = VK_SYNC_TYPE_SEMAPHORE_FD | VK_SYNC_TYPE_TIMELINE;
-   }
-   /* ========== КОНЕЦ БЛОКА ========== */
+      
 
    if (instance->reserve_descriptor_set) {
       device->usable_sets = device->reserved_set_idx = device->info->props.max_sets - 1;
