@@ -9,7 +9,6 @@
  * Стабильная версия для Adreno 810
  * - Исправлены ошибки компиляции
  * - Добавлены недостающие функции
- * - Добавлены workarounds для Adreno 829
  */
 
 #include "tu_queue.h"
@@ -457,158 +456,6 @@ resolve_vis_stream_patchpoints_stable(struct tu_queue *queue,
    return VK_SUCCESS;
 }
 
-/* Специальная версия для Adreno 829 с увеличенными таймаутами */
-static VkResult
-resolve_vis_stream_patchpoints_a829(struct tu_queue *queue,
-                                     void *submit,
-                                     struct util_dynarray *dump_cmds,
-                                     struct tu_cmd_buffer **cmd_buffers,
-                                     uint32_t cmdbuf_count)
-{
-   struct tu_device *dev = queue->device;
-
-   /* Логируем что используем workaround для A829 */
-   static bool logged = false;
-   if (!logged) {
-      mesa_logi("A829: using special visibility stream patchpoints with increased timeouts");
-      logged = true;
-   }
-
-   uint32_t max_size = 0;
-   uint32_t rp_count = 0;
-   for (unsigned i = 0; i < cmdbuf_count; i++) {
-      max_size = MAX2(max_size, cmd_buffers[i]->vsc_size);
-      rp_count += cmd_buffers[i]->state.tile_render_pass_count;
-   }
-
-   if (max_size == 0)
-      return VK_SUCCESS;
-
-   struct tu_bo *bo = NULL;
-   VkResult result = VK_SUCCESS;
-
-   /* Для A829 используем меньшее количество vis streams для стабильности */
-   uint32_t min_vis_stream_count =
-      (TU_DEBUG(NO_CONCURRENT_BINNING) || dev->physical_device->info->chip < 7) ?
-      1 : MIN2(MAX2(rp_count, 1), 16); /* A829: ограничиваем до 16 вместо TU_MAX_VIS_STREAMS */
-   uint32_t vis_stream_count;
-   uint32_t vis_stream_size = max_size;
-
-   mtx_lock(&dev->vis_stream_mtx);
-
-   if (!dev->vis_stream_bo || max_size > dev->vis_stream_size ||
-       min_vis_stream_count > dev->vis_stream_count) {
-      
-      dev->vis_stream_count = MAX2(dev->vis_stream_count,
-                                   min_vis_stream_count);
-      dev->vis_stream_size = MAX2(dev->vis_stream_size, vis_stream_size);
-      
-      if (dev->vis_stream_bo)
-         tu_bo_finish(dev, dev->vis_stream_bo);
-      
-      result = tu_bo_init_new(dev, &dev->vk.base, &dev->vis_stream_bo,
-                              dev->vis_stream_size * dev->vis_stream_count, 
-                              TU_BO_ALLOC_INTERNAL_RESOURCE,
-                              "visibility stream");
-      
-      if (result != VK_SUCCESS) {
-         mtx_unlock(&dev->vis_stream_mtx);
-         return result;
-      }
-   }
-
-   bo = dev->vis_stream_bo;
-   vis_stream_count = dev->vis_stream_count;
-
-   mtx_unlock(&dev->vis_stream_mtx);
-
-   if (!bo)
-      return VK_ERROR_OUT_OF_HOST_MEMORY;
-
-   for (unsigned i = 0; i < cmdbuf_count; i++) {
-      bool has_bo = false;
-      util_dynarray_foreach (&cmd_buffers[i]->vis_stream_bos,
-                             struct tu_bo *, cmd_bo) {
-         if (*cmd_bo == bo) {
-            has_bo = true;
-            break;
-         }
-      }
-
-      if (!has_bo) {
-         util_dynarray_append(&cmd_buffers[i]->vis_stream_bos,
-                              tu_bo_get_ref(bo));
-      }
-   }
-
-   unsigned render_pass_idx = queue->render_pass_idx;
-
-   for (unsigned i = 0; i < cmdbuf_count; i++) {
-      struct tu_cs cs, sub_cs;
-      uint64_t fence_iova = 0;
-      
-      if (cmd_buffers[i]->usage_flags &
-          VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
-         result = get_vis_stream_patchpoint_cs(cmd_buffers[i],
-                                               &cs, &sub_cs, &fence_iova);
-         if (result != VK_SUCCESS)
-            return result;
-      }
-
-      util_dynarray_foreach (&cmd_buffers[i]->vis_stream_patchpoints,
-                             struct tu_vis_stream_patchpoint,
-                             patchpoint) {
-         unsigned vis_stream_idx =
-            (render_pass_idx + patchpoint->render_pass_idx) %
-            vis_stream_count;
-         uint64_t final_iova =
-            bo->iova + vis_stream_idx * max_size + patchpoint->offset;
-
-         if (cmd_buffers[i]->usage_flags &
-             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
-            tu_cs_emit_pkt7(&sub_cs, CP_MEM_WRITE, 4);
-            tu_cs_emit_qw(&sub_cs, patchpoint->iova);
-            tu_cs_emit_qw(&sub_cs, final_iova);
-         } else {
-            patchpoint->data[0] = final_iova;
-            patchpoint->data[1] = final_iova >> 32;
-         }
-      }
-
-      struct tu_vis_stream_patchpoint *count_patchpoint =
-         &cmd_buffers[i]->vis_stream_count_patchpoint;
-      if (count_patchpoint->data) {
-         if (cmd_buffers[i]->usage_flags &
-             VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
-            tu_cs_emit_pkt7(&sub_cs, CP_MEM_WRITE, 3);
-            tu_cs_emit_qw(&sub_cs, count_patchpoint->iova);
-            tu_cs_emit(&sub_cs, vis_stream_count);
-         } else {
-            count_patchpoint->data[0] = vis_stream_count;
-         }
-      }
-
-      if (cmd_buffers[i]->usage_flags &
-          VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
-         tu_cs_emit_pkt7(&sub_cs, CP_WAIT_MEM_WRITES, 0);
-         tu_cs_emit_pkt7(&sub_cs, CP_WAIT_FOR_ME, 0);
-
-         tu_cs_emit_pkt7(&sub_cs, CP_MEM_WRITE, 3);
-         tu_cs_emit_qw(&sub_cs, fence_iova);
-         tu_cs_emit(&sub_cs, 1);
-
-         struct tu_cs_entry entry = tu_cs_end_sub_stream(&cs, &sub_cs);
-         submit_add_entries(queue->device, submit, dump_cmds, &entry, 1);
-      }
-
-      render_pass_idx += cmd_buffers[i]->state.tile_render_pass_count;
-   }
-
-   queue->render_pass_idx = render_pass_idx;
-
-   return VK_SUCCESS;
-}
-
 static VkResult
 resolve_cb_control_patchpoints(struct tu_queue *queue,
                                void *submit,
@@ -766,17 +613,11 @@ queue_submit(struct vk_queue *_queue, struct vk_queue_submit *vk_submit)
    if (!submit)
       goto fail_create_submit;
 
-   /* Выбор функции обработки vis stream в зависимости от GPU */
-   if (device->physical_device->dev_id.gpu_id == 829) {
-      /* Специальная версия для Adreno 829 */
-      result = resolve_vis_stream_patchpoints_a829(queue, submit, &dump_cmds,
-                                                   cmd_buffers, cmdbuf_count);
-   } else if (device->physical_device->info->chip >= 8) {
-      /* Стабильная версия для A810 и других A8XX */
+   /* Используем стабильную версию для A810 */
+   if (device->physical_device->info->chip >= 8) {
       result = resolve_vis_stream_patchpoints_stable(queue, submit, &dump_cmds,
                                                      cmd_buffers, cmdbuf_count);
    } else {
-      /* Оригинальная версия для старых чипов */
       result = resolve_vis_stream_patchpoints_original(queue, submit, &dump_cmds,
                                                        cmd_buffers, cmdbuf_count);
    }

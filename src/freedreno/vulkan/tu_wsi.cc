@@ -52,15 +52,6 @@ tu_wsi_init(struct tu_physical_device *physical_device)
    physical_device->wsi_device.can_present_on_device =
       tu_wsi_can_present_on_device;
 
-   /* Workaround for Adreno 829: increase present wait timeout and force 2 buffers */
-   if (physical_device->dev_id.gpu_id == 829) {
-      /* Increase present wait timeout to 5 seconds (from default) */
-      physical_device->wsi_device.present_wait_timeout = 5000000000ULL;
-      /* Force 2 buffers instead of 3 to avoid swapchain recreation issues */
-      physical_device->wsi_device.force_buffer_count = 2;
-      mesa_logi("A829: WSI workarounds enabled (timeout=5s, buffer_count=2)");
-   }
-
    physical_device->vk.wsi_device = &physical_device->wsi_device;
 
    return VK_SUCCESS;
