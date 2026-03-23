@@ -1376,12 +1376,9 @@ r3d_src_gmem(struct tu_cmd_buffer *cmd,
    tu_desc_set_depth<CHIP>(desc, 1);
 
    uint64_t va = gmem_offset;
-   if (CHIP < A8XX) {
-      /* For gen8, address is simply gmem_offset if tile_mode is gmem
-       * tiling (TILE6_2)
-       */
-      va += cmd->device->physical_device->gmem_base;
-   }
+if (CHIP < A8XX || cmd->device->physical_device->dev_id.gpu_id == 810) {
+   va += cmd->device->physical_device->gmem_base;
+}
 
    tu_desc_set_addr<CHIP>(desc, va);
 
