@@ -239,11 +239,13 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
    bool is_a810 = (dev->physical_device->dev_id.gpu_id == 810);
 
    if (is_a810) {
-      /* Для A810 с 512KB GMEM используем меньшие тайлы и другое выравнивание */
-      tile_align_h = 16;  /* Вместо 32 */
-      /* Принудительно ограничиваем максимальные размеры тайлов */
-      fb->max_tile_w_constraint = MIN2(fb->max_tile_w_constraint, 128);
-      fb->max_tile_h_constraint = MIN2(fb->max_tile_h_constraint, 128);
+      /* Для A810 с 512KB GMEM используем выравнивание 32x16 как в стабильной версии */
+      tile_align_h = 16;  /* Вместо 32 из freedreno_devices.py */
+      
+      /* Убираем принудительное ограничение тайлов до 128px, 
+         используем значения из freedreno_devices.py (192x192) */
+      /* fb->max_tile_w_constraint = MIN2(fb->max_tile_w_constraint, 128); */
+      /* fb->max_tile_h_constraint = MIN2(fb->max_tile_h_constraint, 128); */
    }
 
    *tiling = (struct tu_tiling_config) {
@@ -314,10 +316,11 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       MIN3(dev->physical_device->info->tile_max_h,
            align(fb->height, tile_align_h), fb->max_tile_h_constraint);
 
-   /* Для A810 дополнительно ограничиваем максимальные размеры */
+   /* Для A810 используем максимальные значения из freedreno_devices.py */
    if (is_a810) {
-      max_tile_width = MIN2(max_tile_width, 128);
-      max_tile_height = MIN2(max_tile_height, 128);
+      /* Оставляем как есть, без дополнительных ограничений */
+      /* max_tile_width = MIN2(max_tile_width, 128); - УБРАНО */
+      /* max_tile_height = MIN2(max_tile_height, 128); - УБРАНО */
    }
 
    for (tile_size.width = tile_align_w; tile_size.width <= max_tile_width;
@@ -378,10 +381,13 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       }
    }
 
-   /* Для A810 проверяем, что тайлы не слишком большие */
+   /* Для A810 проверяем, что тайлы не превышают лимиты железа */
    if (is_a810 && tiling->possible) {
-      if (tiling->tile0.width > 128 || tiling->tile0.height > 128) {
-         tiling->possible = false;
+      /* Просто проверяем, но не принуждаем к sysmem */
+      if (tiling->tile0.width > 192 || tiling->tile0.height > 192) {
+         mesa_logw("A810: Tile too large (%ux%u), may cause issues",
+                   tiling->tile0.width, tiling->tile0.height);
+         /* tiling->possible = false; - НЕ отключаем GMEM */
       }
    }
 }
