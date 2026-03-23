@@ -1665,14 +1665,7 @@ a8xx_810 = GPUProps(
         enable_fsr = True,
         fsr_render_scale = 0.5,
         fsr_sharpness = 0.2,
-        fsr_rcas = True,
         force_sysmem = True,
-        fsr_version = "3.1",
-        fsr_history_buffers = 2,
-        fsr_history_size = 8 * 1024* 1024,
-        fsr_auto_enable = True,
-        fsr mem threshold = 80,
-        fsr_cpu_threshold = 90,
 )
 
 
