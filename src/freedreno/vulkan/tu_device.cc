@@ -3138,6 +3138,11 @@ tu_bo_suballocator_init(&device->autotune_suballoc, device,
       (!border_color_without_format ||
        physical_device->instance->disable_d24s8_border_color_workaround);
    device->use_lrz = !TU_DEBUG_START(NOLRZ);
+   /* A829: временное отключение timeline semaphores */
+if (device->physical_device->dev_id.gpu_id == 829) {
+   device->vk.enabled_features.timelineSemaphore = false;
+   mesa_logi("A829: timeline semaphores disabled for compatibility");
+}
 
    tu_gpu_tracepoint_config_variable();
 
