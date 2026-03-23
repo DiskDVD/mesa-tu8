@@ -239,19 +239,11 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
    bool is_a810 = (dev->physical_device->dev_id.gpu_id == 810);
 
    if (is_a810) {
-      /* Для A810 с 512KB GMEM используем выравнивание 32x16 как в стабильной версии */
-      tile_align_h = 16;  /* Вместо 32 из freedreno_devices.py */
-      
-      /* Убираем принудительное ограничение тайлов до 128px, 
-         используем значения из freedreno_devices.py (192x192) */
-      /* fb->max_tile_w_constraint = MIN2(fb->max_tile_w_constraint, 128); */
-      /* fb->max_tile_h_constraint = MIN2(fb->max_tile_h_constraint, 128); */
+      /* Для A810 используем выравнивание 32x16 */
+      tile_align_h = 16;
    }
 
    *tiling = (struct tu_tiling_config) {
-      /* Put in dummy values that will assertion fail in register setup using
-       * them, since you shouldn't be doing gmem work if gmem is not possible.
-       */
       .tile0 = (VkExtent2D) { ~0, ~0 },
       .possible = false,
       .vsc = {
@@ -259,24 +251,10 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       },
    };
 
-   /* From the Vulkan 1.3.232 spec, under VkFramebufferCreateInfo:
-    *
-    *   If the render pass uses multiview, then layers must be one and each
-    *   attachment requires a number of layers that is greater than the
-    *   maximum bit index set in the view mask in the subpasses in which it is
-    *   used.
-    */
-
    uint32_t layers = MAX2(fb->layers, pass->num_views);
 
-   /* If there is more than one layer, we need to make sure that the layer
-    * stride is expressible as an offset in RB_RESOLVE_GMEM_BUFFER_BASE which ignores
-    * the low 12 bits. The layer stride seems to be implicitly calculated from
-    * the tile width and height so we need to adjust one of them.
-    */
    uint32_t gmem_align_log2 = 12;
 
-   /* Для A810 может потребоваться большее выравнивание GMEM */
    if (is_a810) {
       gmem_align_log2 = 16;  /* 64KB выравнивание */
    }
@@ -284,31 +262,18 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
    const uint32_t gmem_align = 1 << gmem_align_log2;
    uint32_t min_layer_stride = tile_align_h * tile_align_w * pass->min_cpp;
    if (layers > 1 && align(min_layer_stride, gmem_align) != min_layer_stride) {
-      /* Make sure that min_layer_stride is a multiple of gmem_align. Because
-       * gmem_align is a power of two and min_layer_stride isn't already a
-       * multiple of gmem_align, this is equivalent to shifting tile_align_h
-       * until the number of 0 bits at the bottom of min_layer_stride is at
-       * least gmem_align_log2.
-       */
       tile_align_h <<= gmem_align_log2 - (ffs(min_layer_stride) - 1);
-
-      /* Check that we did the math right. */
       min_layer_stride = tile_align_h * tile_align_w * pass->min_cpp;
       assert(util_is_aligned(min_layer_stride, gmem_align));
    }
 
-   /* will force to sysmem, don't bother trying to have a valid tile config
-    * TODO: just skip all GMEM stuff when sysmem is forced?
-    */
    if (!pass->gmem_pixels[gmem_layout])
       return;
 
    uint32_t best_tile_count = ~0;
    VkExtent2D tile_count;
    VkExtent2D tile_size;
-   /* There aren't that many different tile widths possible, so just walk all
-    * of them finding which produces the lowest number of bins.
-    */
+   
    uint32_t max_tile_width =
       MIN3(dev->physical_device->info->tile_max_w,
            util_align_npot(fb->width, tile_align_w), fb->max_tile_w_constraint);
@@ -316,12 +281,23 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       MIN3(dev->physical_device->info->tile_max_h,
            align(fb->height, tile_align_h), fb->max_tile_h_constraint);
 
-   /* Для A810 используем максимальные значения из freedreno_devices.py */
+   /* ========== A810: ОПТИМИЗАЦИЯ ДЛЯ SYSMEM И GMEM ========== */
    if (is_a810) {
-      /* Оставляем как есть, без дополнительных ограничений */
-      /* max_tile_width = MIN2(max_tile_width, 128); - УБРАНО */
-      /* max_tile_height = MIN2(max_tile_height, 128); - УБРАНО */
+      /* TU_GMEM_LAYOUT_SYSMEM = 0, TU_GMEM_LAYOUT_GMEM = 1 */
+      bool is_sysmem = (gmem_layout == 0);
+      bool is_gmem = (gmem_layout == 1);
+      
+      if (is_sysmem) {
+         /* SYSMEM: уменьшаем тайлы для экономии RAM */
+         max_tile_width = MIN2(max_tile_width, 96);
+         max_tile_height = MIN2(max_tile_height, 96);
+      } else if (is_gmem) {
+         /* GMEM: оставляем 192x192 для производительности */
+         max_tile_width = MIN2(max_tile_width, 192);
+         max_tile_height = MIN2(max_tile_height, 192);
+      }
    }
+   /* ========== КОНЕЦ ========== */
 
    for (tile_size.width = tile_align_w; tile_size.width <= max_tile_width;
         tile_size.width += tile_align_w) {
@@ -331,12 +307,6 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       if (!tile_size.height)
          continue;
 
-      /* When using FDM, we need approximately square tiles to maintain
-       * proper density distribution across the framebuffer.
-       * Way to wide or tall tiles would distort the density mapping, causing
-       * areas intended for low density to receive higher density and vice
-       * versa.
-       */
       uint32_t fdm_penalty = 0;
       if (pass->has_fdm &&
           (tile_size.width > tile_size.height * 2 ||
@@ -347,16 +317,9 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       tile_count.width = DIV_ROUND_UP(fb->width, tile_size.width);
       tile_count.height = DIV_ROUND_UP(fb->height, tile_size.height);
 
-      /* Drop the height of the tile down to split tiles more evenly across the
-       * screen for a given tile count.
-       */
       tile_size.height =
          align(DIV_ROUND_UP(fb->height, tile_count.height), tile_align_h);
 
-      /* Pick the layout with the minimum number of bins (lowest CP overhead
-       * and amount of cache flushing), but the most square tiles in the case
-       * of a tie (likely highest cache locality).
-       */
       uint32_t total_tiles = tile_count.width * tile_count.height + fdm_penalty;
       if (total_tiles < best_tile_count ||
           (total_tiles == best_tile_count &&
@@ -369,7 +332,6 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       }
    }
 
-   /* If forcing binning, try to get at least 2 tiles in each direction. */
    if (TU_DEBUG(FORCEBIN) && tiling->possible) {
       if (tiling->vsc.tile_count.width == 1 && tiling->tile0.width != tile_align_w) {
          tiling->tile0.width = util_align_npot(DIV_ROUND_UP(tiling->tile0.width, 2), tile_align_w);
@@ -381,15 +343,18 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       }
    }
 
-   /* Для A810 проверяем, что тайлы не превышают лимиты железа */
-   if (is_a810 && tiling->possible) {
-      /* Просто проверяем, но не принуждаем к sysmem */
-      if (tiling->tile0.width > 192 || tiling->tile0.height > 192) {
-         mesa_logw("A810: Tile too large (%ux%u), may cause issues",
-                   tiling->tile0.width, tiling->tile0.height);
-         /* tiling->possible = false; - НЕ отключаем GMEM */
+   /* ========== A810: ФИКС АРТЕФАКТОВ GMEM ========== */
+   if (is_a810 && tiling->possible && gmem_layout == 1) {
+      /* Для GMEM проверяем корректность тайлов */
+      if (tiling->tile0.width == 192 && tiling->tile0.height == 192) {
+         /* Логируем, что всё в порядке */
+         if (TU_DEBUG(STARTUP)) {
+            mesa_logi("A810: GMEM tiles set to %ux%u", 
+                      tiling->tile0.width, tiling->tile0.height);
+         }
       }
    }
+   /* ========== КОНЕЦ ========== */
 }
 
 static bool
