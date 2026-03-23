@@ -1662,6 +1662,11 @@ a8xx_810 = GPUProps(
         has_coherent_ubwc_flag_caches = True,
         has_fs_tex_prefetch = False,
         has_salu_int_narrowing_quirk = True,
+        enable_fsr = True,
+        fsr_render_scale = 0.5,
+        fsr_sharpness = 0.2,
+        fsr_rcas = True,
+        force_sysmem = True,
 )
 
 
