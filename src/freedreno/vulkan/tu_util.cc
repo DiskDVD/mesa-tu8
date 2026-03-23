@@ -238,10 +238,9 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
    /* Правильная проверка для A810 через gpu_id */
    bool is_a810 = (dev->physical_device->dev_id.gpu_id == 810);
 
-   if (is_a810) {
-      /* Для A810 используем выравнивание 32x16 */
-      tile_align_h = 16;
-   }
+   /* Используем локальную переменную для выравнивания GMEM */
+   /* Для A810 используем 4KB выравнивание, а не 64KB */
+   uint32_t gmem_align_log2 = 12;  /* 4KB выравнивание по умолчанию */
 
    *tiling = (struct tu_tiling_config) {
       .tile0 = (VkExtent2D) { ~0, ~0 },
@@ -252,12 +251,6 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
    };
 
    uint32_t layers = MAX2(fb->layers, pass->num_views);
-
-   uint32_t gmem_align_log2 = 12;
-
-   if (is_a810) {
-      gmem_align_log2 = 16;  /* 64KB выравнивание */
-   }
 
    const uint32_t gmem_align = 1 << gmem_align_log2;
    uint32_t min_layer_stride = tile_align_h * tile_align_w * pass->min_cpp;
@@ -281,9 +274,8 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       MIN3(dev->physical_device->info->tile_max_h,
            align(fb->height, tile_align_h), fb->max_tile_h_constraint);
 
-   /* ========== A810: ОПТИМИЗАЦИЯ ДЛЯ SYSMEM И GMEM ========== */
+   /* A810: оптимизация размеров тайлов */
    if (is_a810) {
-      /* TU_GMEM_LAYOUT_SYSMEM = 0, TU_GMEM_LAYOUT_GMEM = 1 */
       bool is_sysmem = (gmem_layout == 0);
       bool is_gmem = (gmem_layout == 1);
       
@@ -292,12 +284,11 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
          max_tile_width = MIN2(max_tile_width, 96);
          max_tile_height = MIN2(max_tile_height, 96);
       } else if (is_gmem) {
-         /* GMEM: оставляем 192x192 для производительности */
+         /* GMEM: 192x192 для производительности */
          max_tile_width = MIN2(max_tile_width, 192);
          max_tile_height = MIN2(max_tile_height, 192);
       }
    }
-   /* ========== КОНЕЦ ========== */
 
    for (tile_size.width = tile_align_w; tile_size.width <= max_tile_width;
         tile_size.width += tile_align_w) {
@@ -343,18 +334,12 @@ tu_tiling_config_update_tile_layout(struct tu_framebuffer *fb,
       }
    }
 
-   /* ========== A810: ФИКС АРТЕФАКТОВ GMEM ========== */
-   if (is_a810 && tiling->possible && gmem_layout == 1) {
-      /* Для GMEM проверяем корректность тайлов */
-      if (tiling->tile0.width == 192 && tiling->tile0.height == 192) {
-         /* Логируем, что всё в порядке */
-         if (TU_DEBUG(STARTUP)) {
-            mesa_logi("A810: GMEM tiles set to %ux%u", 
-                      tiling->tile0.width, tiling->tile0.height);
-         }
-      }
+   /* A810: отладочный вывод */
+   if (is_a810 && tiling->possible && gmem_layout == 1 && TU_DEBUG(STARTUP)) {
+      mesa_logi("A810: GMEM tile = %ux%u, tile_count = %ux%u",
+                tiling->tile0.width, tiling->tile0.height,
+                tiling->vsc.tile_count.width, tiling->vsc.tile_count.height);
    }
-   /* ========== КОНЕЦ ========== */
 }
 
 static bool
