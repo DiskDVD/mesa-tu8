@@ -1661,7 +1661,8 @@ a8xx_810 = GPUProps(
         disable_gmem = False,
         has_coherent_ubwc_flag_caches = True,
         has_fs_tex_prefetch = False,
-        has_salu_int_narrowing_quirk = True
+        has_salu_int_narrowing_quirk = True,
+        gmem_base_offset = 64,
 )
 
 
