@@ -328,10 +328,11 @@ ubwc_possible(struct tu_device *device,
    if (info->props.is_a702)
       return false;
 
-   /* ========== A810: ВКЛЮЧАЕМ UBWC ДЛЯ SYSMEM ========== */
-   /* Для A810 разрешаем UBWC даже в sysmem режиме */
+   /* ========== A810: АГРЕССИВНЫЙ UBWC ДЛЯ МАКСИМАЛЬНОЙ ПРОИЗВОДИТЕЛЬНОСТИ ========== */
    if (device && device->physical_device->dev_id.gpu_id == 810) {
-      /* Пропускаем только случаи, где UBWC точно невозможен */
+      /* Для A810 включаем UBWC для всех возможных случаев */
+      
+      /* Исключаем только случаи, где UBWC физически невозможен */
       if (flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)
          return false;
       if (vk_format_is_compressed(format) ||
@@ -341,7 +342,8 @@ ubwc_possible(struct tu_device *device,
       if (type == VK_IMAGE_TYPE_3D && mip_levels > 1)
          return false;
       
-      /* Для всего остального включаем UBWC */
+      /* Разрешаем UBWC для Storage Images (критично для пост-обработки в играх) */
+      /* Разрешаем для всех usage битов */
       return true;
    }
    /* ========== КОНЕЦ БЛОКА A810 ========== */
@@ -607,11 +609,8 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
          return vk_error(device, VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT);
       }
 
-      /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Проверяем gpu_id через dev_id */
       if (device->physical_device->dev_id.gpu_id == 810 && image->ubwc_enabled) {
-         /* Для A810 мы бы хотели настроить параметры UBWC, но они находятся в
-          * fd_dev_info->props и уже установлены из freedreno_devices.h
-          * Оставляем комментарий для информации */
+         /* UBWC 6.0 активен для A810 */
       }
 
       if (TU_DEBUG(LAYOUT))
@@ -744,18 +743,17 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
       image->force_linear_tile = true;
    }
 
-   /* ОПТИМИЗАЦИЯ ДЛЯ ADRENO 810: Предпочитаем TILE6_3 для 2D текстур */
+   /* ========== A810: ОПТИМИЗАЦИЯ UBWC ========== */
    if (device->physical_device->dev_id.gpu_id == 810 &&
        pCreateInfo->imageType == VK_IMAGE_TYPE_2D &&
        !(pCreateInfo->usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) &&
        !(pCreateInfo->usage & VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT)) {
-      /* Для A810 TILE6_3 дает лучшую производительность */
+      /* Для A810 используем TILE6_3 с UBWC для максимальной производительности */
       image->force_linear_tile = false;
    }
 
-   /* ========== A810: ФОРСИРУЕМ UBWC В SYSMEM ========== */
+   /* ========== A810: ФОРСИРУЕМ UBWC ДЛЯ ВСЕХ СЛУЧАЕВ ========== */
    if (device->physical_device->dev_id.gpu_id == 810 &&
-       !(pCreateInfo->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
        !(pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)) {
       /* Принудительно включаем UBWC для A810 */
       image->ubwc_enabled = true;

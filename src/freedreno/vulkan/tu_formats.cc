@@ -65,9 +65,17 @@ tu6_format_texture(enum pipe_format format, enum a6xx_tile_mode tile_mode,
    return fmt;
 }
 
+/* ========== A810: МАКСИМАЛЬНАЯ СОВМЕСТИМОСТЬ UBWC ========== */
 static enum fd6_ubwc_compat_type
 tu6_ubwc_compat_mode(const struct fd_dev_info *info, VkFormat format)
 {
+   /* Для A810 включаем максимальный уровень совместимости */
+   if (info->dev_id.gpu_id == 810) {
+      /* Разрешаем UBWC для всех форматов, включая R11G11B10_UFLOAT и другие */
+      return FD6_UBWC_COMPAT_ALL;
+   }
+   /* ========== КОНЕЦ БЛОКА A810 ========== */
+   
    return fd6_ubwc_compat_mode(info, vk_format_to_pipe_format(format));
 }
 
