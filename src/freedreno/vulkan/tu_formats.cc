@@ -70,14 +70,16 @@ static enum fd6_ubwc_compat_type
 tu6_ubwc_compat_mode(const struct fd_dev_info *info, VkFormat format)
 {
    /* Для A810 включаем максимальный уровень совместимости */
-   if (info->dev_id.gpu_id == 810) {
-      /* Разрешаем UBWC для всех форматов, включая R11G11B10_UFLOAT и другие */
-      return FD6_UBWC_COMPAT_ALL;
+   /* A810: chip == 8, num_ccu == 2, num_slices == 1 */
+   if (info->chip == 8 && info->num_ccu == 2 && info->num_slices == 1) {
+      /* Полная совместимость UBWC для всех форматов */
+      return FD6_UBWC_COMPAT_ANY;
    }
    /* ========== КОНЕЦ БЛОКА A810 ========== */
    
    return fd6_ubwc_compat_mode(info, vk_format_to_pipe_format(format));
 }
+/* ========== КОНЕЦ ФУНКЦИИ ========== */
 
 bool
 tu6_mutable_format_list_ubwc_compatible(const struct fd_dev_info *info,

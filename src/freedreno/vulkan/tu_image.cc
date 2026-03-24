@@ -329,7 +329,10 @@ ubwc_possible(struct tu_device *device,
       return false;
 
    /* ========== A810: АГРЕССИВНЫЙ UBWC ДЛЯ МАКСИМАЛЬНОЙ ПРОИЗВОДИТЕЛЬНОСТИ ========== */
-   if (device && device->physical_device->dev_id.gpu_id == 810) {
+   /* A810: chip == 8, num_ccu == 2, num_slices == 1 */
+   if (device && device->physical_device->info->chip == 8 && 
+       device->physical_device->info->num_ccu == 2 &&
+       device->physical_device->info->num_slices == 1) {
       /* Для A810 включаем UBWC для всех возможных случаев */
       
       /* Исключаем только случаи, где UBWC физически невозможен */
@@ -521,9 +524,11 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
       image->ubwc_enabled = false;
    }
 
-   /* ========== A810: СОХРАНЯЕМ UBWC ДЛЯ SYSMEM ========== */
-   /* Не отключаем UBWC для A810 даже если force_linear_tile не установлен */
-   if (device->physical_device->dev_id.gpu_id == 810 && 
+   /* ========== A810: СОХРАНЯЕМ UBWC ========== */
+   /* A810: chip == 8, num_ccu == 2, num_slices == 1 */
+   if (device->physical_device->info->chip == 8 && 
+       device->physical_device->info->num_ccu == 2 &&
+       device->physical_device->info->num_slices == 1 && 
        !image->force_linear_tile) {
       /* UBWC уже включён, просто убеждаемся что не отключится */
       image->ubwc_enabled = true;
@@ -609,7 +614,11 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
          return vk_error(device, VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT);
       }
 
-      if (device->physical_device->dev_id.gpu_id == 810 && image->ubwc_enabled) {
+      /* A810: UBWC активен */
+      if (device->physical_device->info->chip == 8 && 
+          device->physical_device->info->num_ccu == 2 &&
+          device->physical_device->info->num_slices == 1 && 
+          image->ubwc_enabled) {
          /* UBWC 6.0 активен для A810 */
       }
 
@@ -744,16 +753,23 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
    }
 
    /* ========== A810: ОПТИМИЗАЦИЯ UBWC ========== */
-   if (device->physical_device->dev_id.gpu_id == 810 &&
+   /* A810: chip == 8, num_ccu == 2, num_slices == 1 */
+   if (device->physical_device->info->chip == 8 && 
+       device->physical_device->info->num_ccu == 2 &&
+       device->physical_device->info->num_slices == 1 &&
        pCreateInfo->imageType == VK_IMAGE_TYPE_2D &&
        !(pCreateInfo->usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) &&
        !(pCreateInfo->usage & VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT)) {
       /* Для A810 используем TILE6_3 с UBWC для максимальной производительности */
       image->force_linear_tile = false;
    }
+   /* ========== КОНЕЦ ========== */
 
    /* ========== A810: ФОРСИРУЕМ UBWC ДЛЯ ВСЕХ СЛУЧАЕВ ========== */
-   if (device->physical_device->dev_id.gpu_id == 810 &&
+   /* A810: chip == 8, num_ccu == 2, num_slices == 1 */
+   if (device->physical_device->info->chip == 8 && 
+       device->physical_device->info->num_ccu == 2 &&
+       device->physical_device->info->num_slices == 1 &&
        !(pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)) {
       /* Принудительно включаем UBWC для A810 */
       image->ubwc_enabled = true;
