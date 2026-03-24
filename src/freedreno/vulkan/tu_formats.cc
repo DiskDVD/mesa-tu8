@@ -72,8 +72,61 @@ tu6_ubwc_compat_mode(const struct fd_dev_info *info, VkFormat format)
    /* Для A810 включаем максимальный уровень совместимости */
    /* A810: chip == 8, num_ccu == 2, num_slices == 1 */
    if (info->chip == 8 && info->num_ccu == 2 && info->num_slices == 1) {
-      /* Полная совместимость UBWC для всех форматов */
-      return FD6_UBWC_COMPAT_ANY;
+      enum pipe_format pipe_format = vk_format_to_pipe_format(format);
+      
+      /* Безопасный выбор: для каждого формата выбираем максимально совместимый тип */
+      switch (pipe_format) {
+      case PIPE_FORMAT_R8G8B8A8_UNORM:
+      case PIPE_FORMAT_R8G8B8A8_SRGB:
+      case PIPE_FORMAT_R8G8B8A8_SNORM:
+      case PIPE_FORMAT_R8G8B8A8_UINT:
+      case PIPE_FORMAT_R8G8B8A8_SINT:
+         return FD6_UBWC_R8G8B8A8_UNORM;
+         
+      case PIPE_FORMAT_B8G8R8A8_UNORM:
+      case PIPE_FORMAT_B8G8R8A8_SRGB:
+         return FD6_UBWC_B8G8R8A8_UNORM;
+         
+      case PIPE_FORMAT_R16G16B16A16_UNORM:
+      case PIPE_FORMAT_R16G16B16A16_SNORM:
+      case PIPE_FORMAT_R16G16B16A16_UINT:
+      case PIPE_FORMAT_R16G16B16A16_SINT:
+         return FD6_UBWC_R16G16B16A16_UNORM;
+         
+      case PIPE_FORMAT_R8G8_UNORM:
+      case PIPE_FORMAT_R8G8_SRGB:
+      case PIPE_FORMAT_R8G8_SNORM:
+      case PIPE_FORMAT_R8G8_UINT:
+      case PIPE_FORMAT_R8G8_SINT:
+         return FD6_UBWC_R8G8_UNORM;
+         
+      case PIPE_FORMAT_R16G16_UNORM:
+      case PIPE_FORMAT_R16G16_SNORM:
+      case PIPE_FORMAT_R16G16_UINT:
+      case PIPE_FORMAT_R16G16_SINT:
+         return FD6_UBWC_R16G16_UNORM;
+         
+      case PIPE_FORMAT_R32_UINT:
+      case PIPE_FORMAT_R32_SINT:
+         return FD6_UBWC_R32_INT;
+         
+      case PIPE_FORMAT_R32G32_UINT:
+      case PIPE_FORMAT_R32G32_SINT:
+         return FD6_UBWC_R32G32_INT;
+         
+      case PIPE_FORMAT_R32G32B32A32_UINT:
+      case PIPE_FORMAT_R32G32B32A32_SINT:
+         return FD6_UBWC_R32G32B32A32_INT;
+         
+      case PIPE_FORMAT_Z32_FLOAT:
+      case PIPE_FORMAT_R32_FLOAT:
+         /* Для float форматов используем R8G8B8A8_UNORM как базовый */
+         return FD6_UBWC_R8G8B8A8_UNORM;
+         
+      default:
+         /* По умолчанию - R8G8B8A8_UNORM как наиболее универсальный */
+         return FD6_UBWC_R8G8B8A8_UNORM;
+      }
    }
    /* ========== КОНЕЦ БЛОКА A810 ========== */
    
