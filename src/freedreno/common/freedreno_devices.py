@@ -1630,9 +1630,9 @@ a8xx_829 = GPUProps(
 # Оптимизированные параметры для Adreno 810
 a8xx_810 = GPUProps(
         # VPC буферы - СТАБИЛЬНЫЕ ЗНАЧЕНИЯ
-        sysmem_vpc_attr_buf_size = 65536,      # Данные значения VPC буфферов как выяснилось дает максимальное значения.
-        sysmem_vpc_pos_buf_size = 32768,
-        sysmem_vpc_bv_pos_buf_size = 16384, 
+        sysmem_vpc_attr_buf_size = 131072,      # Данные значения VPC буфферов как выяснилось дает максимальное значения.
+        sysmem_vpc_pos_buf_size = 65536,
+        sysmem_vpc_bv_pos_buf_size = 32768, 
         
         # Эти значения - максимальный размер depth/color cache для текущей конфигурации A8XX Gen2 sysmem
         # Большие значения могут вызвать integer underflow в расчетах freedreno gmem
