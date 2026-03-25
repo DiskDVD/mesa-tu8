@@ -37,11 +37,7 @@ tu6_plane_count(VkFormat format)
 {
    switch (format) {
    case VK_FORMAT_D32_SFLOAT_S8_UINT:
-      /* We do not support interleaved depth/stencil. Instead, we decompose to
-       * a depth plane and a stencil plane.
-       */
       return 2;
-
    default:
       return vk_format_get_plane_count(format);
    }
@@ -52,13 +48,9 @@ tu6_plane_format(VkFormat format, uint32_t plane)
 {
    switch (format) {
    case VK_FORMAT_D32_SFLOAT_S8_UINT:
-      /* See tu6_plane_count above */
       return !plane ? PIPE_FORMAT_Z32_FLOAT : PIPE_FORMAT_S8_UINT;
-
    case VK_FORMAT_G8_B8R8_2PLANE_420_UNORM:
-      /* The 0'th plane of this format has a different UBWC compression */
       return !plane ? PIPE_FORMAT_Y8_UNORM : PIPE_FORMAT_R8G8_UNORM;
-
    default:
       return vk_format_to_pipe_format(vk_format_get_plane_format(format, plane));
    }
@@ -67,24 +59,18 @@ tu6_plane_format(VkFormat format, uint32_t plane)
 uint32_t
 tu6_plane_index(VkFormat format, VkImageAspectFlags aspect_mask)
 {
-   /* Must only be one aspect unless it's depth/stencil */
-   assert(aspect_mask ==
-             (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) ||
+   assert(aspect_mask == (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) ||
           util_bitcount(aspect_mask) == 1);
 
    switch (aspect_mask) {
    default:
-      assert(aspect_mask != VK_IMAGE_ASPECT_MEMORY_PLANE_3_BIT_EXT);
       return 0;
-
    case VK_IMAGE_ASPECT_PLANE_1_BIT:
    case VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT:
       return 1;
-
    case VK_IMAGE_ASPECT_PLANE_2_BIT:
    case VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT:
       return 2;
-
    case VK_IMAGE_ASPECT_STENCIL_BIT:
       return format == VK_FORMAT_D32_SFLOAT_S8_UINT;
    }
@@ -95,14 +81,6 @@ tu_format_for_aspect(enum pipe_format format, VkImageAspectFlags aspect_mask)
 {
    switch (format) {
    case PIPE_FORMAT_Z24_UNORM_S8_UINT:
-      /* VK_IMAGE_ASPECT_COLOR_BIT is used internally for blits (despite we
-       * also incorrectly advertise VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BIT for
-       * depth formats).  Return PIPE_FORMAT_Z24_UNORM_S8_UINT_AS_R8G8B8A8 in
-       * this case.
-       *
-       * Otherwise, return the appropriate pipe format and let fdl6_view_init
-       * take care of the rest.
-       */
       if (aspect_mask & VK_IMAGE_ASPECT_COLOR_BIT)
          return PIPE_FORMAT_Z24_UNORM_S8_UINT_AS_R8G8B8A8;
       if (aspect_mask & VK_IMAGE_ASPECT_STENCIL_BIT) {
@@ -153,7 +131,6 @@ void
 tu_cs_image_ref_2d(struct tu_cs *cs, const struct fdl6_view *iview, uint32_t layer, bool src)
 {
    tu_cs_emit_qw(cs, iview->base_addr + iview->layer_size * layer);
-   /* TPL1_A2D_SRC_TEXTURE_PITCH has shifted pitch field */
    if (src)
       tu_cs_emit(cs, TPL1_A2D_SRC_TEXTURE_PITCH(CHIP, .pitch = iview->pitch).value);
    else
@@ -202,12 +179,8 @@ tu_image_view_init(struct tu_device *device,
    if (image->vk.format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM &&
        aspect_mask == VK_IMAGE_ASPECT_PLANE_0_BIT) {
       if (iview->vk.format == VK_FORMAT_R8_UNORM) {
-         /* The 0'th plane of this format has a different UBWC compression. */
          format = PIPE_FORMAT_Y8_UNORM;
       } else {
-         /* If the user wants to reinterpret this plane, then they should've
-          * set MUTABLE_FORMAT_BIT which should disable UBWC and tiling.
-          */
          assert(!layouts[0]->ubwc);
       }
    }
@@ -307,11 +280,6 @@ tiling_possible(VkFormat format)
    return true;
 }
 
-/* Checks if we should advertise UBWC support for the given usage.
- *
- * Used by both vkCreateImage and vkGetPhysicalDeviceFormatProperties2, so the
- * logical tu_device may be NULL.
- */
 bool
 ubwc_possible(struct tu_device *device,
               VkFormat format,
@@ -324,52 +292,23 @@ ubwc_possible(struct tu_device *device,
               uint32_t mip_levels,
               bool use_z24uint_s8uint)
 {
-   /* TODO: enable for a702 */
+   /* ========== A810: ВРЕМЕННО ОТКЛЮЧАЕМ UBWC ДЛЯ СТАБИЛЬНОСТИ ========== */
+   if (device && device->physical_device->dev_id.gpu_id == 810) {
+      return false;
+   }
+   /* ========== КОНЕЦ ========== */
+
    if (info->props.is_a702)
       return false;
 
-   /* ========== A810: АГРЕССИВНЫЙ UBWC ДЛЯ МАКСИМАЛЬНОЙ ПРОИЗВОДИТЕЛЬНОСТИ ========== */
-   /* A810: chip == 8, num_ccu == 2, num_slices == 1 */
-   if (device && device->physical_device->info->chip == 8 && 
-       device->physical_device->info->num_ccu == 2 &&
-       device->physical_device->info->num_slices == 1) {
-      /* Для A810 включаем UBWC для всех возможных случаев */
-      
-      /* Исключаем только случаи, где UBWC физически невозможен */
-      if (flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)
-         return false;
-      if (vk_format_is_compressed(format) ||
-          format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 ||
-          format == VK_FORMAT_S8_UINT)
-         return false;
-      if (type == VK_IMAGE_TYPE_3D && mip_levels > 1)
-         return false;
-      
-      /* Разрешаем UBWC для Storage Images (критично для пост-обработки в играх) */
-      /* Разрешаем для всех usage битов */
-      return true;
-   }
-   /* ========== КОНЕЦ БЛОКА A810 ========== */
-
-   /* UBWC isn't possible with sparse residency, because unbound blocks may
-    * have leftover fast-clear data and therefore may show up as non-zero.
-    * TODO: Enable UBWC if nonResidentStrict isn't enabled.
-    */
    if (flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)
       return false;
 
-   /* no UBWC with compressed formats, E5B9G9R9, S8_UINT
-    * (S8_UINT because separate stencil doesn't have UBWC-enable bit)
-    */
    if (vk_format_is_compressed(format) ||
        format == VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 ||
        format == VK_FORMAT_S8_UINT)
       return false;
 
-   /* In copy_format, we treat snorm as unorm to avoid clamping.  But snorm
-    * and unorm are UBWC incompatible for special values such as all 0's or
-    * all 1's prior to a740.  Disable UBWC for snorm.
-    */
    if (vk_format_is_snorm(format) &&
        !info->props.ubwc_unorm_snorm_int_compatible)
       return false;
@@ -381,8 +320,7 @@ ubwc_possible(struct tu_device *device,
 
    if (type == VK_IMAGE_TYPE_3D && mip_levels > 1) {
       if (device) {
-         perf_debug(
-            device,
+         perf_debug(device,
             "Disabling UBWC for %s 3D image with mipmaps, but it should be "
             "possible to support.",
             util_format_name(vk_format_to_pipe_format(format)));
@@ -390,43 +328,19 @@ ubwc_possible(struct tu_device *device,
       return false;
    }
 
-   /* Disable UBWC for storage images when not supported.
-    *
-    * Prior to a7xx, storage images must be readonly or writeonly to use UBWC.
-    * Freedreno can determine when this isn't the case and decompress the
-    * image on-the-fly, but we don't know which image a binding corresponds to
-    * and we can't change the descriptor so we can't do this.
-    */
    if (((usage | stencil_usage) & VK_IMAGE_USAGE_STORAGE_BIT) &&
        !info->props.supports_uav_ubwc) {
       return false;
    }
 
-   /* A690 seem to have broken UBWC for depth/stencil, it requires
-    * depth flushing where we cannot realistically place it, like between
-    * ordinary draw calls writing read/depth. WSL blob seem to use ubwc
-    * sometimes for depth/stencil.
-    */
    if (info->props.broken_ds_ubwc_quirk &&
        vk_format_is_depth_or_stencil(format))
       return false;
 
-   /* We don't support compressing or decompressing on the CPU */
    if ((usage | stencil_usage) & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) {
       return false;
    }
 
-   /* Disable UBWC for D24S8 on A630 in some cases
-    *
-    * VK_IMAGE_ASPECT_STENCIL_BIT image view requires to be able to sample
-    * from the stencil component as UINT, however no format allows this
-    * on a630 (the special FMT6_Z24_UINT_S8_UINT format is missing)
-    *
-    * It must be sampled as FMT6_8_8_8_8_UINT, which is not UBWC-compatible
-    *
-    * If we wish to get the border colors correct without knowing the format
-    * when creating the sampler, we also have to use the A630 workaround.
-    */
    if (!use_z24uint_s8uint &&
        format == VK_FORMAT_D24_UNORM_S8_UINT &&
        (stencil_usage & (VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT)))
@@ -442,20 +356,12 @@ ubwc_possible(struct tu_device *device,
    return true;
 }
 
-/* R8G8 have a different block width/height and height alignment from other
- * formats that would normally be compatible (like R16), and so if we are
- * trying to, for example, sample R16 as R8G8 we need to demote to linear.
- */
 static bool
 format_list_reinterprets_r8g8_r16(enum pipe_format format, const VkImageFormatListCreateInfo *fmt_list)
 {
-   /* Check if it's actually a 2-cpp color format. */
    if (!tu_is_r8g8_compatible(format))
       return false;
 
-   /* If there's no format list, then the app may reinterpret to any compatible
-    * format.
-    */
    if (!fmt_list || !fmt_list->viewFormatCount)
       return true;
 
@@ -475,9 +381,6 @@ format_list_reinterprets_r8g8_r16(enum pipe_format format, const VkImageFormatLi
 static bool
 format_list_has_swaps(const VkImageFormatListCreateInfo *fmt_list)
 {
-   /* If there's no format list, then the app may reinterpret to any compatible
-    * format, and presumably one would have the swap set.
-    */
    if (!fmt_list || !fmt_list->viewFormatCount)
       return true;
 
@@ -524,24 +427,8 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
       image->ubwc_enabled = false;
    }
 
-   /* ========== A810: СОХРАНЯЕМ UBWC ========== */
-   /* A810: chip == 8, num_ccu == 2, num_slices == 1 */
-   if (device->physical_device->info->chip == 8 && 
-       device->physical_device->info->num_ccu == 2 &&
-       device->physical_device->info->num_slices == 1 && 
-       !image->force_linear_tile) {
-      /* UBWC уже включён, просто убеждаемся что не отключится */
-      image->ubwc_enabled = true;
-   }
-   /* ========== КОНЕЦ ========== */
-
-   /* Whether a view of the image with an R8G8 format could be made. */
    bool has_r8g8 = tu_is_r8g8(vk_format_to_pipe_format(image->vk.format));
 
-   /* With AHB, we could be asked to create an image with VK_IMAGE_TILING_LINEAR
-    * but gralloc doesn't know this.  So if we are explicitly told that it is
-    * UBWC, then override how the image was created.
-    */
    bool force_ubwc = false;
    if (modifier == DRM_FORMAT_MOD_QCOM_COMPRESSED) {
       assert(!image->force_linear_tile);
@@ -549,17 +436,11 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
       force_ubwc = true;
    }
 
-   /* R8G8 images have a special tiled layout which we don't implement yet in
-    * fdl6_memcpy, fall back to linear.
-    */
    if (has_r8g8 && tile_mode == TILE6_3 &&
        (image->vk.usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT)) {
       tile_mode = TILE6_LINEAR;
    }
 
-   /* We cannot support sparse residency with linear images, it should've been
-    * rejected.
-    */
    assert(!(image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) ||
           tile_mode == TILE6_3);
 
@@ -570,13 +451,11 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
       uint32_t height0 = vk_format_get_plane_height(image->vk.format, i, image->vk.extent.height);
 
       if (i == 1 && image->vk.format == VK_FORMAT_D32_SFLOAT_S8_UINT)
-         /* no UBWC for separate stencil */
          image->ubwc_enabled = false;
 
       struct fdl_explicit_layout plane_layout;
 
       if (plane_layouts) {
-         /* only expect simple 2D images for now */
          if (image->vk.mip_levels != 1 ||
             image->vk.array_layers != 1 ||
             image->vk.extent.depth != 1)
@@ -584,7 +463,6 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
 
          plane_layout.offset = plane_layouts[i].offset;
          plane_layout.pitch = plane_layouts[i].rowPitch;
-         /* note: use plane_layouts[0].arrayPitch to support array formats */
       }
 
       layout->tile_mode = tile_mode;
@@ -610,24 +488,13 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
 
       if (!fdl6_layout_image(layout, &device->physical_device->dev_info,
                              &params, plane_layouts ? &plane_layout : NULL)) {
-         assert(plane_layouts); /* can only fail with explicit layout */
+         assert(plane_layouts);
          return vk_error(device, VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT);
-      }
-
-      /* A810: UBWC активен */
-      if (device->physical_device->info->chip == 8 && 
-          device->physical_device->info->num_ccu == 2 &&
-          device->physical_device->info->num_slices == 1 && 
-          image->ubwc_enabled) {
-         /* UBWC 6.0 активен для A810 */
       }
 
       if (TU_DEBUG(LAYOUT))
          fdl_dump_layout(layout);
 
-      /* fdl6_layout can't take explicit offset without explicit pitch
-       * add offset manually for extra layouts for planes
-       */
       if (!plane_layouts && i > 0) {
          uint32_t offset = ALIGN_POT(image->total_size, 4096);
          for (int i = 0; i < image->vk.mip_levels; i++) {
@@ -645,14 +512,6 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
 
    const struct util_format_description *desc = util_format_description(image->layout[0].format);
    if (util_format_has_depth(desc) && device->use_lrz) {
-      /* If FDM offset is enabled, then the LRZ image will be shifted over. We
-       * have to overallocate it, but we have no idea how large the tiles it's
-       * used with will be. Try to calculate a maximum size of tile that would
-       * still let us do LRZ fast clears that we'll use to inform tiling setup
-       * later once we know the rest of the images.  We'll fall back to
-       * allocating for the device's maximum tile size if we can't ensure
-       * LRZ fast clears.
-       */
       struct fdl_lrz_fdm_extra_size extra_size = { 0, 0 };
       if (image->vk.create_flags &
           VK_IMAGE_CREATE_FRAGMENT_DENSITY_MAP_OFFSET_BIT_EXT) {
@@ -680,17 +539,11 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
 }
 TU_GENX(tu_image_update_layout);
 
-/* Return true if all formats in the format list can support UBWC.
- */
 static bool
 format_list_ubwc_possible(struct tu_device *dev,
                           const VkImageFormatListCreateInfo *fmt_list,
                           const VkImageCreateInfo *create_info)
 {
-   /* If there is no format list, we may have to assume that a
-    * UBWC-incompatible format may be used.
-    * TODO: limit based on compatiblity class
-    */
    if (!fmt_list || !fmt_list->viewFormatCount)
       return false;
 
@@ -712,70 +565,32 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
 {
    image->ubwc_enabled = true;
 
-   /* use linear tiling if requested */
    if (pCreateInfo->tiling == VK_IMAGE_TILING_LINEAR) {
       image->force_linear_tile = true;
    }
 
-   /* Force linear tiling for formats with "fake" optimalTilingFeatures */
    if (!tiling_possible(image->vk.format)) {
       image->force_linear_tile = true;
    }
 
-   /* No sense in tiling a 1D image, you'd just waste space and cache locality. */
    if (pCreateInfo->imageType == VK_IMAGE_TYPE_1D) {
       image->force_linear_tile = true;
    }
 
-   /* Fragment density maps are sampled on the CPU and we don't support
-    * sampling tiled images on the CPU or UBWC at the moment.
-    */
    if (pCreateInfo->usage & VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT) {
       image->force_linear_tile = true;
    }
 
-   /* Force linear tiling for HIC usage with swapped formats. Because tiled
-    * images are stored without the swap, we would have to apply the swap when
-    * copying on the CPU, which for some formats is tricky.
-    *
-    * TODO: should we add a fast path for BGRA8 and allow tiling for it?
-    */
    if ((pCreateInfo->usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) &&
        fd6_color_swap(vk_format_to_pipe_format(image->vk.format),
                                                TILE6_LINEAR, false) != WZYX)
       image->force_linear_tile = true;
 
-   /* Some kind of HW limitation. */
    if (pCreateInfo->usage &
           VK_IMAGE_USAGE_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR &&
        image->vk.extent.width < 16) {
       image->force_linear_tile = true;
    }
-
-   /* ========== A810: ОПТИМИЗАЦИЯ UBWC ========== */
-   /* A810: chip == 8, num_ccu == 2, num_slices == 1 */
-   if (device->physical_device->info->chip == 8 && 
-       device->physical_device->info->num_ccu == 2 &&
-       device->physical_device->info->num_slices == 1 &&
-       pCreateInfo->imageType == VK_IMAGE_TYPE_2D &&
-       !(pCreateInfo->usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) &&
-       !(pCreateInfo->usage & VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT)) {
-      /* Для A810 используем TILE6_3 с UBWC для максимальной производительности */
-      image->force_linear_tile = false;
-   }
-   /* ========== КОНЕЦ ========== */
-
-   /* ========== A810: ФОРСИРУЕМ UBWC ДЛЯ ВСЕХ СЛУЧАЕВ ========== */
-   /* A810: chip == 8, num_ccu == 2, num_slices == 1 */
-   if (device->physical_device->info->chip == 8 && 
-       device->physical_device->info->num_ccu == 2 &&
-       device->physical_device->info->num_slices == 1 &&
-       !(pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)) {
-      /* Принудительно включаем UBWC для A810 */
-      image->ubwc_enabled = true;
-      image->force_linear_tile = false;
-   }
-   /* ========== КОНЕЦ ========== */
 
    if (image->force_linear_tile ||
        !ubwc_possible(device, image->vk.format, pCreateInfo->imageType,
@@ -785,17 +600,6 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
                       pCreateInfo->mipLevels, device->use_z24uint_s8uint))
       image->ubwc_enabled = false;
 
-   /* Mutable images can be reinterpreted as any other compatible format.
-    * This is a problem with UBWC (compression for different formats is different),
-    * but also tiling ("swap" affects how tiled formats are stored in memory)
-    * Depth and stencil formats cannot be reintepreted as another format, and
-    * cannot be linear with sysmem rendering, so don't fall back for those.
-    *
-    * TODO:
-    * - if the fmt_list contains only formats which are swapped, but compatible
-    *   with each other (B8G8R8A8_UNORM and B8G8R8A8_UINT for example), then
-    *   tiling is still possible
-    */
    if ((pCreateInfo->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
        !vk_format_is_depth_or_stencil(image->vk.format)) {
       const VkImageFormatListCreateInfo *fmt_list =
@@ -804,14 +608,9 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
                                                    fmt_list)) {
          bool mutable_ubwc_fc = device->physical_device->info->props.ubwc_all_formats_compatible;
 
-         /* NV12 uses a special compression scheme for the Y channel which
-          * doesn't support reinterpretation. We have to fall back to linear
-          * always.
-          */
          if (pCreateInfo->format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) {
             if (image->ubwc_enabled) {
-               perf_debug(
-                  device,
+               perf_debug(device,
                   "Disabling UBWC and tiling on %dx%d %s resource due to mutable formats "
                   "(fmt list %s)",
                   image->vk.extent.width, image->vk.extent.height,
@@ -823,8 +622,7 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
          } else if (!mutable_ubwc_fc) {
             if (image->ubwc_enabled) {
                if (fmt_list && fmt_list->viewFormatCount == 2) {
-                  perf_debug(
-                     device,
+                  perf_debug(device,
                      "Disabling UBWC on %dx%d %s resource due to mutable formats "
                      "(fmt list %s, %s)",
                      image->vk.extent.width, image->vk.extent.height,
@@ -832,8 +630,7 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
                      util_format_name(vk_format_to_pipe_format(fmt_list->pViewFormats[0])),
                      util_format_name(vk_format_to_pipe_format(fmt_list->pViewFormats[1])));
                } else {
-                  perf_debug(
-                     device,
+                  perf_debug(device,
                      "Disabling UBWC on %dx%d %s resource due to mutable formats "
                      "(fmt list %s)",
                      image->vk.extent.width, image->vk.extent.height,
@@ -856,14 +653,6 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
                image->ubwc_enabled = false;
          }
 
-         /* If the threshold of the linear mipmap fallback for compressed
-          * format is reached at a different mipmap level than the
-          * size-compatible non-compressed formats the image can be viewed as,
-          * then we have to disable the fallback. Otherwise, for some levels,
-          * texels would be read from the wrong locations due to the tiling
-          * mismatch.
-          * NOTE: Prop driver falls back to LINEAR in this case.
-          */
          if (!device->physical_device->info->props
                  .supports_linear_mipmap_threshold_in_blocks &&
              vk_format_is_compressed(image->vk.format) &&
@@ -935,7 +724,6 @@ tu_CreateImage(VkDevice _device,
          modifier = DRM_FORMAT_MOD_LINEAR;
    }
 
-   /* This section is removed by the optimizer for non-ANDROID builds */
    VkImageDrmFormatModifierExplicitCreateInfoEXT eci;
    VkSubresourceLayout a_plane_layouts[TU_MAX_PLANE_COUNT];
    if (vk_image_is_android_native_buffer(&image->vk)) {
@@ -952,11 +740,7 @@ tu_CreateImage(VkDevice _device,
    if (result != VK_SUCCESS)
       goto fail;
 
-   /* This section is removed by the optimizer for non-ANDROID builds */
    if (vk_image_is_android_hardware_buffer(&image->vk)) {
-      /* At this time, an AHB handle is not yet provided.
-       * Image layout will be filled up during vkBindImageMemory2
-       */
       *pImage = tu_image_to_handle(image);
       return VK_SUCCESS;
    }
@@ -966,7 +750,6 @@ tu_CreateImage(VkDevice _device,
    if (result != VK_SUCCESS)
       goto fail;
 
-   /* This section is removed by the optimizer for non-ANDROID builds */
    if (vk_image_is_android_native_buffer(&image->vk)) {
       result = vk_android_import_anb(&device->vk, pCreateInfo, alloc,
                                      &image->vk);
@@ -1061,7 +844,6 @@ tu_image_bind(struct tu_device *device,
 
    if (!mem) {
 #if DETECT_OS_ANDROID
-      /* TODO handle VkNativeBufferANDROID */
       UNREACHABLE("VkBindImageMemoryInfo with no memory");
 #else
       const VkBindImageMemorySwapchainInfoKHR *swapchain_info =
@@ -1070,9 +852,6 @@ tu_image_bind(struct tu_device *device,
       assert(swapchain_info && swapchain_info->swapchain != VK_NULL_HANDLE);
       mem = tu_device_memory_from_handle(wsi_common_get_memory(
          swapchain_info->swapchain, swapchain_info->imageIndex));
-      /* memoryOffset is ignored when VkBindImageMemorySwapchainInfoKHR is
-       * present, so we follow common wsi to set the offset to 0 here.
-       */
       offset = 0;
 #endif
    }
@@ -1097,7 +876,7 @@ tu_image_bind(struct tu_device *device,
 
    if (image->vk.usage & (VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT |
                           VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT)) {
-      assert(mem->bo); /* Transient images cannot have these usages */
+      assert(mem->bo);
       if (!mem->bo->map) {
          result = tu_bo_map(device, mem->bo, NULL);
          if (result != VK_SUCCESS)
@@ -1152,19 +931,12 @@ tu_get_image_memory_requirements(struct tu_device *dev, struct tu_image *image,
    if (image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT)
       alignment = 65536;
 
-   /* Only expose the lazy memory type for images with TRANSIENT_ATTACHMENT
-    * usage.
-    */
    uint32_t type_count =
       (image->vk.usage & VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT) ?
       dev->physical_device->memory.type_count :
       dev->physical_device->memory.non_lazy_type_count;
 
    pMemoryRequirements->memoryRequirements = (VkMemoryRequirements) {
-      /* Due to how we fake the sparse tile size, the real size may not be
-       * aligned. CTS doesn't like this, and real apps may also be surprised,
-       * so we align it.
-       */
       .size = align64(image->total_size, alignment),
       .alignment = alignment,
       .memoryTypeBits = (1 << type_count) - 1,
@@ -1185,7 +957,6 @@ tu_get_image_memory_requirements(struct tu_device *dev, struct tu_image *image,
       }
    }
 }
-
 
 static VkSparseImageFormatProperties
 tu_fill_sparse_image_fmt_props(VkImageAspectFlags aspects,
@@ -1217,10 +988,6 @@ tu_GetPhysicalDeviceSparseImageFormatProperties2(
 {
    VkResult result;
 
-   /* Check if the given format info is valid first before returning sparse
-    * props.  The easiest way to do this is to just call
-    * tu_GetPhysicalDeviceImageFormatProperties2()
-    */
    const VkPhysicalDeviceImageFormatInfo2 img_fmt_info = {
       .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2,
       .format = pFormatInfo->format,
@@ -1250,7 +1017,6 @@ tu_GetPhysicalDeviceSparseImageFormatProperties2(
       return;
    }
 
-   /* We should already reject non-2D images */
    assert(pFormatInfo->type == VK_IMAGE_TYPE_2D);
 
    VK_OUTARRAY_MAKE_TYPED(VkSparseImageFormatProperties2, out,
@@ -1308,12 +1074,6 @@ tu_get_image_sparse_memory_requirements(
    VK_OUTARRAY_MAKE_TYPED(VkSparseImageMemoryRequirements2, out,
                           pMemoryRequirements, pSparseMemoryRequirementCount);
 
-   /* From the Vulkan 1.3.279 spec:
-    *
-    *    "The sparse image must have been created using the
-    *    VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT flag to retrieve valid sparse
-    *    image memory requirements."
-    */
    if (!(image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT))
       return;
 
@@ -1426,9 +1186,7 @@ tu_get_image_subresource_layout(struct tu_image *image,
    }
 
    if (fdl_ubwc_enabled(layout, pSubresource->imageSubresource.mipLevel)) {
-      /* UBWC starts at offset 0 */
       pLayout->subresourceLayout.offset = 0;
-      /* UBWC scanout won't match what the kernel wants if we have levels/layers */
       assert(image->vk.mip_levels == 1 && image->vk.array_layers == 1);
    }
 }
@@ -1495,8 +1253,6 @@ tu_DestroyImageView(VkDevice _device,
    vk_object_free(&device->vk, pAllocator, iview);
 }
 
-/* Impelements the operations described in "Fragment Density Map Operations."
- */
 void
 tu_fragment_density_map_sample(const struct tu_image_view *fdm,
                                int32_t x, int32_t y,
@@ -1536,63 +1292,9 @@ tu_GetImageOpaqueCaptureDescriptorDataEXT(VkDevice device,
 {
    VK_FROM_HANDLE(tu_image, image, pInfo->image);
 
-   /* Save the image iova so that when replaying sparse images have a
-    * consistent iova and therefore consistent descriptor contents.
-    */
    *(uint64_t *)pData = image->iova;
    return VK_SUCCESS;
 }
-
-/* The native macrotile size is 4K, and the page size is also 4K, so the
- * most natural thing would be to expose 4K tiles. But that isn't compatible
- * with D3D requirements, so we have to emulate 64K "sparse tiles" on the
- * native 4K macrotiles.
- *
- * Each "sparse tile" contains macrotiles in the natural linear order when
- * viewed in terms of the (bank swizzled) image coordinates. We have to do
- * this in order to guarantee that aliasing tiles in different images works.
- * For example, if cpp=16, then the UBWC 4K macrotile is 16x16 pixels, while
- * the sparse 64K tile is 64x64 pixels. That means each sparse tile contains
- * 4x4 macrotiles. Then the 64K tile at (0, 0) is mapped like this to the
- * image:
- * 
- *      |--16px---|
- *  -   -----------------------------------------------
- *  |   |         |         |         |         |
- * 16px | Tile 0  | Tile 1  | Tile 2  | Tile 3  | . . . 
- *  |   |         |         |         |         |
- *  -   -----------------------------------------------
- *      |         |         |         |         |
- *      | Tile 4  | Tile 5  | Tile 6  | Tile 7  | . . .
- *      |         |         |         |         |
- *      -----------------------------------------------
- *      |         |         |         |         |
- *      | Tile 8  | Tile 9  | Tile 10 | Tile 11 | . . .
- *      |         |         |         |         |
- *      -----------------------------------------------
- *      |         |         |         |         |
- *      | Tile 12 | Tile 13 | Tile 14 | Tile 15 | . . .
- *      |         |         |         |         |
- *      -----------------------------------------------
- *      |    .    |    .    |    .    |   .     | .
- *      |    .    |    .    |    .    |   .     |   .
- *      |    .    |    .    |    .    |   .     |     .
- *
- * One tricky case is when the stride isn't aligned to the sparse tile width,
- * or the height isn't aligned to the sparse height: at the bottom or left
- * edges there may be macrotiles inside the sparse tile that overhang the
- * image and don't have any corresponding backing memory, and we have to skip
- * mapping/unmapping those.
- *
- * When doing the mapping, we have to be aware of bank swizzling. It may
- * reorder macrotiles inside a sparse tile, or it may reorder sparse tiles, or
- * both, depending on the highest bank bit, bank swizzling levels, and
- * alignment. We cannot ignore the bank swizzling even in the first case,
- * where it only reorders macrotiles inside the sparse tile, to ensure that
- * aliasing (i.e. remapping the same sparse tile into a different image) works
- * because different images have different alignments and therefore different
- * bank swizzling.
- */
 
 void
 tu_bind_sparse_image(struct tu_device *device, void *submit,
@@ -1634,7 +1336,6 @@ tu_bind_sparse_image(struct tu_device *device, void *submit,
    uint32_t bank_shift =
       fdl6_get_bank_shift(&device->physical_device->ubwc_config);
 
-   /* Our y offset is in pixels */
    bank_mask *= macrotile_height;
    bank_shift -= util_logbase2(macrotile_height);
 
@@ -1657,10 +1358,6 @@ tu_bind_sparse_image(struct tu_device *device, void *submit,
                uint64_t image_offset =
                   ((tx * macrotile_height * cpp) ^ x_swizzle) + row_image_offset;
 
-               /* Try to combine consecutive binds. In most cases, depending
-                * on the x_swizzle, we should be able to map the whole row of
-                * the sparse tile at once.
-                */
                if (!bind_range) {
                   prev_image_offset = image_offset;
                   prev_bo_offset = bo ? column_bo_offset : 0;

@@ -65,74 +65,12 @@ tu6_format_texture(enum pipe_format format, enum a6xx_tile_mode tile_mode,
    return fmt;
 }
 
-/* ========== A810: МАКСИМАЛЬНАЯ СОВМЕСТИМОСТЬ UBWC ========== */
+/* БЕЗОПАСНАЯ ВЕРСИЯ — БЕЗ СПЕЦИАЛЬНЫХ ПРАВОК ДЛЯ A810 */
 static enum fd6_ubwc_compat_type
 tu6_ubwc_compat_mode(const struct fd_dev_info *info, VkFormat format)
 {
-   /* Для A810 включаем максимальный уровень совместимости */
-   /* A810: chip == 8, num_ccu == 2, num_slices == 1 */
-   if (info->chip == 8 && info->num_ccu == 2 && info->num_slices == 1) {
-      enum pipe_format pipe_format = vk_format_to_pipe_format(format);
-      
-      /* Безопасный выбор: для каждого формата выбираем максимально совместимый тип */
-      switch (pipe_format) {
-      case PIPE_FORMAT_R8G8B8A8_UNORM:
-      case PIPE_FORMAT_R8G8B8A8_SRGB:
-      case PIPE_FORMAT_R8G8B8A8_SNORM:
-      case PIPE_FORMAT_R8G8B8A8_UINT:
-      case PIPE_FORMAT_R8G8B8A8_SINT:
-         return FD6_UBWC_R8G8B8A8_UNORM;
-         
-      case PIPE_FORMAT_B8G8R8A8_UNORM:
-      case PIPE_FORMAT_B8G8R8A8_SRGB:
-         return FD6_UBWC_B8G8R8A8_UNORM;
-         
-      case PIPE_FORMAT_R16G16B16A16_UNORM:
-      case PIPE_FORMAT_R16G16B16A16_SNORM:
-      case PIPE_FORMAT_R16G16B16A16_UINT:
-      case PIPE_FORMAT_R16G16B16A16_SINT:
-         return FD6_UBWC_R16G16B16A16_UNORM;
-         
-      case PIPE_FORMAT_R8G8_UNORM:
-      case PIPE_FORMAT_R8G8_SRGB:
-      case PIPE_FORMAT_R8G8_SNORM:
-      case PIPE_FORMAT_R8G8_UINT:
-      case PIPE_FORMAT_R8G8_SINT:
-         return FD6_UBWC_R8G8_UNORM;
-         
-      case PIPE_FORMAT_R16G16_UNORM:
-      case PIPE_FORMAT_R16G16_SNORM:
-      case PIPE_FORMAT_R16G16_UINT:
-      case PIPE_FORMAT_R16G16_SINT:
-         return FD6_UBWC_R16G16_UNORM;
-         
-      case PIPE_FORMAT_R32_UINT:
-      case PIPE_FORMAT_R32_SINT:
-         return FD6_UBWC_R32_INT;
-         
-      case PIPE_FORMAT_R32G32_UINT:
-      case PIPE_FORMAT_R32G32_SINT:
-         return FD6_UBWC_R32G32_INT;
-         
-      case PIPE_FORMAT_R32G32B32A32_UINT:
-      case PIPE_FORMAT_R32G32B32A32_SINT:
-         return FD6_UBWC_R32G32B32A32_INT;
-         
-      case PIPE_FORMAT_Z32_FLOAT:
-      case PIPE_FORMAT_R32_FLOAT:
-         /* Для float форматов используем R8G8B8A8_UNORM как базовый */
-         return FD6_UBWC_R8G8B8A8_UNORM;
-         
-      default:
-         /* По умолчанию - R8G8B8A8_UNORM как наиболее универсальный */
-         return FD6_UBWC_R8G8B8A8_UNORM;
-      }
-   }
-   /* ========== КОНЕЦ БЛОКА A810 ========== */
-   
    return fd6_ubwc_compat_mode(info, vk_format_to_pipe_format(format));
 }
-/* ========== КОНЕЦ ФУНКЦИИ ========== */
 
 bool
 tu6_mutable_format_list_ubwc_compatible(const struct fd_dev_info *info,
@@ -141,9 +79,6 @@ tu6_mutable_format_list_ubwc_compatible(const struct fd_dev_info *info,
    if (!fmt_list || !fmt_list->viewFormatCount)
       return false;
 
-   /* We're only looking at format list cross compatibility here, check
-    * ubwc_possible() for the base "is the format UBWC-able at all?"
-    */
    if (fmt_list->viewFormatCount == 1)
       return true;
 
@@ -209,11 +144,9 @@ tu_physical_device_get_format_properties(
       goto end;
    }
 
-   /* We never have to spill to memory for MSRTSS. */
    if (msrtss_out)
       msrtss_out->optimal = true;
 
-   /* We don't support BufferToImage/ImageToBuffer for npot formats */
    if (!is_npot)
       buffer |= VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT | VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT;
 
@@ -223,18 +156,10 @@ tu_physical_device_get_format_properties(
    if (supported_tex)
       buffer |= VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT;
 
-   /* We don't support depth formats, as HIC would require disabling LRZ on
-    * the CPU.  Additionally, D24S8 would require a special codepath for copying
-    * a single aspect, and that doesn't seem worth it.
-    */
    if (!is_npot && !util_format_has_depth(util_format_description(format))) {
       optimal |= VK_FORMAT_FEATURE_2_HOST_IMAGE_TRANSFER_BIT_EXT;
    }
 
-   /* Don't support anything but texel buffers for non-power-of-two formats
-    * with 3 components. We'd need several workarounds for copying and
-    * clearing them because they're not renderable.
-    */
    if (supported_tex && !is_npot) {
       optimal |= VK_FORMAT_FEATURE_2_TRANSFER_SRC_BIT |
                  VK_FORMAT_FEATURE_2_TRANSFER_DST_BIT |
@@ -242,7 +167,6 @@ tu_physical_device_get_format_properties(
                  VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_FILTER_MINMAX_BIT;
 
       if (ycbcr_info) {
-         /* This is supported on all YCbCr formats */
          optimal |= VK_FORMAT_FEATURE_2_MIDPOINT_CHROMA_SAMPLES_BIT;
 
          if (ycbcr_info->n_planes > 1) {
@@ -252,7 +176,6 @@ tu_physical_device_get_format_properties(
                optimal |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_YCBCR_CONVERSION_SEPARATE_RECONSTRUCTION_FILTER_BIT;
          }
       } else {
-         /* BLIT_SRC_BIT isn't allowed for YCbCr formats */
          optimal |= VK_FORMAT_FEATURE_2_BLIT_SRC_BIT;
       }
 
@@ -263,11 +186,6 @@ tu_physical_device_get_format_properties(
             optimal |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_FILTER_CUBIC_BIT_EXT;
       }
 
-      /* We sample on the CPU so we can technically support anything as long
-       * as it's floating point, but this restricts it to "reasonable" formats
-       * to use, which means two channels and not something weird like
-       * luminance-alpha.
-       */
       if (vk_format_is_float(vk_format) && desc->nr_channels == 2 &&
           desc->swizzle[0] == PIPE_SWIZZLE_X &&
           desc->swizzle[1] == PIPE_SWIZZLE_Y) {
@@ -287,11 +205,6 @@ tu_physical_device_get_format_properties(
                 VK_FORMAT_FEATURE_2_STORAGE_READ_WITHOUT_FORMAT_BIT |
                 VK_FORMAT_FEATURE_2_STORAGE_WRITE_WITHOUT_FORMAT_BIT;
 
-      /* TODO: The blob also exposes these for R16G16_UINT/R16G16_SINT/
-       * R32G32_SFLOAT/R32G32B32A32_SFLOAT, but we don't have any tests for those.
-       * The WoA blob on X1 also supports VK_EXT_shader_image_atomic_int64 (for
-       * R64_UINT and R64_SINT).
-       */
       if (vk_format == VK_FORMAT_R32_UINT || vk_format == VK_FORMAT_R32_SINT ||
           vk_format == VK_FORMAT_R32_SFLOAT) {
          optimal |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT;
@@ -302,23 +215,16 @@ tu_physical_device_get_format_properties(
          optimal |= VK_FORMAT_FEATURE_2_COLOR_ATTACHMENT_BLEND_BIT;
    }
 
-   /* All our depth formats support shadow comparisons. */
    if (vk_format_has_depth(vk_format) && (optimal & VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT)) {
       optimal |= VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_DEPTH_COMPARISON_BIT;
    }
 
-   /* We don't support writing into VK_FORMAT_*_PACK16 images/buffers  */
    if (desc->nr_channels > 2 && desc->block.bits == 16) {
       buffer &= VK_FORMAT_FEATURE_2_UNIFORM_TEXEL_BUFFER_BIT;
       optimal &= ~(VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
                    VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT);
    }
 
-   /* Set up QCOM_imgae_processing flags. This matches blob behavior, except
-    * that it advertises box/weighted on NPOT sampleable formats and ASTC_FLOAT
-    * (which we don't advertise yet), and blockmatch/box/weighted on
-    * VK_FORMAT_G8B8G8R8_422_UNORM.
-    */
    if ((optimal & VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_BIT) &&
        (!ycbcr_info || ycbcr_info->n_planes == 1) &&
        !vk_format_is_depth_or_stencil(vk_format)) {
@@ -358,45 +264,18 @@ tu_physical_device_get_format_properties(
          optimal |= VK_FORMAT_FEATURE_2_WEIGHT_IMAGE_BIT_QCOM;
    }
 
-   /* For the most part, we can do anything with a linear image that we could
-    * do with a tiled image. However, we can't support sysmem rendering with a
-    * linear depth texture, because we don't know if there's a bit to control
-    * the tiling of the depth buffer in BYPASS mode, and the blob also
-    * disables linear depth rendering, so there's no way to discover it. We
-    * also can't force GMEM mode, because there are other situations where we
-    * have to use sysmem rendering. So follow the blob here, and only enable
-    * DEPTH_STENCIL_ATTACHMENT_BIT for the optimal features.
-    */
    linear = optimal;
    if (tu6_pipe2depth(vk_format) != DEPTH6_NONE)
       optimal |= VK_FORMAT_FEATURE_2_DEPTH_STENCIL_ATTACHMENT_BIT;
 
    if (!tiling_possible(vk_format) &&
-       /* We don't actually support tiling for this format, but we need to
-        * fake it as it's required by VK_KHR_sampler_ycbcr_conversion.
-        */
        vk_format != VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM) {
       optimal = 0;
    }
 
-   /* Disable buffer texturing of subsampled (422) and planar YUV textures,
-    * as well as for depth/stencil formats. The subsampling requirement comes
-    * from "If format is a block-compressed format, then bufferFeatures must
-    * not support any features for the format" plus the specification of
-    * subsampled as 2x1 compressed block format.  I couldn't find the citation
-    * for planar, but 1D access of planar YUV would be really silly.
-    *
-    * From the Vulkan 1.3.205 spec, section 19.3 "43.3. Required Format Support":
-    *
-    *    Mandatory format support: depth/stencil with VkImageType
-    *    VK_IMAGE_TYPE_2D
-    *    [...]
-    *    bufferFeatures must not support any features for these formats
-    */
    if (ycbcr_info || vk_format_is_depth_or_stencil(vk_format))
       buffer = 0;
 
-   /* D32_SFLOAT_S8_UINT is tiled as two images, so no linear format */
    if (vk_format == VK_FORMAT_D32_SFLOAT_S8_UINT)
       linear = 0;
 
@@ -457,7 +336,6 @@ tu_GetPhysicalDeviceFormatProperties2(
          }
       }
 
-      /* note: ubwc_possible() argument values to be ignored except for format */
       if (pFormatProperties->formatProperties.optimalTilingFeatures &&
           tiling_possible(format) &&
           ubwc_possible(NULL, format, VK_IMAGE_TYPE_2D, 0, 0, 0,
@@ -488,7 +366,6 @@ tu_GetPhysicalDeviceFormatProperties2(
          }
       }
 
-      /* note: ubwc_possible() argument values to be ignored except for format */
       if (props3->optimalTilingFeatures &&
           tiling_possible(format) &&
           ubwc_possible(NULL, format, VK_IMAGE_TYPE_2D, 0, 0, 0,
@@ -544,21 +421,14 @@ tu_get_image_format_properties(
       const VkPhysicalDeviceImageDrmFormatModifierInfoEXT *drm_info =
          vk_find_struct_const(info->pNext, PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT);
 
-      /* Subsampled format isn't stable yet, so don't allow
-       * importing/exporting with modifiers yet.
-       */
       if (info->flags & VK_IMAGE_CREATE_SUBSAMPLED_BIT_EXT)
          return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
-      /* Don't allow modifiers with sparse */
       if (info->flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT)
          return VK_ERROR_FORMAT_NOT_SUPPORTED;
 
       switch (drm_info->drmFormatModifier) {
       case DRM_FORMAT_MOD_QCOM_COMPRESSED:
-         /* falling back to linear/non-UBWC isn't possible with explicit modifier */
-
-         /* formats which don't support tiling */
          if (!format_props.optimalTilingFeatures ||
              !tiling_possible(info->format))
             return VK_ERROR_FORMAT_NOT_SUPPORTED;
@@ -603,18 +473,12 @@ tu_get_image_format_properties(
    }
 
    if (info->flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT) {
-      /* Don't support multi-planar formats with sparse yet */
       if (vk_format_get_plane_count(info->format) > 1)
          return tu_image_unsupported_format(pImageFormatProperties);
 
-      /* Sparse isn't compatible with HIC */
       if (info->usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT)
          return tu_image_unsupported_format(pImageFormatProperties);
 
-      /* We can't support sparse when we force linear tiling, so disable
-       * sparse with formats or usages which could cause us to fall back to
-       * linear. We also currently don't support sparse for 3D images.
-       */
       if (info->type != VK_IMAGE_TYPE_2D ||
           info->tiling != VK_IMAGE_TILING_OPTIMAL ||
           !tiling_possible(info->format) ||
@@ -633,21 +497,21 @@ tu_get_image_format_properties(
       maxExtent.width = 16384;
       maxExtent.height = 1;
       maxExtent.depth = 1;
-      maxMipLevels = 15; /* log2(maxWidth) + 1 */
+      maxMipLevels = 15;
       maxArraySize = 2048;
       break;
    case VK_IMAGE_TYPE_2D:
       maxExtent.width = 16384;
       maxExtent.height = 16384;
       maxExtent.depth = 1;
-      maxMipLevels = 15; /* log2(maxWidth) + 1 */
+      maxMipLevels = 15;
       maxArraySize = 2048;
       break;
    case VK_IMAGE_TYPE_3D:
       maxExtent.width = 2048;
       maxExtent.height = 2048;
       maxExtent.depth = 2048;
-      maxMipLevels = 12; /* log2(maxWidth) + 1 */
+      maxMipLevels = 12;
       maxArraySize = 1;
       break;
    }
@@ -661,25 +525,10 @@ tu_get_image_format_properties(
        !(info->usage & VK_IMAGE_USAGE_STORAGE_BIT)) {
       sampleCounts |= VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT;
 
-      /* a7xx supports 8x MSAA except for 128-bit formats. */
       if (physical_device->info->chip >= A7XX &&
           vk_format_get_blocksizebits(info->format) <= 64)
          sampleCounts |= VK_SAMPLE_COUNT_8_BIT;
    }
-
-   /* From the Vulkan 1.3.206 spec:
-    *
-    * "VK_IMAGE_CREATE_EXTENDED_USAGE_BIT specifies that the image can be
-    * created with usage flags that are not supported for the format the image
-    * is created with but are supported for at least one format a VkImageView
-    * created from the image can have."
-    *
-    * This means we should relax checks that only depend on the
-    * format_feature_flags, to allow the user to create images that may be
-    * e.g. reinterpreted as storage when the original format doesn't allow it.
-    * The user will have to check against the format features anyway.
-    * Otherwise we'd unnecessarily disallow it.
-    */
 
    VkImageUsageFlags image_usage = info->usage;
    if (info->flags & VK_IMAGE_CREATE_EXTENDED_USAGE_BIT)
@@ -732,10 +581,6 @@ tu_get_image_format_properties(
       .maxMipLevels = maxMipLevels,
       .maxArrayLayers = maxArraySize,
       .sampleCounts = sampleCounts,
-
-      /* FINISHME: Accurately calculate
-       * VkImageFormatProperties::maxResourceSize.
-       */
       .maxResourceSize = UINT32_MAX,
    };
 
@@ -755,14 +600,6 @@ tu_get_external_image_format_properties(
    BITMASK_ENUM(VkExternalMemoryFeatureFlagBits) flags = 0;
    VkExternalMemoryHandleTypeFlags export_flags = 0;
    VkExternalMemoryHandleTypeFlags compat_flags = 0;
-
-   /* From the Vulkan 1.1.98 spec:
-    *
-    *    If handleType is not compatible with the format, type, tiling,
-    *    usage, and flags specified in VkPhysicalDeviceImageFormatInfo2,
-    *    then vkGetPhysicalDeviceImageFormatProperties2 returns
-    *    VK_ERROR_FORMAT_NOT_SUPPORTED.
-    */
 
    assert(handleType !=
           VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID);
@@ -827,7 +664,6 @@ tu_GetPhysicalDeviceImageFormatProperties2(
    if (result != VK_SUCCESS)
       return result;
 
-   /* Extract input structs */
    vk_foreach_struct_const(s, base_info->pNext)
    {
       switch (s->sType) {
@@ -842,7 +678,6 @@ tu_GetPhysicalDeviceImageFormatProperties2(
       }
    }
 
-   /* Extract output structs */
    vk_foreach_struct(s, base_props->pNext)
    {
       switch (s->sType) {
@@ -863,12 +698,6 @@ tu_GetPhysicalDeviceImageFormatProperties2(
       }
    }
 
-   /* From the Vulkan 1.0.42 spec:
-    *
-    *    If handleType is 0, vkGetPhysicalDeviceImageFormatProperties2 will
-    *    behave as if VkPhysicalDeviceExternalImageFormatInfo was not
-    *    present and VkExternalImageFormatProperties will be ignored.
-    */
    if (external_info && external_info->handleType != 0) {
       if (external_info->handleType ==
           VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID) {
@@ -885,7 +714,6 @@ tu_GetPhysicalDeviceImageFormatProperties2(
             goto fail;
          }
 
-         /* AHBs with mipmap usage will ignore this property */
          props->maxMipLevels = 1;
          props->sampleCounts = VK_SAMPLE_COUNT_1_BIT;
       } else {
@@ -898,9 +726,6 @@ tu_GetPhysicalDeviceImageFormatProperties2(
    }
 
    if (cubic_props) {
-      /* note: blob only allows cubic filtering for 2D and 2D array views
-       * its likely we can enable it for 1D and CUBE, needs testing however
-       */
       if ((image_view_info->imageViewType == VK_IMAGE_VIEW_TYPE_2D ||
            image_view_info->imageViewType == VK_IMAGE_VIEW_TYPE_2D_ARRAY) &&
           (format_feature_flags & VK_FORMAT_FEATURE_2_SAMPLED_IMAGE_FILTER_CUBIC_BIT_EXT)) {
@@ -916,29 +741,11 @@ tu_GetPhysicalDeviceImageFormatProperties2(
       ycbcr_props->combinedImageSamplerDescriptorCount = 1;
 
    if (hic_props) {
-      /* This should match tu_image_init() as much as possible given the
-       * information we have here. We are conservative and only return true if
-       * we know that UBWC would never be enabled and copying the tiled image
-       * is possible so we wouldn't have to fall back to linear. There are no
-       * cases where we modify the layout for HIC but still have optimal
-       * access, so we return the same value for both.
-       *
-       * ubwc_possible() returns false for block-compressed formats, which
-       * satisfies the spec requirement that:
-       *
-       *    If VkPhysicalDeviceImageFormatInfo2::format is a block-compressed
-       *    format and vkGetPhysicalDeviceImageFormatProperties2 returns
-       *    VK_SUCCESS, the implementation must return VK_TRUE in
-       *    optimalDeviceAccess.
-       */
       hic_props->optimalDeviceAccess = hic_props->identicalMemoryLayout =
          base_info->tiling == VK_IMAGE_TILING_LINEAR ||
          base_info->type == VK_IMAGE_TYPE_1D ||
          !tiling_possible(base_info->format) ||
          (base_info->usage & VK_IMAGE_USAGE_FRAGMENT_DENSITY_MAP_BIT_EXT) ||
-         /* If UBWC is impossible, tiling is possible, but it's a swapped
-          * format, we'd hit the force_linear_tile fallback.
-          */
          (fd6_color_swap(vk_format_to_pipe_format(base_info->format),
                                                   TILE6_LINEAR, false) == WZYX &&
          !ubwc_possible(NULL, base_info->format, base_info->type,
@@ -953,13 +760,6 @@ tu_GetPhysicalDeviceImageFormatProperties2(
 
 fail:
    if (result == VK_ERROR_FORMAT_NOT_SUPPORTED) {
-      /* From the Vulkan 1.0.42 spec:
-       *
-       *    If the combination of parameters to
-       *    vkGetPhysicalDeviceImageFormatProperties2 is not supported by
-       *    the implementation for use in vkCreateImage, then all members of
-       *    imageFormatProperties will be filled with zero.
-       */
       base_props->imageFormatProperties = (VkImageFormatProperties) {};
    }
 
