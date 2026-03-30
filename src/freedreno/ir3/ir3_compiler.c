@@ -6,7 +6,6 @@
  *    Rob Clark <robclark@freedesktop.org>
  */
 
-#include "util/u_call_once.h"
 #include "util/ralloc.h"
 
 #include "freedreno_dev_info.h"
@@ -63,57 +62,6 @@ ir3_compiler_destroy(struct ir3_compiler *compiler)
    ralloc_free(compiler);
 }
 
-static bool
-ir3_nir_lower_convert_alu_types(nir_intrinsic_instr *conv)
-{
-   assert(conv->intrinsic == nir_intrinsic_convert_alu_types);
-
-   /* Lower anything with const src for better constant folding: */
-   if (nir_src_is_const(conv->src[0]))
-      return true;
-
-   nir_alu_type src_type = nir_intrinsic_src_type(conv);
-   nir_alu_type dest_type = nir_intrinsic_dest_type(conv);
-   nir_rounding_mode rounding = nir_intrinsic_rounding_mode(conv);
-
-   /* If rounding mode is undef, and no saturation, then lower.  In this
-    * case, the @convert_alu_types will be lowered trivially to a single
-    * alu opc, so no need to preserve the @convert_alu_types for backend.
-    */
-   if (rounding == nir_rounding_mode_undef &&
-       !nir_intrinsic_saturate(conv))
-      return true;
-
-   nir_alu_type src_base_type = nir_alu_type_get_base_type(src_type);
-   nir_alu_type dest_base_type = nir_alu_type_get_base_type(dest_type);
-   unsigned src_bit_size = nir_alu_type_get_type_size(src_type);
-   unsigned dest_bit_size = nir_alu_type_get_type_size(dest_type);
-
-   /* Int->int conversion don't round: */
-   if ((src_base_type != nir_type_float) && (dest_base_type != nir_type_float))
-      return true;
-
-   /* Float widening does not round: */
-   if ((src_base_type == nir_type_float) && (dest_base_type == nir_type_float) &&
-       (dest_bit_size > src_bit_size))
-      return true;
-
-   /* int64 needs nir_lower_int64, as hw does not natively support this: */
-   if ((dest_bit_size > 32) || (src_bit_size > 32))
-      return true;
-
-   /* Conversions [u]int8 <-> float need some special handling, but we
-    * can just let the lowering and normal create_cov() path handle it:
-    */
-   if ((dest_bit_size < 16) || (src_bit_size < 16))
-      return true;
-
-   /* Everything else maps to single ir3 instructions, so preserve for
-    * backend to handle:
-    */
-   return false;
-}
-
 static const nir_shader_compiler_options ir3_base_options = {
    .compact_arrays = true,
    .lower_fpow = true,
@@ -125,22 +73,11 @@ static const nir_shader_compiler_options ir3_base_options = {
    .lower_fmod = true,
    .lower_fdiv = true,
    .lower_isign = true,
+   .lower_ldexp = true,
    .lower_uadd_carry = true,
    .lower_usub_borrow = true,
    .lower_mul_high = true,
    .lower_mul_2x32_64 = true,
-   /* ir3's mad is an unfused mul-add instruction, so we need to flag fma
-    * lowering so that CL can implement fused fma in software.  GLSL,
-    * SPIRV, and NIR don't require either fused or unfused behavior from
-    * fma, and we'll turn mul+adds back into nir_op_ffma (again, implemented
-    * as unfused) during nir_opt_algebraic_late() (assuming it's not
-    * decorated with GLSL's precise, or SPIRV's NoContraction), or
-    * ir3_nir_opt_algebraic_late (if it is, since ir3's unfused mul-add is
-    * precise).
-    */
-   .lower_ffma16 = true,
-   .lower_ffma32 = true,
-   .lower_ffma64 = true,
    .fuse_ffma16 = true,
    .fuse_ffma32 = true,
    .fuse_ffma64 = true,
@@ -202,14 +139,15 @@ static const nir_shader_compiler_options ir3_base_options = {
    .compact_view_index = true,
 
    .io_options = nir_io_has_intrinsics,
-
-   .lower_convert_alu_types = ir3_nir_lower_convert_alu_types,
 };
 
-
-static void
-__debug_init(void)
+struct ir3_compiler *
+ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
+                    const struct fd_dev_info *dev_info,
+                    const struct ir3_compiler_options *options)
 {
+   struct ir3_compiler *compiler = rzalloc(NULL, struct ir3_compiler);
+
    ir3_shader_debug = debug_get_option_ir3_shader_debug();
    ir3_shader_override_path =
       __normal_user() ? debug_get_option_ir3_shader_override_path() : NULL;
@@ -219,23 +157,6 @@ __debug_init(void)
    }
 
    ir3_shader_bisect_init();
-}
-
-static void
-ir3_compiler_debug_init(void)
-{
-   static util_once_flag once = UTIL_ONCE_FLAG_INIT;
-   util_call_once(&once, __debug_init);
-}
-
-struct ir3_compiler *
-ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
-                    const struct fd_dev_info *dev_info,
-                    const struct ir3_compiler_options *options)
-{
-   struct ir3_compiler *compiler = rzalloc(NULL, struct ir3_compiler);
-
-   ir3_compiler_debug_init();
 
    compiler->dev = dev;
    compiler->dev_id = dev_id;
@@ -282,13 +203,12 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
       compiler->max_const_geom = 512;
       compiler->max_const_safe = 100;
 
-      /* Compute shaders don't share a const file with the FS. Instead they
-       * have their own file, which is smaller than the FS one. On a7xx the size
-       * was doubled, although this doesn't work on X1-85.
-       *
-       * TODO: is this true on earlier gen's?
-       */
-      compiler->max_const_compute = compiler->gen >= 7 ? 512 : 256;
+      /* A810: Увеличиваем размер константной памяти для compute-шейдеров */
+      if (compiler->gen >= 7) {
+         compiler->max_const_compute = 1024;  /* A810: было 512, теперь 1024 */
+      } else {
+         compiler->max_const_compute = 256;
+      }
 
       if (dev_info->props.is_a702) {
          /* No GS/tess, 128 per stage otherwise: */
@@ -344,6 +264,7 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
    if (dev_info->compute_lb_size) {
       compiler->compute_lb_size = dev_info->compute_lb_size;
    } else {
+      /* A810: Увеличиваем размер локального хранилища compute-шейдеров */
       compiler->compute_lb_size =
          compiler->max_const_compute * 16 /* bytes/vec4 */ *
          compiler->info->wave_granularity + compiler->info->cs_shared_mem_size;
@@ -422,17 +343,6 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
    } else if (compiler->gen <= 2) {
       /* a2xx compiler doesn't handle indirect: */
       compiler->nir_options.force_indirect_unrolling = nir_var_all;
-   }
-
-   if (compiler->gen >= 5) {
-      /* keep in sync with vk_properties */
-      compiler->nir_options.max_workgroup_count[0] =
-         compiler->nir_options.max_workgroup_count[1] =
-         compiler->nir_options.max_workgroup_count[2] = 65535;
-      compiler->nir_options.max_workgroup_invocations =
-         dev_info->threadsize_base * dev_info->max_waves;
-      if ((compiler->gen >= 6) && dev_info->props.supports_double_threadsize)
-         compiler->nir_options.max_workgroup_invocations *= 2;
    }
 
    if (options->lower_base_vertex) {
