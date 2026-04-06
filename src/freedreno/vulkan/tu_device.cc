@@ -997,25 +997,25 @@ tu_get_physical_device_properties_1_2(struct tu_physical_device *pdevice,
    p->robustBufferAccessUpdateAfterBind                  = true;
    p->quadDivergentImplicitLod                           = false;
 
-   const uint32_t a810_update_after_bind_limit =
-      pdevice->dev_id.gpu_id == 810 ? 500000 : max_descriptor_set_size;
+   const bool a810_safe_limits = pdevice->dev_id.gpu_id == 810;
+   const uint32_t uab_limit = a810_safe_limits ? 500000 : max_descriptor_set_size;
 
-   p->maxUpdateAfterBindDescriptorsInAllPools            = a810_update_after_bind_limit;
-   p->maxPerStageDescriptorUpdateAfterBindSamplers       = a810_update_after_bind_limit;
-   p->maxPerStageDescriptorUpdateAfterBindUniformBuffers = a810_update_after_bind_limit;
-   p->maxPerStageDescriptorUpdateAfterBindStorageBuffers = a810_update_after_bind_limit;
-   p->maxPerStageDescriptorUpdateAfterBindSampledImages  = a810_update_after_bind_limit;
-   p->maxPerStageDescriptorUpdateAfterBindStorageImages  = a810_update_after_bind_limit;
+   p->maxUpdateAfterBindDescriptorsInAllPools              = uab_limit;
+   p->maxPerStageDescriptorUpdateAfterBindSamplers         = uab_limit;
+   p->maxPerStageDescriptorUpdateAfterBindUniformBuffers   = uab_limit;
+   p->maxPerStageDescriptorUpdateAfterBindStorageBuffers   = uab_limit;
+   p->maxPerStageDescriptorUpdateAfterBindSampledImages    = uab_limit;
+   p->maxPerStageDescriptorUpdateAfterBindStorageImages    = uab_limit;
    p->maxPerStageDescriptorUpdateAfterBindInputAttachments = MAX_RTS;
-   p->maxPerStageUpdateAfterBindResources                = a810_update_after_bind_limit;
-   p->maxDescriptorSetUpdateAfterBindSamplers            = a810_update_after_bind_limit;
-   p->maxDescriptorSetUpdateAfterBindUniformBuffers      = a810_update_after_bind_limit;
+   p->maxPerStageUpdateAfterBindResources                  = uab_limit;
+   p->maxDescriptorSetUpdateAfterBindSamplers              = uab_limit;
+   p->maxDescriptorSetUpdateAfterBindUniformBuffers        = uab_limit;
    p->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = MAX_DYNAMIC_UNIFORM_BUFFERS;
-   p->maxDescriptorSetUpdateAfterBindStorageBuffers      = a810_update_after_bind_limit;
+   p->maxDescriptorSetUpdateAfterBindStorageBuffers        = uab_limit;
    p->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = MAX_DYNAMIC_STORAGE_BUFFERS;
-   p->maxDescriptorSetUpdateAfterBindSampledImages       = a810_update_after_bind_limit;
-   p->maxDescriptorSetUpdateAfterBindStorageImages       = a810_update_after_bind_limit;
-   p->maxDescriptorSetUpdateAfterBindInputAttachments    = MAX_RTS;
+   p->maxDescriptorSetUpdateAfterBindSampledImages         = uab_limit;
+   p->maxDescriptorSetUpdateAfterBindStorageImages         = uab_limit;
+   p->maxDescriptorSetUpdateAfterBindInputAttachments      = MAX_RTS;
 
    p->supportedDepthResolveModes    =
       VK_RESOLVE_MODE_SAMPLE_ZERO_BIT |
