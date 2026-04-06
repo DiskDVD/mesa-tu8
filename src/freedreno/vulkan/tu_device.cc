@@ -177,7 +177,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .KHR_bind_memory2 = true,
       .KHR_buffer_device_address = true,
       .KHR_calibrated_timestamps = device->info->props.has_persistent_counter,
-      .KHR_compute_shader_derivatives = device->info->chip >= 7,
+      .KHR_compute_shader_derivatives = true,
       .KHR_copy_commands2 = true,
       // TODO workaround for https://github.com/KhronosGroup/VK-GL-CTS/issues/525
       .KHR_create_renderpass2 = true, // tu_has_multiview(device),
@@ -362,7 +362,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .GOOGLE_hlsl_functionality1 = true,
       .GOOGLE_user_type = true,
       .IMG_filter_cubic = device->info->props.has_tex_filter_cubic,
-      .NV_compute_shader_derivatives = device->info->chip >= 7,
+      .NV_compute_shader_derivatives = true,
       .QCOM_fragment_density_map_offset = true,
       .QCOM_image_processing = device->info->props.has_image_processing,
       .QCOM_multiview_per_view_render_areas = true,
@@ -997,21 +997,21 @@ tu_get_physical_device_properties_1_2(struct tu_physical_device *pdevice,
    p->robustBufferAccessUpdateAfterBind                  = true;
    p->quadDivergentImplicitLod                           = false;
 
-   p->maxUpdateAfterBindDescriptorsInAllPools            = 500000;
-   p->maxPerStageDescriptorUpdateAfterBindSamplers       = 500000;
-   p->maxPerStageDescriptorUpdateAfterBindUniformBuffers = 500000;
-   p->maxPerStageDescriptorUpdateAfterBindStorageBuffers = 500000;
-   p->maxPerStageDescriptorUpdateAfterBindSampledImages  = 500000;
-   p->maxPerStageDescriptorUpdateAfterBindStorageImages  = 500000;
+   p->maxUpdateAfterBindDescriptorsInAllPools            = max_descriptor_set_size;
+   p->maxPerStageDescriptorUpdateAfterBindSamplers       = max_descriptor_set_size;
+   p->maxPerStageDescriptorUpdateAfterBindUniformBuffers = max_descriptor_set_size;
+   p->maxPerStageDescriptorUpdateAfterBindStorageBuffers = max_descriptor_set_size;
+   p->maxPerStageDescriptorUpdateAfterBindSampledImages  = max_descriptor_set_size;
+   p->maxPerStageDescriptorUpdateAfterBindStorageImages  = max_descriptor_set_size;
    p->maxPerStageDescriptorUpdateAfterBindInputAttachments = MAX_RTS;
-   p->maxPerStageUpdateAfterBindResources                = 500000;
-   p->maxDescriptorSetUpdateAfterBindSamplers            = 500000;
-   p->maxDescriptorSetUpdateAfterBindUniformBuffers      = 500000;
+   p->maxPerStageUpdateAfterBindResources                = max_descriptor_set_size;
+   p->maxDescriptorSetUpdateAfterBindSamplers            = max_descriptor_set_size;
+   p->maxDescriptorSetUpdateAfterBindUniformBuffers      = max_descriptor_set_size;
    p->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = MAX_DYNAMIC_UNIFORM_BUFFERS;
-   p->maxDescriptorSetUpdateAfterBindStorageBuffers      = 500000;
+   p->maxDescriptorSetUpdateAfterBindStorageBuffers      = max_descriptor_set_size;
    p->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = MAX_DYNAMIC_STORAGE_BUFFERS;
-   p->maxDescriptorSetUpdateAfterBindSampledImages       = 500000;
-   p->maxDescriptorSetUpdateAfterBindStorageImages       = 500000;
+   p->maxDescriptorSetUpdateAfterBindSampledImages       = max_descriptor_set_size;
+   p->maxDescriptorSetUpdateAfterBindStorageImages       = max_descriptor_set_size;
    p->maxDescriptorSetUpdateAfterBindInputAttachments    = MAX_RTS;
 
    p->supportedDepthResolveModes    =
