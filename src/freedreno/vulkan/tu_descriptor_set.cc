@@ -39,9 +39,6 @@
 #include "bvh/tu_build_interface.h"
 #include "freedreno_dev_info.h"
 
-/* Нужно для определения чипа Adreno 810 */
-#include "freedreno_dev_info.h"
-
 /* Adreno 810: размер кэш-линии */
 #define ADRENO_CACHE_LINE_SIZE 64
 
@@ -62,7 +59,7 @@ static inline uint32_t
 adreno_align_size(struct tu_device *dev, uint32_t size)
 {
    /* Проверяем, что это Adreno 810 (chip ID = 810) */
-   if (dev->physical_device->info->chip == 810) {
+   if (dev->physical_device->dev_id.gpu_id == 810) {
       return ALIGN_POT(size, ADRENO_CACHE_LINE_SIZE);
    }
    return size;
@@ -611,7 +608,7 @@ tu_descriptor_set_create(struct tu_device *device,
 
    if (pool->host_memory_base) {
       /* Adreno 810: выравниваем указатель по кэш-линии */
-      if (device->physical_device->info->chip == 810) {
+      if (device->physical_device->dev_id.gpu_id == 810) {
          pool->host_memory_ptr = (uint8_t *)ALIGN_POT((uintptr_t)pool->host_memory_ptr, 64);
       }
       
@@ -673,7 +670,7 @@ tu_descriptor_set_create(struct tu_device *device,
          current_offset = set->offset;
       } else {
          /* Adreno 810: выравниваем оффсет в пуле */
-         if (device->physical_device->info->chip == 810) {
+         if (device->physical_device->dev_id.gpu_id == 810) {
             current_offset = ALIGN_POT(current_offset, 64);
          }
          
@@ -794,7 +791,7 @@ tu_CreateDescriptorPool(VkDevice _device,
    }
 
    /* Adreno 810: увеличиваем пул до безопасных 2 МБ для производительности */
-   if (device->physical_device->info->chip == 810 && 
+   if (device->physical_device->dev_id.gpu_id == 810 && 
        bo_size < ADRENO_DESCRIPTOR_POOL_SIZE) {
       bo_size = ADRENO_DESCRIPTOR_POOL_SIZE;
    }
