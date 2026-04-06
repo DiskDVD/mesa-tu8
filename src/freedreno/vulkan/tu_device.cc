@@ -183,6 +183,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .KHR_create_renderpass2 = true, // tu_has_multiview(device),
       .KHR_dedicated_allocation = true,
       .KHR_deferred_host_operations = true,
+      .KHR_depth_clamp_zero_one = true,
       .KHR_depth_stencil_resolve = true,
       .KHR_descriptor_update_template = true,
       .KHR_device_group = true,
@@ -276,6 +277,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_conservative_rasterization = device->info->chip >= 7,
       .EXT_custom_border_color = true,
       .EXT_custom_resolve = true,
+      .EXT_depth_clamp_control = true,
       .EXT_depth_clamp_zero_one = true,
       .EXT_depth_clip_control = true,
       .EXT_depth_clip_enable = true,
@@ -339,6 +341,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_shader_module_identifier = true,
       .EXT_shader_replicated_composites = true,
       .EXT_shader_stencil_export = true,
+      .EXT_shader_uniform_buffer_unsized_array = true,
       .EXT_shader_viewport_index_layer = tu_has_multiview(device),
       .EXT_subgroup_size_control = tu_is_vk_1_1(device),
 #ifdef TU_USE_WSI_PLATFORM
@@ -535,7 +538,7 @@ tu_get_features(struct tu_physical_device *pdevice,
 
    /* VK_KHR_compute_shader_derivatives */
    features->computeDerivativeGroupQuads = pdevice->info->chip >= 7;
-   features->computeDerivativeGroupLinear = pdevice->info->chip >= 7;
+   features->computeDerivativeGroupLinear = true;
 
    /* VK_KHR_dynamic_rendering_local_read */
    features->dynamicRenderingLocalRead = true;
@@ -630,6 +633,9 @@ tu_get_features(struct tu_physical_device *pdevice,
    /* VK_EXT_custom_border_color */
    features->customBorderColors = true;
    features->customBorderColorWithoutFormat = true;
+
+   /* VK_EXT_depth_clamp_control */
+   features->depthClampControl = true;
 
    /* VK_EXT_depth_clamp_zero_one */
    features->depthClampZeroOne = true;
@@ -792,6 +798,9 @@ tu_get_features(struct tu_physical_device *pdevice,
 
    /* VK_EXT_shader_replicated_composites */
    features->shaderReplicatedComposites = true;
+
+   /* VK_EXT_shader_uniform_buffer_unsized_array */
+   features->shaderUniformBufferUnsizedArray = true;
 
 #ifdef TU_USE_WSI_PLATFORM
    /* VK_KHR_swapchain_maintenance1 */
@@ -1427,7 +1436,7 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->samplerDescriptorBufferAddressSpaceSize = ~0ull;
    props->resourceDescriptorBufferAddressSpaceSize = ~0ull;
    props->descriptorBufferAddressSpaceSize = ~0ull;
-   props->combinedImageSamplerDensityMapDescriptorSize = 2 * FDL6_TEX_CONST_DWORDS * 4;
+   props->combinedImageSamplerDensityMapDescriptorSize = 3 * FDL6_TEX_CONST_DWORDS * 4;
 
    /* VK_EXT_legacy_vertex_attributes */
    props->nativeUnalignedPerformance = true;
@@ -1857,6 +1866,7 @@ static const driOptionDescription tu_dri_options[] = {
       DRI_CONF_TU_USE_TEX_COORD_ROUND_NEAREST_EVEN_MODE(false)
       DRI_CONF_TU_IGNORE_FRAG_DEPTH_DIRECTION(false)
       DRI_CONF_TU_ENABLE_SOFTFLOAT32(false)
+      DRI_CONF_TU_EMULATE_ALPHA_TO_COVERAGE(false)
    DRI_CONF_SECTION_END
 };
 
@@ -1887,6 +1897,8 @@ tu_init_dri_options(struct tu_instance *instance)
          driQueryOptionb(&instance->dri_options, "tu_ignore_frag_depth_direction");
    instance->enable_softfloat32 =
          driQueryOptionb(&instance->dri_options, "tu_enable_softfloat32");
+   instance->emulate_alpha_to_coverage =
+         driQueryOptionb(&instance->dri_options, "tu_emulate_alpha_to_coverage");
 }
 
 static uint32_t instance_count = 0;
@@ -3138,11 +3150,6 @@ tu_bo_suballocator_init(&device->autotune_suballoc, device,
       (!border_color_without_format ||
        physical_device->instance->disable_d24s8_border_color_workaround);
    device->use_lrz = !TU_DEBUG_START(NOLRZ);
-   /* A829: временное отключение timeline semaphores */
-if (device->physical_device->dev_id.gpu_id == 829) {
-   device->vk.enabled_features.timelineSemaphore = false;
-   mesa_logi("A829: timeline semaphores disabled for compatibility");
-}
 
    tu_gpu_tracepoint_config_variable();
 
