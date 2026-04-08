@@ -83,18 +83,6 @@
  * before using LRZ.
  */
 
-static inline bool
-tu_a8xx_needs_conservative_lrz(const struct tu_cmd_buffer *cmd)
-{
-   switch (cmd->device->physical_device->dev_id.chip_id) {
-   case 0x44010000: /* Adreno 810 */
-   case 0x44030A20: /* Adreno 829 */
-      return true;
-   default:
-      return false;
-   }
-}
-
 static inline void
 tu_lrz_disable_reason(struct tu_cmd_buffer *cmd, const char *reason) {
    cmd->state.rp.lrz_disable_reason = reason;
@@ -276,12 +264,6 @@ tu_lrz_init_state(struct tu_cmd_buffer *cmd,
 
    cmd->state.lrz.gpu_dir_tracking = has_gpu_tracking;
    cmd->state.lrz.reuse_previous_state = !clears_depth;
-
-   if (tu_a8xx_needs_conservative_lrz(cmd)) {
-      cmd->state.lrz.fast_clear = false;
-      cmd->state.lrz.gpu_dir_tracking = false;
-      cmd->state.lrz.reuse_previous_state = false;
-   }
 }
 
 /* Note: if we enable LRZ here, then tu_lrz_init_state() must at least set
@@ -326,12 +308,6 @@ tu_lrz_init_secondary(struct tu_cmd_buffer *cmd,
    /* These are not used inside secondaries */
    cmd->state.lrz.image_view = NULL;
    cmd->state.lrz.reuse_previous_state = false;
-
-   if (tu_a8xx_needs_conservative_lrz(cmd)) {
-      cmd->state.lrz.fast_clear = false;
-      cmd->state.lrz.gpu_dir_tracking = false;
-      cmd->state.lrz.reuse_previous_state = false;
-   }
 }
 
 template <chip CHIP>
