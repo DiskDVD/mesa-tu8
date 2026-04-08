@@ -45,7 +45,6 @@
 #include "util/set.h"
 #include "util/simple_mtx.h"
 #include "util/sparse_bitset.h"
-#include "util/u_dynarray.h"
 #include "util/u_math.h"
 #include "nir_defines.h"
 #include "nir_shader_compiler_options.h"
@@ -181,40 +180,6 @@ nir_component_mask_reinterpret(nir_component_mask_t mask,
 typedef struct nir_state_slot {
    gl_state_index16 tokens[STATE_LENGTH];
 } nir_state_slot;
-
-/**
- * Resource types according to VkSpirvResourceTypeFlagsKHR.
- */
-typedef enum {
-   nir_resource_type_sampler = 1u << 0,
-   nir_resource_type_sampled_image = 1u << 1,
-   nir_resource_type_read_only_image = 1u << 2,
-   nir_resource_type_read_write_image = 1u << 3,
-   nir_resource_type_combined_sampled_image = 1u << 4,
-   nir_resource_type_uniform_buffer = 1u << 5,
-   nir_resource_type_read_only_storage_buffer = 1u << 6,
-   nir_resource_type_read_write_storage_buffer = 1u << 7,
-   nir_resource_type_acceleration_structure = 1u << 8,
-} nir_resource_type;
-
-/**
- * Descriptor types.
- */
-typedef enum {
-   nir_descriptor_type_uniform_buffer = 0,
-   nir_descriptor_type_storage_buffer = 1,
-   nir_descriptor_type_acceleration_structure = 2,
-} nir_descriptor_type;
-
-/**
- * NIR image intrinsics variants.
- */
-typedef enum {
-   nir_image_intrinsic_type_default = 0,
-   nir_image_intrinsic_type_deref = 1,
-   nir_image_intrinsic_type_bindless = 2,
-   nir_image_intrinsic_type_heap = 3,
-} nir_image_intrinsic_type;
 
 /**
  * Rounding modes.
@@ -485,7 +450,7 @@ typedef struct nir_variable {
        *
        * :c:struct:`nir_variable_mode`
        */
-      unsigned mode : 26;
+      unsigned mode : 24;
 
       /**
        * Is the variable read-only?
@@ -747,13 +712,10 @@ typedef struct nir_variable {
        */
       unsigned access : 9;
 
-      /* NIR resource type bit index that this variable would have. */
-      nir_resource_type resource_type;
-
       /**
        * Descriptor set binding for sampler or UBO.
        */
-      unsigned descriptor_set;
+      unsigned descriptor_set : 5;
 
 #define NIR_VARIABLE_NO_INDEX ~0
 
@@ -1872,6 +1834,19 @@ nir_deref_instr_parent(const nir_deref_instr *instr)
       return nir_src_as_deref(instr->parent);
 }
 
+static inline nir_variable *
+nir_deref_instr_get_variable(const nir_deref_instr *instr)
+{
+   while (instr->deref_type != nir_deref_type_var) {
+      if (instr->deref_type == nir_deref_type_cast)
+         return NULL;
+
+      instr = nir_deref_instr_parent(instr);
+   }
+
+   return instr->var;
+}
+
 bool nir_deref_instr_has_indirect(nir_deref_instr *instr);
 bool nir_deref_instr_is_known_out_of_bounds(nir_deref_instr *instr);
 
@@ -1998,6 +1973,12 @@ typedef struct nir_intrinsic_instr {
 
    nir_src src[];
 } nir_intrinsic_instr;
+
+static inline nir_variable *
+nir_intrinsic_get_var(const nir_intrinsic_instr *intrin, unsigned i)
+{
+   return nir_deref_instr_get_variable(nir_src_as_deref(intrin->src[i]));
+}
 
 typedef enum {
    /* Memory ordering. */
@@ -2223,9 +2204,9 @@ nir_intrinsic_has_align(const nir_intrinsic_instr *intrin)
 unsigned
 nir_image_intrinsic_coord_components(const nir_intrinsic_instr *instr);
 
-/* Converts an image intrinsic into a different type. */
+/* Converts a image_deref_* intrinsic into a image_* one */
 void nir_rewrite_image_intrinsic(nir_intrinsic_instr *instr,
-                                 nir_def *handle, nir_image_intrinsic_type type);
+                                 nir_def *handle, bool bindless);
 
 /* Determine if an intrinsic can be arbitrarily reordered and eliminated. */
 bool nir_intrinsic_can_reorder(nir_intrinsic_instr *instr);
@@ -2387,12 +2368,6 @@ typedef enum nir_tex_src_type {
     */
    nir_tex_src_sampler_handle,
 
-   /** Texture descriptor heap offset (in bytes) */
-   nir_tex_src_texture_heap_offset,
-
-   /** Sampler descriptor heap offset (in bytes) */
-   nir_tex_src_sampler_heap_offset,
-
    /** Tex src intrinsic
     *
     * This is an intrinsic used before function inlining i.e. before we know
@@ -2515,8 +2490,6 @@ typedef enum nir_texop {
    */
    nir_texop_block_match_sad_qcom,
    nir_texop_block_match_ssd_qcom,
-   /** txs in .xyz and query_levels in .w */
-   nir_texop_resinfo_intel,
 } nir_texop;
 
 /** Represents a texture instruction */
@@ -2625,12 +2598,6 @@ typedef struct nir_tex_instr {
     * expression, or texture lookup will result in undefined values.").
     */
    bool sampler_non_uniform;
-
-   /** True if this texture instruction uses an embedded sampler.
-    *
-    * In this case, sampler_index is the index in embedded sampler table.
-    */
-   bool embedded_sampler;
 
    /** True if the offset is not dynamically uniform */
    bool offset_non_uniform;
@@ -3203,7 +3170,6 @@ typedef struct nir_binding {
    nir_variable *var;
    unsigned desc_set;
    unsigned binding;
-   unsigned resource_type;
    unsigned num_indices;
    nir_src indices[4];
    bool read_first_invocation;
@@ -3262,8 +3228,7 @@ typedef struct nir_block {
    nir_block *successors[2];
 
    /* Set of nir_block predecessors in the CFG */
-   struct util_dynarray predecessors;
-   nir_block *_preds_storage[2];
+   struct set predecessors;
 
    /*
     * this node's immediate dominator in the dominance tree - set to NULL for
@@ -3312,50 +3277,6 @@ typedef struct nir_block {
    struct u_sparse_bitset live_in;
    struct u_sparse_bitset live_out;
 } nir_block;
-
-static ALWAYS_INLINE nir_block **
-_nir_pred_iter_begin(const nir_block *block)
-{
-   return (nir_block **)util_dynarray_begin(&block->predecessors);
-}
-
-static ALWAYS_INLINE bool
-_nir_pred_iter_end(const nir_block *block, nir_block **iter, nir_block **pred)
-{
-   if (iter == (nir_block **)util_dynarray_end(&block->predecessors))
-      return false;
-   *pred = *iter;
-   return true;
-}
-
-#define nir_foreach_pred(pred, block)                                    \
-   for (nir_block * pred, **pred##_iter = _nir_pred_iter_begin((block)); \
-        _nir_pred_iter_end((block), pred##_iter, &pred);                 \
-        pred##_iter++)
-
-static inline size_t
-nir_block_num_preds(const nir_block *block)
-{
-   return util_dynarray_num_elements(&block->predecessors, nir_block *);
-}
-
-static inline bool
-nir_block_has_pred(const nir_block *block, const nir_block *pred)
-{
-   return pred->successors[0] == block || pred->successors[1] == block;
-}
-
-static inline void
-nir_block_add_pred(nir_block *block, nir_block *pred)
-{
-   util_dynarray_append(&block->predecessors, pred);
-}
-
-static inline void
-nir_block_remove_pred(nir_block *block, nir_block *pred)
-{
-   util_dynarray_delete_unordered(&block->predecessors, nir_block *, pred);
-}
 
 static inline bool
 nir_block_is_reachable(nir_block *b)
@@ -3909,8 +3830,6 @@ nir_loop_last_continue_block(nir_loop *loop)
    return nir_cf_node_as_block(exec_node_data(nir_cf_node, tail, node));
 }
 
-bool nir_loop_has_back_edge(nir_loop *loop);
-
 /**
  * Return true if this list of cf_nodes contains a single empty block.
  */
@@ -4185,26 +4104,6 @@ nir_shader_get_function_for_name(const nir_shader *shader, const char *name)
    }
 
    return NULL;
-}
-
-static inline nir_variable *
-nir_deref_instr_get_variable(const nir_deref_instr *instr)
-{
-   while (instr->deref_type != nir_deref_type_var) {
-      if (instr->deref_type == nir_deref_type_cast &&
-          !nir_def_is_deref(instr->parent.ssa))
-         return NULL;
-
-      instr = nir_deref_instr_parent(instr);
-   }
-
-   return instr->var;
-}
-
-static inline nir_variable *
-nir_intrinsic_get_var(const nir_intrinsic_instr *intrin, unsigned i)
-{
-   return nir_deref_instr_get_variable(nir_src_as_deref(intrin->src[i]));
 }
 
 /*
@@ -5418,8 +5317,7 @@ nir_varying_var_mask(nir_shader *nir);
 void
 nir_opt_varyings_bulk(nir_shader **shaders, uint32_t num_shaders, bool spirv,
                       unsigned max_uniform_comps, unsigned max_ubos,
-                      void (*optimize)(nir_shader *, void *),
-                      void *optimize_data);
+                      void (*optimize)(nir_shader *));
 
 bool nir_slot_is_sysval_output(gl_varying_slot slot,
                                mesa_shader_stage next_shader);
@@ -6201,9 +6099,6 @@ typedef struct nir_lower_tex_options {
    /* Optimize txd(coord, ddxy_coarse(coord)) to tex(coord). */
    bool optimize_txd;
 
-   /* If true, lower tg4 shadow compare operations to 16bit. */
-   bool lower_tg4_shadow_to_16bit;
-
    /**
     * Payload data to be sent to callback / filter functions.
     */
@@ -6829,7 +6724,6 @@ void nir_sweep(nir_shader *shader);
 
 nir_intrinsic_op nir_intrinsic_from_system_value(gl_system_value val);
 gl_system_value nir_system_value_from_intrinsic(nir_intrinsic_op intrin);
-gl_system_value nir_system_value_from_instr(nir_instr *instr);
 
 static inline bool
 nir_variable_is_in_ubo(const nir_variable *var)
@@ -7150,8 +7044,6 @@ bool nir_lower_cooperative_matrix_flexible_dimensions(nir_shader *shader, unsign
 bool nir_unlower_io_to_vars(nir_shader *nir, bool keep_intrinsics);
 
 bool nir_opt_barycentric(nir_shader *shader, bool lower_sample_to_pos);
-
-bool nir_normalize_sin_cos(nir_shader *shader);
 
 #include "nir_inline_helpers.h"
 
