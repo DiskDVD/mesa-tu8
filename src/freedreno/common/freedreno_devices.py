@@ -1399,7 +1399,7 @@ a8xx_gen1 = GPUProps(
 )
 
 a8xx_gen2 = GPUProps(
-        reg_size_vec4 = 128, 
+        reg_size_vec4 = 128,
         sysmem_vpc_attr_buf_size = 131072,
         sysmem_vpc_pos_buf_size = 65536,
         sysmem_vpc_bv_pos_buf_size = 32768,
@@ -1493,12 +1493,12 @@ add_gpus([
             gmem_vpc_pos_buf_size = 12288,
             gmem_vpc_bv_pos_buf_size = 20480,
 
-            reg_size_vec4 = 96,
             disable_gmem = False,
             gmem_size = 576 * 1024, # Слишком мало...
             has_ray_intersection = False,
             has_sw_fuse = False,
             has_coherent_ubwc_flag_caches = True,
+            has_fs_tex_prefetch = False,
             has_salu_int_narrowing_quirk = True,
             shading_rate_matches_vk = True, # Поддержка экспериментальная
          )],
@@ -1534,9 +1534,9 @@ add_gpus([
             # This is probably not an optimal config for gmem/sysmem, but it was working before and I don't have any a825 device to test (neither I have any trace info)
 
             sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
-            sysmem_per_ccu_color_cache_size = 192 * 1024,
+            sysmem_per_ccu_color_cache_size = 128 * 1024,
             sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
-            sysmem_per_ccu_depth_cache_size = 128 * 1024,
+            sysmem_per_ccu_depth_cache_size = 96 * 1024,
             #Sysmem кэши 
              sysmem_vpc_attr_buf_size  = 131072,
             
@@ -1575,7 +1575,7 @@ add_gpus([
 # Sysmem кэши.
              sysmem_vpc_attr_buf_size  = 131072,
              sysmem_vpc_pos_buf_size = 65536,
-             sysmem_vpc_bv_pos_buf_size =  24576, 
+             sysmem_vpc_bv_pos_buf_size =  65536, 
             # Sysmem глубина и цвет
              sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
              sysmem_per_ccu_color_cache_size = 128 * 1024,
@@ -1606,7 +1606,7 @@ add_gpus([
         )],
         num_ccu = 4,
         num_slices = 2,
-        tile_align_w = 64,
+        tile_align_w = 96,
         tile_align_h = 32,
         tile_max_w = 16384,
         tile_max_h = 16382,
