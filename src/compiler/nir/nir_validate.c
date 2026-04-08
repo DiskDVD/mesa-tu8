@@ -330,10 +330,23 @@ validate_deref_instr(nir_deref_instr *instr, validate_state *state)
 
       nir_deref_instr *parent = nir_src_as_deref(instr->parent);
       if (parent) {
-         /* Casts can change the mode but it can't change completely.  The new
-          * mode must have some bits in common with the old.
-          */
-         validate_assert(state, instr->modes & parent->modes);
+         if (parent->modes & nir_var_resource_heap) {
+            /* Some casts from the resource heap pointer are allowed. */
+            validate_assert(state, instr->modes & (nir_var_resource_heap |
+                                                   nir_var_image |
+                                                   nir_var_uniform |
+                                                   nir_var_mem_ubo |
+                                                   nir_var_mem_ssbo));
+         } else if (parent->modes & nir_var_sampler_heap) {
+            /* Some casts from the sampler heap pointer are allowed. */
+            validate_assert(state, instr->modes & (nir_var_sampler_heap |
+                                                   nir_var_uniform));
+         } else {
+            /* Casts can change the mode but it can't change completely. The
+             * new mode must have some bits in common with the old.
+             */
+            validate_assert(state, instr->modes & parent->modes);
+         }
       } else {
          /* If our parent isn't a deref, just assert the mode is there */
          validate_assert(state, instr->modes != 0);
@@ -674,7 +687,9 @@ validate_intrinsic_instr(nir_intrinsic_instr *instr, validate_state *state)
    case nir_intrinsic_bindless_image_atomic:
    case nir_intrinsic_bindless_image_atomic_swap:
    case nir_intrinsic_image_atomic:
-   case nir_intrinsic_image_atomic_swap: {
+   case nir_intrinsic_image_atomic_swap:
+   case nir_intrinsic_image_heap_atomic:
+   case nir_intrinsic_image_heap_atomic_swap: {
       nir_atomic_op op = nir_intrinsic_atomic_op(instr);
 
       enum pipe_format format = image_intrin_format(instr);
@@ -1212,7 +1227,7 @@ validate_phi_instr(nir_phi_instr *instr, validate_state *state)
 
    exec_list_validate(&instr->srcs);
    validate_assert(state, exec_list_length(&instr->srcs) ==
-                             state->block->predecessors.entries);
+                             nir_block_num_preds(state->block));
 }
 
 static void
@@ -1457,18 +1472,30 @@ validate_block_predecessors(nir_block *block, validate_state *state)
                                               block->successors[i]));
 
       /* And we have to be in our successor's predecessors set */
-      validate_assert(state,
-                      _mesa_set_search(&block->successors[i]->predecessors, block));
+      bool has_pred = false;
+      nir_foreach_pred(pred, block->successors[i])
+         has_pred |= pred == block;
+      validate_assert(state, has_pred);
 
       validate_phi_srcs(block, block->successors[i], state);
    }
 
    /* The start block cannot have any predecessors */
    if (block == nir_start_block(state->impl))
-      validate_assert(state, block->predecessors.entries == 0);
+      validate_assert(state, nir_block_num_preds(block) == 0);
 
-   set_foreach(&block->predecessors, entry) {
-      const nir_block *pred = entry->key;
+   /* Check for duplicate predecessors. */
+   nir_foreach_pred(pred, block) {
+      bool found = false;
+      nir_foreach_pred(pred2, block) {
+         if (pred == pred2) {
+            validate_assert(state, !found);
+            found = true;
+         }
+      }
+   }
+
+   nir_foreach_pred(pred, block) {
       validate_assert(state, _mesa_set_search(state->blocks, pred));
       validate_assert(state, pred->successors[0] == block ||
                                 pred->successors[1] == block);
@@ -1616,7 +1643,7 @@ validate_loop(nir_loop *loop, validate_state *state)
    validate_assert(state, next_node->type == nir_cf_node_block);
 
    validate_assert(state, !exec_list_is_empty(&loop->body));
-   validate_assert(state, nir_loop_first_block(loop)->predecessors.entries <= 2);
+   validate_assert(state, nir_block_num_preds(nir_loop_first_block(loop)) <= 2);
 
    nir_cf_node *old_parent = state->parent_node;
    state->parent_node = &loop->cf_node;
@@ -2351,7 +2378,9 @@ nir_validate_shader(nir_shader *shader, const char *when)
       nir_var_mem_pixel_local_in |
       nir_var_mem_pixel_local_out |
       nir_var_mem_pixel_local_inout |
-      nir_var_image;
+      nir_var_image |
+      nir_var_resource_heap |
+      nir_var_sampler_heap;
 
    if (mesa_shader_stage_is_callable(shader->info.stage))
       valid_modes |= nir_var_shader_call_data;
