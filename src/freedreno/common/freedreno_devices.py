@@ -1293,45 +1293,92 @@ add_gpus([
     ))
 
 a8xx_base = GPUProps(
+        prim_alloc_threshold = 0x7,
+        vs_max_inputs_count = 32,
+        max_sets = 8,
+        instr_cache_size = 127,
+        tess_use_shared = True,
+        has_per_view_viewport = True,
+        has_gmem_vpc_attr_buf = True,
+        has_lpac = True,
+        has_getfiberid = True,
+        has_movs = True,
+        has_dp4acc = True,
+        has_compliant_dp4acc = True,
+        has_scalar_alu = True,
+        has_scalar_predicates = True,
+        has_sad = True,
+        has_ssbo_imm_offsets = True,
+        has_64b_ssbo_atomics = True,
+        ubwc_unorm_snorm_int_compatible = True,
+        ubwc_all_formats_compatible = True,
+        supports_uav_ubwc = True,
+        has_ubwc_linear_mipmap_fallback = True,
+        supports_linear_mipmap_threshold_in_blocks = True,
+        has_early_preamble = True,
+        load_shader_consts_via_preamble = True,
+        load_inline_uniforms_via_preamble_ldgk = True,
+        r8g8_faulty_fast_clear_quirk = True,
+        gs_vpc_adjacency_quirk = True,
+        has_gmem_fast_clear = True,
+        has_hw_multiview = True,
+        has_fs_tex_prefetch = True,
+        has_sampler_minmax = True,
+        has_astc_hdr = True,
+        has_z24uint_s8uint = True,
+        has_sample_locations = True,
+        has_attachment_shading_rate = True,
+        has_primitive_shading_rate = True,
+        has_generic_clear = True,
+        has_alias_rt = True,
         has_dp2acc = False,
         reg_size_vec4 = 96,
         has_rt_workaround = False,
-        supports_double_threadsize = False,
+        supports_double_threadsize = True,
         has_dual_wave_dispatch = True,
-        has_salu_int_narrowing_quirk = True,
+        has_salu_int_narrowing_quirk = False,
     )
 
 # For a8xx, the chicken bit and most other non-ctx reg
 # programming moves into the kernel, and what remains
 # should be easier to share between devices
 a8xx_base_raw_magic_regs = [
-        [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 0, 0x00000000],
-        [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 1, 0x00000000],
-        [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 2, 0x00000000],
-        [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 3, 0x00000000],
-        [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 4, 0x00000000],
-        [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 5, 0x00000000],
+    [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 0, 0x00000000],
+    [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 1, 0x00000000],
+    [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 2, 0x00000000],
+    [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 3, 0x00000000],
+    [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 4, 0x00000000],
+    [A6XXRegs.REG_A8XX_GRAS_BIN_FOVEAT_XY_FDM_OFFSET + 5, 0x00000000],
 
-        [A6XXRegs.REG_A6XX_RB_UNKNOWN_8818,   0x00000000],
-        [A6XXRegs.REG_A6XX_RB_UNKNOWN_8819,   0x00000000],
-        [A6XXRegs.REG_A6XX_RB_UNKNOWN_881A,   0x00000000],
-        [A6XXRegs.REG_A6XX_RB_UNKNOWN_881B,   0x00000000],
-        [A6XXRegs.REG_A6XX_RB_UNKNOWN_881C,   0x00000000],
-        [A6XXRegs.REG_A6XX_RB_UNKNOWN_881D,   0x00000000],
-        [A6XXRegs.REG_A6XX_RB_UNKNOWN_881E,   0x00000000],
-        [A6XXRegs.REG_A7XX_RB_LRZ_CNTL2,      0x00000000],
-        [A6XXRegs.REG_A8XX_RB_RESOLVE_CNTL_5, 0x00000001],
+    [A6XXRegs.REG_A6XX_RB_UNKNOWN_8818,   0x00000000],
+    [A6XXRegs.REG_A6XX_RB_UNKNOWN_8819,   0x00000000],
+    [A6XXRegs.REG_A6XX_RB_UNKNOWN_881A,   0x00000000],
+    [A6XXRegs.REG_A6XX_RB_UNKNOWN_881B,   0x00000000],
+    [A6XXRegs.REG_A6XX_RB_UNKNOWN_881C,   0x00000000],
+    [A6XXRegs.REG_A6XX_RB_UNKNOWN_881D,   0x00000000],
+    [A6XXRegs.REG_A6XX_RB_UNKNOWN_881E,   0x00000000],
+    [A6XXRegs.REG_A7XX_RB_LRZ_CNTL2,      0x00000000],
+    [A6XXRegs.REG_A8XX_RB_RESOLVE_CNTL_5, 0x00000001],
 
-        [A6XXRegs.REG_A7XX_SP_UNKNOWN_AB01,   0x00000000],
-        [A6XXRegs.REG_A7XX_SP_HLSQ_MODE_CNTL, 0x00000000],
-        [A6XXRegs.REG_A8XX_SP_UNKNOWN_AB23,   0x00000000],
+    [A6XXRegs.REG_A7XX_SP_UNKNOWN_AB01,   0x00000000],
+    [A6XXRegs.REG_A7XX_SP_HLSQ_MODE_CNTL, 0x00000000],
+    [A6XXRegs.REG_A8XX_SP_UNKNOWN_AB23,   0x00000000],
 
-        [A6XXRegs.REG_A6XX_TPL1_PS_ROTATION_CNTL, 0x00000004],
-        [A6XXRegs.REG_A6XX_TPL1_PS_SWIZZLE_CNTL, 0x00000000],
+    [A6XXRegs.REG_A6XX_TPL1_PS_ROTATION_CNTL, 0x00000004],
+    [A6XXRegs.REG_A6XX_TPL1_PS_SWIZZLE_CNTL, 0x00000000],
 
-        [A6XXRegs.REG_A8XX_PC_UNKNOWN_980B, 0x00800280],
-        [A6XXRegs.REG_A8XX_PC_MODE_CNTL,    0x00003f00],
-    ]
+    [A6XXRegs.REG_A8XX_PC_UNKNOWN_980B, 0x00800280],
+    [A6XXRegs.REG_A8XX_PC_MODE_CNTL,    0x00003f00],
+
+    [0x8c34, 0x00000000],
+    [0x930a, 0x00000000],
+    [0x9313, 0x00000000],
+    [0x9380, 0x00000000],
+    [0x9381, 0x00000000],
+    [0x9382, 0x00000000],
+    [0x9383, 0x00000000],
+]
+
 
 a8xx_gen1 = GPUProps(
         reg_size_vec4 = 96,
@@ -1352,7 +1399,7 @@ a8xx_gen1 = GPUProps(
 )
 
 a8xx_gen2 = GPUProps(
-        reg_size_vec4 = 128,
+        reg_size_vec4 = 128, 
         sysmem_vpc_attr_buf_size = 131072,
         sysmem_vpc_pos_buf_size = 65536,
         sysmem_vpc_bv_pos_buf_size = 32768,
@@ -1372,10 +1419,40 @@ a8xx_gen2 = GPUProps(
 
 add_gpus([
         GPUId(chip_id=0xffff44050000, name="Adreno (TM) 830"),
-        GPUId(chip_id=0x44050001, name="Adreno (TM) 830"), # KGSL
+        GPUId(chip_id=0x44050001, name="Adreno (TM) 830"), 
     ], A6xxGPUInfo(
         CHIP.A8XX,
-        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_gen1],
+        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_gen1, 
+         GPUProps(
+             # Sysmem буфферы
+            sysmem_vpc_attr_buf_size = 131072, 
+            sysmem_vpc_pos_buf_size = 65536,
+            sysmem_vpc_bv_pos_buf_size = 32768,
+# глубины цветов sysmem
+            sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
+            sysmem_per_ccu_color_cache_size = 128 * 1024,
+            sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
+            sysmem_per_ccu_depth_cache_size = 192 * 1024,
+#Gmem глубина и цвет 
+            gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
+            gmem_per_ccu_color_cache_size = 192 * 1024,
+            gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
+            gmem_per_ccu_depth_cache_size = 192 * 1024,
+            
+            #Gmem буфферы
+            gmem_vpc_attr_buf_size = 196608,
+            gmem_vpc_pos_buf_size = 98304,
+            gmem_vpc_bv_pos_buf_size = 98304,
+             
+            disable_gmem = False,
+            gmem_size = 12 * 1024 * 1024,
+            has_ray_intersection = True,
+            has_sw_fuse = False,
+            has_coherent_ubwc_flag_caches = True,
+            has_fs_tex_prefetch = False,
+            has_salu_int_narrowing_quirk = True,
+            shading_rate_matches_vk = True,
+         )],
         num_ccu = 6,
         num_slices = 3,
         tile_align_w = 96,
@@ -1396,44 +1473,91 @@ add_gpus([
     ], A6xxGPUInfo(
         CHIP.A8XX,
         [a7xx_base, a7xx_gen3, a8xx_base, a8xx_gen2, GPUProps(
+     # Sysmem буфферы
+            sysmem_vpc_attr_buf_size = 131072, 
+            sysmem_vpc_pos_buf_size = 65536,
+            sysmem_vpc_bv_pos_buf_size = 32768,
+# глубины цветов sysmem
+            sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
+            sysmem_per_ccu_color_cache_size = 64 * 1024,
+            sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
+            sysmem_per_ccu_depth_cache_size = 64 * 1024,
+#Gmem глубина и цвет 
+            gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
+            gmem_per_ccu_color_cache_size = 32 * 1024,
+            gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
+            gmem_per_ccu_depth_cache_size = 48 * 1024,
+            
+            #Gmem буфферы
             gmem_vpc_attr_buf_size = 16384,
             gmem_vpc_pos_buf_size = 12288,
             gmem_vpc_bv_pos_buf_size = 20480,
-            # Don't show "raytracing disabled"
+
+            reg_size_vec4 = 96,
+            disable_gmem = False,
+            gmem_size = 576 * 1024, # Слишком мало...
             has_ray_intersection = False,
             has_sw_fuse = False,
+            has_coherent_ubwc_flag_caches = True,
+            has_salu_int_narrowing_quirk = True,
+            shading_rate_matches_vk = True, # Поддержка экспериментальная
          )],
-        num_ccu = 1, # I'm not sure about this
+        num_ccu = 1,
         num_slices = 1,
-        tile_align_w = 32,
-        tile_align_h = 16,
+        tile_align_w = 64,
+        tile_align_h = 32,
         tile_max_w = 16384,
         tile_max_h = 16384,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
         fibers_per_sp = 128 * 2 * 16,
+        max_waves = 32, # При меньшем значение краш
         magic_regs = dict(),
         raw_magic_regs = a8xx_base_raw_magic_regs,
     ))
 
 # gen8_6_0
 add_gpus([
-        GPUId(chip_id=0x44030000, name="Adreno (TM) 825"),
+        GPUId(chip_id= 0x44030000, name="Adreno (TM) 825"),
     ], A6xxGPUInfo(
         CHIP.A8XX,
         [a7xx_base, a7xx_gen3, a8xx_base, a8xx_gen1, GPUProps(
+           
+            
+            #Gmem глубина и цвет
+            gmem_ccu_color_cache_fraction = CCUColorCacheFraction.HALF.value,
+            gmem_per_ccu_color_cache_size = 128 * 1024,
+            gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.HALF.value,
+            gmem_per_ccu_depth_cache_size = 128 * 1024,
+            #sysmem глубина и цвета 
             # This is probably not an optimal config for gmem/sysmem, but it was working before and I don't have any a825 device to test (neither I have any trace info)
+
             sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
-            sysmem_per_ccu_color_cache_size = 128 * 1024,
+            sysmem_per_ccu_color_cache_size = 192 * 1024,
             sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
-            sysmem_per_ccu_depth_cache_size = 96 * 1024,
+            sysmem_per_ccu_depth_cache_size = 128 * 1024,
+            #Sysmem кэши 
+             sysmem_vpc_attr_buf_size  = 131072,
+            
+            # Gmem кэши
+            gmem_vpc_attr_buf_size = 65536,              # 64 KB 
+            gmem_vpc_pos_buf_size = 32768,                # 32 KB
+            gmem_vpc_bv_pos_buf_size = 32768,
+
+            
+            disable_gmem = False,
+            gmem_size = 2 * 1024 * 1024,
+            shading_rate_matches_vk = True, #Экспериментально!!!
+            has_ray_intersection = False, 
+            enable_tp_ubwc_flag_hint = True,
+            
         )],
         num_ccu = 4,
-        num_slices = 2,
+        num_slices = 2, 
         tile_align_w = 96,
         tile_align_h = 32,
-        tile_max_w = 16416,
+        tile_max_w = 16316,
         tile_max_h = 16384,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
@@ -1443,22 +1567,49 @@ add_gpus([
         raw_magic_regs = a8xx_base_raw_magic_regs,
     ))
 
-# ??????
 add_gpus([
-    GPUId(chip_id=0x44030A00, name="Adreno (TM) 829"), # KGSL
-    GPUId(chip_id=0x44030A20, name="Adreno (TM) 829"), # KGSL - found by testing, another revision?
-    GPUId(chip_id=0xffff44030A00, name="Adreno (TM) 829"),
+    GPUId(chip_id= 0x44030A20, name="Adreno (TM) 829"),
     ], A6xxGPUInfo(
         CHIP.A8XX,
         [a7xx_base, a7xx_gen3, a8xx_base, a8xx_gen2, GPUProps(
-            sysmem_vpc_bv_pos_buf_size = 24576,
+# Sysmem кэши.
+             sysmem_vpc_attr_buf_size  = 131072,
+             sysmem_vpc_pos_buf_size = 65536,
+             sysmem_vpc_bv_pos_buf_size =  24576, 
+            # Sysmem глубина и цвет
+             sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
+             sysmem_per_ccu_color_cache_size = 128 * 1024,
+             sysmem_ccu_depth_cache_fraction = CCUColorCacheFraction.THREE_QUARTER.value,
+             sysmem_per_ccu_depth_cache_size = 192 * 1024,
+
+            # Gmem кэши (VPC)
+             gmem_vpc_attr_buf_size = 49152,
+             gmem_vpc_pos_buf_size = 24576,     
+             gmem_vpc_bv_pos_buf_size = 16384,  
+    
+    # Gmem глубина и цвет 
+              gmem_ccu_color_cache_fraction = CCUColorCacheFraction.EIGHTH.value,
+              gmem_per_ccu_color_cache_size = 128 * 1024, 
+              gmem_ccu_depth_cache_fraction = CCUColorCacheFraction.FULL.value,
+              gmem_per_ccu_depth_cache_size = 192 * 1024,
+
+    # Оптимизации и фичи
+             has_ray_intersection = False, # По просьбе группы
+             has_sw_fuse = False,
+             has_coherent_ubwc_flag_caches = True,
+             has_fs_tex_prefetch = False,
+             has_salu_int_narrowing_quirk = True,
+             shading_rate_matches_vk = True, # Походу это поддерживает вся 8 Серия
+             disable_gmem = False, # Экспериментально
+             gmem_size = 2 * 1024 * 1024,
+            enable_tp_ubwc_flag_hint = True,
         )],
         num_ccu = 4,
         num_slices = 2,
         tile_align_w = 64,
         tile_align_h = 32,
         tile_max_w = 16384,
-        tile_max_h = 16384,
+        tile_max_h = 16382,
         num_vsc_pipes = 32,
         cs_shared_mem_size = 32 * 1024,
         wave_granularity = 2,
@@ -1472,8 +1623,7 @@ add_gpus([
         GPUId(chip_id=0xffff44050A31, name="Adreno (TM) 840"),
     ], A6xxGPUInfo(
         CHIP.A8XX,
-        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_gen2,
-         GPUProps(shading_rate_matches_vk = True)],
+        [a7xx_base, a7xx_gen3, a8xx_base, a8xx_gen2, GPUProps( shading_rate_matches_vk = True)],
         num_ccu = 6,
         num_slices = 3,
         tile_align_w = 96,
