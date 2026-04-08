@@ -1493,6 +1493,7 @@ add_gpus([
             gmem_vpc_pos_buf_size = 12288,
             gmem_vpc_bv_pos_buf_size = 20480,
 
+            reg_size_vec4 = 96, # Для 810 лучше подходить 96, хоть оно и относится ко 2 поколению
             disable_gmem = False,
             gmem_size = 576 * 1024, # Слишком мало...
             has_ray_intersection = False,
@@ -1575,7 +1576,7 @@ add_gpus([
 # Sysmem кэши.
              sysmem_vpc_attr_buf_size  = 131072,
              sysmem_vpc_pos_buf_size = 65536,
-             sysmem_vpc_bv_pos_buf_size =  65536, 
+             sysmem_vpc_bv_pos_buf_size =  24576, # Значение стандартное, чтобы минимизировать артефакты 
             # Sysmem глубина и цвет
              sysmem_ccu_color_cache_fraction = CCUColorCacheFraction.FULL.value,
              sysmem_per_ccu_color_cache_size = 128 * 1024,
@@ -1599,8 +1600,8 @@ add_gpus([
              has_coherent_ubwc_flag_caches = True,
              has_fs_tex_prefetch = False,
              has_salu_int_narrowing_quirk = True,
-             shading_rate_matches_vk = True, # Походу это поддерживает вся 8 Серия
-             disable_gmem = False, # Экспериментально
+             shading_rate_matches_vk = True, 
+             disable_gmem = False, 
              gmem_size = 2 * 1024 * 1024,
             enable_tp_ubwc_flag_hint = True,
         )],
