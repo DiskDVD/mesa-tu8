@@ -33,13 +33,6 @@
 #include "tu_pass.h"
 #include "tu_rmv.h"
 
-
-static inline bool
-tu_a810_disable_pipeline_lto(const struct tu_device *device)
-{
-   return device->physical_device->dev_id.chip_id == 0x44010000; /* Adreno 810 */
-}
-
 /* Emit IB that preloads the descriptors that the shader uses */
 
 static void
@@ -1755,13 +1748,9 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
       builder->create_flags &
       VK_PIPELINE_CREATE_2_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR;
 
-   const bool disable_pipeline_lto =
-      tu_a810_disable_pipeline_lto(builder->device);
-
    bool retain_nir =
-      !disable_pipeline_lto &&
-      (builder->create_flags &
-       VK_PIPELINE_CREATE_2_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT);
+      builder->create_flags &
+      VK_PIPELINE_CREATE_2_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT;
 
    int64_t pipeline_start = os_time_get_nano();
 
@@ -1875,9 +1864,8 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
       }
    }
 
-   if (!disable_pipeline_lto &&
-       (builder->create_flags &
-        VK_PIPELINE_CREATE_2_LINK_TIME_OPTIMIZATION_BIT_EXT)) {
+   if (builder->create_flags &
+       VK_PIPELINE_CREATE_2_LINK_TIME_OPTIMIZATION_BIT_EXT) {
       for (unsigned i = 0; i < builder->num_libraries; i++) {
          struct tu_graphics_lib_pipeline *library = builder->libraries[i];
 
