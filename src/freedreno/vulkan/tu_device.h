@@ -39,12 +39,6 @@
 
 #define TU_BLIT_SHADER_SIZE 4096
 
-static inline bool
-tu_a810_disable_descriptor_buffer(uint64_t chip_id)
-{
-   return chip_id == 0x44010000; /* Adreno 810 */
-}
-
 /* extra space in vsc draw/prim streams */
 #define VSC_PAD 0x40
 
@@ -607,6 +601,62 @@ struct tu_framebuffer
 };
 VK_DEFINE_NONDISP_HANDLE_CASTS(tu_framebuffer, base, VkFramebuffer,
                                VK_OBJECT_TYPE_FRAMEBUFFER)
+
+
+static inline bool
+tu_rt_disabled_for_chip(uint64_t chip_id)
+{
+   switch (chip_id) {
+   case 0x44010000: /* Adreno 810 */
+   case 0x44030000: /* Adreno 825 */
+   case 0x44030A20: /* Adreno 829 */
+      return true;
+   default:
+      return false;
+   }
+}
+
+static inline bool
+tu_is_a810(uint64_t chip_id)
+{
+   return chip_id == 0x44010000; /* Adreno 810 */
+}
+
+static inline bool
+tu_is_a825(uint64_t chip_id)
+{
+   return chip_id == 0x44030000; /* Adreno 825 */
+}
+
+static inline bool
+tu_is_a829(uint64_t chip_id)
+{
+   return chip_id == 0x44030A20; /* Adreno 829 */
+}
+
+static inline bool
+tu_is_a830(uint64_t chip_id)
+{
+   return chip_id == 0x44050001 || chip_id == 0xffff44050000; /* Adreno 830 */
+}
+
+static inline bool
+tu_is_a840(uint64_t chip_id)
+{
+   return chip_id == 0xffff44050A31; /* Adreno 840 */
+}
+
+static inline bool
+tu_a810_disable_descriptor_buffer(uint64_t chip_id)
+{
+   return tu_is_a810(chip_id);
+}
+
+static inline bool
+tu_a810_safe_pipeline_profile(uint64_t chip_id)
+{
+   return tu_is_a810(chip_id);
+}
 
 uint64_t
 tu_get_system_heap_size(struct tu_physical_device *physical_device);

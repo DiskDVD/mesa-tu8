@@ -218,7 +218,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .KHR_multiview = tu_has_multiview(device),
       .KHR_performance_query = TU_DEBUG(PERFC) || TU_DEBUG(PERFCRAW),
       .KHR_pipeline_executable_properties = true,
-      .KHR_pipeline_library = true,
+      .KHR_pipeline_library = !tu_a810_safe_pipeline_profile(device->dev_id.chip_id),
 #ifdef TU_USE_WSI_PLATFORM
       .KHR_present_id = true,
       .KHR_present_id2 = true,
@@ -295,7 +295,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_fragment_density_map_offset = true,
       .EXT_global_priority = tu_is_vk_1_1(device),
       .EXT_global_priority_query = tu_is_vk_1_1(device),
-      .EXT_graphics_pipeline_library = true,
+      .EXT_graphics_pipeline_library = !tu_a810_safe_pipeline_profile(device->dev_id.chip_id),
       .EXT_hdr_metadata = true,
       .EXT_host_image_copy = true,
       .EXT_host_query_reset = true,
@@ -715,7 +715,7 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->globalPriorityQuery = true;
 
    /* VK_EXT_graphics_pipeline_library */
-   features->graphicsPipelineLibrary = true;
+   features->graphicsPipelineLibrary = !tu_a810_safe_pipeline_profile(pdevice->dev_id.chip_id);
 
    /* VK_EXT_host_image_copy */
    features->hostImageCopy = true;
@@ -1379,8 +1379,10 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->maxCommandBufferNestingLevel = UINT32_MAX;
 
    /* VK_EXT_graphics_pipeline_library */
-   props->graphicsPipelineLibraryFastLinking = true;
-   props->graphicsPipelineLibraryIndependentInterpolationDecoration = true;
+   props->graphicsPipelineLibraryFastLinking =
+      !tu_a810_safe_pipeline_profile(pdevice->dev_id.chip_id);
+   props->graphicsPipelineLibraryIndependentInterpolationDecoration =
+      !tu_a810_safe_pipeline_profile(pdevice->dev_id.chip_id);
 
    /* VK_EXT_extended_dynamic_state3 */
    props->dynamicPrimitiveTopologyUnrestricted = true;
