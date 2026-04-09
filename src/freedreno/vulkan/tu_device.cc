@@ -278,7 +278,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_depth_clamp_zero_one = true,
       .EXT_depth_clip_control = true,
       .EXT_depth_clip_enable = true,
-      .EXT_descriptor_buffer = true,
+      .EXT_descriptor_buffer = !tu_a810_disable_descriptor_buffer(device->dev_id.chip_id),
       .EXT_descriptor_indexing = true,
       .EXT_device_address_binding_report = true,
       .EXT_device_memory_report = true,
@@ -644,10 +644,17 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->depthClipEnable = true;
 
    /* VK_EXT_descriptor_buffer */
-   features->descriptorBuffer = true;
-   features->descriptorBufferCaptureReplay = pdevice->has_set_iova;
-   features->descriptorBufferImageLayoutIgnored = true;
-   features->descriptorBufferPushDescriptors = true;
+   if (tu_a810_disable_descriptor_buffer(pdevice->dev_id.chip_id)) {
+      features->descriptorBuffer = false;
+      features->descriptorBufferCaptureReplay = false;
+      features->descriptorBufferImageLayoutIgnored = false;
+      features->descriptorBufferPushDescriptors = false;
+   } else {
+      features->descriptorBuffer = true;
+      features->descriptorBufferCaptureReplay = pdevice->has_set_iova;
+      features->descriptorBufferImageLayoutIgnored = true;
+      features->descriptorBufferPushDescriptors = true;
+   }
 
    /* VK_EXT_device_address_binding_report */
    features->reportAddressBinding = true;
@@ -1379,44 +1386,81 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->dynamicPrimitiveTopologyUnrestricted = true;
 
    /* VK_EXT_descriptor_buffer */
-   props->combinedImageSamplerDescriptorSingleArray = true;
-   props->bufferlessPushDescriptors = true;
-   props->allowSamplerImageViewPostSubmitCreation = true;
-   props->descriptorBufferOffsetAlignment = FDL6_TEX_CONST_DWORDS * 4;
-   props->maxDescriptorBufferBindings = pdevice->usable_sets;
-   props->maxResourceDescriptorBufferBindings = pdevice->usable_sets;
-   props->maxSamplerDescriptorBufferBindings = pdevice->usable_sets;
-   props->maxEmbeddedImmutableSamplerBindings = pdevice->usable_sets;
-   props->maxEmbeddedImmutableSamplers = max_descriptor_set_size;
-   props->bufferCaptureReplayDescriptorDataSize = 0;
-   props->imageCaptureReplayDescriptorDataSize = sizeof(uint64_t);
-   props->imageViewCaptureReplayDescriptorDataSize = 0;
-   props->samplerCaptureReplayDescriptorDataSize = 0;
-   props->accelerationStructureCaptureReplayDescriptorDataSize = 0;
-   /* Note: these sizes must match descriptor_size() */
-   props->samplerDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
-   props->combinedImageSamplerDescriptorSize = 2 * FDL6_TEX_CONST_DWORDS * 4;
-   props->sampledImageDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
-   props->storageImageDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
-   props->uniformTexelBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
-   props->robustUniformTexelBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
-   props->storageTexelBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
-   props->robustStorageTexelBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
-   props->uniformBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
-   props->robustUniformBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
-   props->storageBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4 * (1 +
-      COND(pdevice->info->props.storage_16bit && !pdevice->info->props.has_isam_v, 1) +
-      COND(pdevice->info->props.storage_8bit, 1));
-   props->robustStorageBufferDescriptorSize =
-      props->storageBufferDescriptorSize;
-   props->accelerationStructureDescriptorSize = 4 * FDL6_TEX_CONST_DWORDS;
-   props->inputAttachmentDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
-   props->maxSamplerDescriptorBufferRange = ~0ull;
-   props->maxResourceDescriptorBufferRange = ~0ull;
-   props->samplerDescriptorBufferAddressSpaceSize = ~0ull;
-   props->resourceDescriptorBufferAddressSpaceSize = ~0ull;
-   props->descriptorBufferAddressSpaceSize = ~0ull;
-   props->combinedImageSamplerDensityMapDescriptorSize = 3 * FDL6_TEX_CONST_DWORDS * 4;
+   if (tu_a810_disable_descriptor_buffer(pdevice->dev_id.chip_id)) {
+      props->combinedImageSamplerDescriptorSingleArray = false;
+      props->bufferlessPushDescriptors = false;
+      props->allowSamplerImageViewPostSubmitCreation = false;
+      props->descriptorBufferOffsetAlignment = 0;
+      props->maxDescriptorBufferBindings = 0;
+      props->maxResourceDescriptorBufferBindings = 0;
+      props->maxSamplerDescriptorBufferBindings = 0;
+      props->maxEmbeddedImmutableSamplerBindings = 0;
+      props->maxEmbeddedImmutableSamplers = 0;
+      props->bufferCaptureReplayDescriptorDataSize = 0;
+      props->imageCaptureReplayDescriptorDataSize = 0;
+      props->imageViewCaptureReplayDescriptorDataSize = 0;
+      props->samplerCaptureReplayDescriptorDataSize = 0;
+      props->accelerationStructureCaptureReplayDescriptorDataSize = 0;
+      props->samplerDescriptorSize = 0;
+      props->combinedImageSamplerDescriptorSize = 0;
+      props->sampledImageDescriptorSize = 0;
+      props->storageImageDescriptorSize = 0;
+      props->uniformTexelBufferDescriptorSize = 0;
+      props->robustUniformTexelBufferDescriptorSize = 0;
+      props->storageTexelBufferDescriptorSize = 0;
+      props->robustStorageTexelBufferDescriptorSize = 0;
+      props->uniformBufferDescriptorSize = 0;
+      props->robustUniformBufferDescriptorSize = 0;
+      props->storageBufferDescriptorSize = 0;
+      props->robustStorageBufferDescriptorSize = 0;
+      props->accelerationStructureDescriptorSize = 0;
+      props->inputAttachmentDescriptorSize = 0;
+      props->maxSamplerDescriptorBufferRange = 0;
+      props->maxResourceDescriptorBufferRange = 0;
+      props->samplerDescriptorBufferAddressSpaceSize = 0;
+      props->resourceDescriptorBufferAddressSpaceSize = 0;
+      props->descriptorBufferAddressSpaceSize = 0;
+      props->combinedImageSamplerDensityMapDescriptorSize = 0;
+   } else {
+      props->combinedImageSamplerDescriptorSingleArray = true;
+      props->bufferlessPushDescriptors = true;
+      props->allowSamplerImageViewPostSubmitCreation = true;
+      props->descriptorBufferOffsetAlignment = FDL6_TEX_CONST_DWORDS * 4;
+      props->maxDescriptorBufferBindings = pdevice->usable_sets;
+      props->maxResourceDescriptorBufferBindings = pdevice->usable_sets;
+      props->maxSamplerDescriptorBufferBindings = pdevice->usable_sets;
+      props->maxEmbeddedImmutableSamplerBindings = pdevice->usable_sets;
+      props->maxEmbeddedImmutableSamplers = max_descriptor_set_size;
+      props->bufferCaptureReplayDescriptorDataSize = 0;
+      props->imageCaptureReplayDescriptorDataSize = sizeof(uint64_t);
+      props->imageViewCaptureReplayDescriptorDataSize = 0;
+      props->samplerCaptureReplayDescriptorDataSize = 0;
+      props->accelerationStructureCaptureReplayDescriptorDataSize = 0;
+      /* Note: these sizes must match descriptor_size() */
+      props->samplerDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
+      props->combinedImageSamplerDescriptorSize = 2 * FDL6_TEX_CONST_DWORDS * 4;
+      props->sampledImageDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
+      props->storageImageDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
+      props->uniformTexelBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
+      props->robustUniformTexelBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
+      props->storageTexelBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
+      props->robustStorageTexelBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
+      props->uniformBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
+      props->robustUniformBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
+      props->storageBufferDescriptorSize = FDL6_TEX_CONST_DWORDS * 4 * (1 +
+         COND(pdevice->info->props.storage_16bit && !pdevice->info->props.has_isam_v, 1) +
+         COND(pdevice->info->props.storage_8bit, 1));
+      props->robustStorageBufferDescriptorSize =
+         props->storageBufferDescriptorSize;
+      props->accelerationStructureDescriptorSize = 4 * FDL6_TEX_CONST_DWORDS;
+      props->inputAttachmentDescriptorSize = FDL6_TEX_CONST_DWORDS * 4;
+      props->maxSamplerDescriptorBufferRange = ~0ull;
+      props->maxResourceDescriptorBufferRange = ~0ull;
+      props->samplerDescriptorBufferAddressSpaceSize = ~0ull;
+      props->resourceDescriptorBufferAddressSpaceSize = ~0ull;
+      props->descriptorBufferAddressSpaceSize = ~0ull;
+      props->combinedImageSamplerDensityMapDescriptorSize = 3 * FDL6_TEX_CONST_DWORDS * 4;
+   }
 
    /* VK_EXT_legacy_vertex_attributes */
    props->nativeUnalignedPerformance = true;

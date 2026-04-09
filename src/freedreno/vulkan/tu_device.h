@@ -39,6 +39,12 @@
 
 #define TU_BLIT_SHADER_SIZE 4096
 
+static inline bool
+tu_a810_disable_descriptor_buffer(uint64_t chip_id)
+{
+   return chip_id == 0x44010000; /* Adreno 810 */
+}
+
 /* extra space in vsc draw/prim streams */
 #define VSC_PAD 0x40
 
