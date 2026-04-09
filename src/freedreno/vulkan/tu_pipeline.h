@@ -38,6 +38,8 @@ enum tu_dynamic_state
 
 struct cache_entry;
 
+/* Adreno 810 uses a conservative pipeline profile in tu_pipeline.cc. */
+
 enum tu_lrz_blend_status {
    TU_LRZ_BLEND_SAFE_FOR_LRZ,
    TU_LRZ_BLEND_READS_DEST_OR_PARTIAL_WRITE,
