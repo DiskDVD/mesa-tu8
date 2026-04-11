@@ -1882,7 +1882,7 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    if (builder->state &
        VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) {
       keys[MESA_SHADER_FRAGMENT].custom_resolve =
-         builder->graphics_state.rp->custom_resolve;
+         is_a810 ? false : builder->graphics_state.rp->custom_resolve;
 
       if (builder->device->physical_device->instance->emulate_alpha_to_coverage) {
          keys[MESA_SHADER_FRAGMENT].emulate_alpha_to_coverage = true;
@@ -1905,7 +1905,7 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    }
 
 
-   if (builder->create_flags &
+   if (create_flags &
        VK_PIPELINE_CREATE_2_LINK_TIME_OPTIMIZATION_BIT_EXT) {
       for (unsigned i = 0; i < builder->num_libraries; i++) {
          struct tu_graphics_lib_pipeline *library = builder->libraries[i];
@@ -1989,7 +1989,7 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    }
 
    unsigned char pipeline_blake3[BLAKE3_KEY_LEN];
-   tu_hash_shaders(pipeline_blake3, builder->create_flags, stage_infos, nir,
+   tu_hash_shaders(pipeline_blake3, create_flags, stage_infos, nir,
                    &builder->layout, keys, builder->state);
 
    unsigned char nir_blake3[BLAKE3_KEY_LEN + 1];
@@ -2025,7 +2025,7 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
        * still need to recompile in order to get the NIR.
        */
       if (cache_hit &&
-          (builder->create_flags &
+          (create_flags &
            VK_PIPELINE_CREATE_2_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT)) {
          bool nir_application_cache_hit = false;
          nir_shaders =
