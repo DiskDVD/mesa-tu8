@@ -228,6 +228,12 @@ ir3_compiler_debug_init(void)
    util_call_once(&once, __debug_init);
 }
 
+static inline bool
+ir3_is_a810(const struct fd_dev_id *dev_id)
+{
+   return dev_id->chip_id == 0x44010000;
+}
+
 struct ir3_compiler *
 ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
                     const struct fd_dev_info *dev_info,
@@ -243,6 +249,9 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
    compiler->is_64bit = fd_dev_64b(dev_id);
    compiler->options = *options;
    compiler->info = dev_info;
+
+   if (ir3_is_a810(dev_id))
+      ir3_shader_debug |= IR3_DBG_NODESCPREFETCH;
 
    /* TODO see if older GPU's were different here */
    compiler->branchstack_size = dev_info->props.has_dual_wave_dispatch ? 512 : 256;
