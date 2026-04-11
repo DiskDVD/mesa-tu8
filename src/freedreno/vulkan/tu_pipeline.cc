@@ -1752,11 +1752,11 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    const bool is_target_gpu = is_a810 || is_a825 || is_a829;
 
    const bool executable_info =
-      create_flags &
+      builder->create_flags &
       VK_PIPELINE_CREATE_2_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR;
 
    bool retain_nir =
-      create_flags &
+      builder->create_flags &
       VK_PIPELINE_CREATE_2_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT;
 
    int64_t pipeline_start = os_time_get_nano();
@@ -1871,8 +1871,8 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
       }
    }
 
-   if ((create_flags &
-        VK_PIPELINE_CREATE_2_LINK_TIME_OPTIMIZATION_BIT_EXT) && !is_a810) {
+   if (builder->create_flags &
+       VK_PIPELINE_CREATE_2_LINK_TIME_OPTIMIZATION_BIT_EXT) {
       for (unsigned i = 0; i < builder->num_libraries; i++) {
          struct tu_graphics_lib_pipeline *library = builder->libraries[i];
 
@@ -1912,13 +1912,12 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
       keys[MESA_SHADER_FRAGMENT].multiview_mask =
          builder->graphics_state.mv->view_mask;
       keys[MESA_SHADER_FRAGMENT].fragment_density_map =
-         is_target_gpu ? false : builder->fragment_density_map;
+         builder->fragment_density_map;
       keys[MESA_SHADER_FRAGMENT].fdm_per_layer =
-         is_target_gpu ? false : builder->fdm_per_layer;
-      keys[MESA_SHADER_FRAGMENT].max_fdm_layers =
-         is_target_gpu ? 0 : builder->max_fdm_layers;
+         builder->fdm_per_layer;
+      keys[MESA_SHADER_FRAGMENT].max_fdm_layers = builder->max_fdm_layers;
       keys[MESA_SHADER_FRAGMENT].unscaled_input_fragcoord =
-         is_target_gpu ? false : builder->unscaled_input_fragcoord;
+         builder->unscaled_input_fragcoord;
 
       const VkPipelineMultisampleStateCreateInfo *msaa_info =
          builder->create_info->pMultisampleState;
@@ -1952,7 +1951,7 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    }
 
    unsigned char pipeline_blake3[BLAKE3_KEY_LEN];
-   tu_hash_shaders(pipeline_blake3, create_flags, stage_infos, nir,
+   tu_hash_shaders(pipeline_blake3, builder->create_flags, stage_infos, nir,
                    &builder->layout, keys, builder->state);
 
    unsigned char nir_blake3[BLAKE3_KEY_LEN + 1];
@@ -1988,7 +1987,8 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
        * still need to recompile in order to get the NIR.
        */
       if (cache_hit &&
-          (retain_nir)) {
+          (builder->create_flags &
+           VK_PIPELINE_CREATE_2_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT)) {
          bool nir_application_cache_hit = false;
          nir_shaders =
             tu_nir_cache_lookup(builder->cache, &nir_blake3,
@@ -2006,13 +2006,13 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    }
 
    if (!cache_hit) {
-      if (create_flags &
+      if (builder->create_flags &
           VK_PIPELINE_CREATE_2_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT_KHR) {
          return VK_PIPELINE_COMPILE_REQUIRED;
       }
 
       result = tu_compile_shaders(builder->device,
-                                  create_flags,
+                                  builder->create_flags,
                                   stage_infos,
                                   nir,
                                   keys,
