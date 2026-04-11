@@ -1381,37 +1381,12 @@ use_sysmem_rendering(struct tu_cmd_buffer *cmd,
    if (TU_DEBUG(GMEM))
       return false;
 
-   /* A8xx specific heuristics to optionally force sysmem early without autotuner history */
-   if (cmd->device->physical_device->info->chip == 8) {
-      uint32_t a8xx_chip = fd_dev_gpu_id(&cmd->device->physical_device->dev_id);
-      
-      uint32_t color_count = 0;
-      bool has_depth_stencil = false;
-      const struct tu_render_pass *pass = cmd->state.pass;
-      for (uint32_t i = 0; i < pass->subpass_count; i++) {
-         color_count = MAX2(color_count, pass->subpasses[i].color_count);
-         if (pass->subpasses[i].depth_stencil_attachment.attachment != VK_ATTACHMENT_UNUSED)
-            has_depth_stencil = true;
-      }
-
-      /* Conservative early sysmem fallback:
-       * On mid-range A8xx (like A825/A829), very heavy passes (e.g. 4+ MRTs + Depth)
-       * or passes that stress caching/metadata might be better off in sysmem.
-       * We keep this conservative: only force if we are fairly certain.
-       */
-      bool force_sysmem_a8xx = false;
-      if (a8xx_chip == 825 || a8xx_chip == 829 || a8xx_chip == 810) {
-         if (color_count >= 4 && has_depth_stencil) {
-            force_sysmem_a8xx = true;
-         }
-      }
-
-      if (force_sysmem_a8xx) {
-         cmd->state.rp.gmem_disable_reason = "A8xx conservative heavy MRT sysmem fallback";
-         return true;
-      }
-   }
-
+   /* Keep A8xx on the normal autotune path here.
+    *
+    * Device-specific bandwidth tuning for A810/A825/A829 lives in
+    * tu_autotune.cc, where we can bias the bandwidth model without forcing
+    * heavyweight passes into sysmem up front.
+    */
    bool use_sysmem = tu_autotune_use_bypass(&cmd->device->autotune,
                                             cmd, autotune_result);
    if (*autotune_result) {

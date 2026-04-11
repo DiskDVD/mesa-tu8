@@ -164,6 +164,7 @@ get_device_extensions(const struct tu_physical_device *device,
     * fuse is set and we have ray_intersection.
     */
    bool has_raytracing =
+      !tu_rt_disabled_for_chip(device->dev_id.chip_id) &&
       device->info->props.has_ray_intersection &&
       (!device->info->props.has_sw_fuse || device->has_raytracing);
 
@@ -773,10 +774,12 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->rasterizationOrderStencilAttachmentAccess = true;
 
    /* VK_KHR_ray_query */
-   features->rayQuery = true;
+   features->rayQuery = !tu_rt_disabled_for_chip(pdevice->dev_id.chip_id) &&
+      pdevice->info->props.has_ray_intersection &&
+      (!pdevice->info->props.has_sw_fuse || pdevice->has_raytracing);
 
    /* VK_KHR_ray_tracing_maintenance1 */
-   features->rayTracingMaintenance1 = true;
+   features->rayTracingMaintenance1 = features->rayQuery;
 
    /* VK_KHR_robustness2 */
    features->robustBufferAccess2 = true;
@@ -1424,7 +1427,8 @@ tu_get_properties(struct tu_physical_device *pdevice,
       props->descriptorBufferAddressSpaceSize = 0;
       props->combinedImageSamplerDensityMapDescriptorSize = 0;
    } else {
-      props->combinedImageSamplerDescriptorSingleArray = true;
+      props->combinedImageSamplerDescriptorSingleArray =
+         !tu_disable_descriptor_buffer_for_chip(pdevice->dev_id.chip_id);
       props->bufferlessPushDescriptors = true;
       props->allowSamplerImageViewPostSubmitCreation = true;
       props->descriptorBufferOffsetAlignment = FDL6_TEX_CONST_DWORDS * 4;

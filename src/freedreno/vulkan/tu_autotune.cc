@@ -503,12 +503,52 @@ tu_autotune_free_results(struct tu_device *dev, struct list_head *results)
    mtx_unlock(&dev->autotune_mutex);
 }
 
+static inline unsigned
+tu_autotune_sysmem_drawcall_threshold(const struct tu_cmd_buffer *cmd_buffer)
+{
+   uint64_t chip_id = cmd_buffer->device->physical_device->dev_id.chip_id;
+
+   if (tu_is_a810(chip_id))
+      return 1;
+
+   if (tu_is_balanced_a8xx(chip_id))
+      return 2;
+
+   return 5;
+}
+
+static inline void
+tu_autotune_apply_a8xx_bandwidth_bias(const struct tu_cmd_buffer *cmd_buffer,
+                                      uint64_t *sysmem_bandwidth,
+                                      uint64_t *gmem_bandwidth)
+{
+   uint64_t chip_id = cmd_buffer->device->physical_device->dev_id.chip_id;
+
+   if (tu_is_a810(chip_id)) {
+      /* A810 is much more bandwidth-constrained than the larger A8xx parts,
+       * so prefer GMEM a bit more aggressively when both paths are viable.
+       */
+      *sysmem_bandwidth = (*sysmem_bandwidth * 13) / 10;
+      *gmem_bandwidth = (*gmem_bandwidth * 9) / 10;
+      return;
+   }
+
+   if (tu_is_balanced_a8xx(chip_id)) {
+      /* A825/A829 still benefit from avoiding unnecessary external-memory
+       * traffic, but they have enough on-chip resources that the bias should
+       * stay moderate.
+       */
+      *sysmem_bandwidth = (*sysmem_bandwidth * 11) / 10;
+   }
+}
+
 static bool
 fallback_use_bypass(const struct tu_render_pass *pass,
                     const struct tu_framebuffer *framebuffer,
                     const struct tu_cmd_buffer *cmd_buffer)
 {
-   if (cmd_buffer->state.rp.drawcall_count > 5)
+   if (cmd_buffer->state.rp.drawcall_count >
+       tu_autotune_sysmem_drawcall_threshold(cmd_buffer))
       return false;
 
    for (unsigned i = 0; i < pass->subpass_count; i++) {
@@ -622,6 +662,10 @@ tu_autotune_use_bypass(struct tu_autotune *at,
        * overhead.  The magic numbers of 11 and 10 are randomly chosen.
        */
       gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
+
+      tu_autotune_apply_a8xx_bandwidth_bias(cmd_buffer,
+                                            &sysmem_bandwidth,
+                                            &gmem_bandwidth);
 
       const bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;
       if (TU_AUTOTUNE_DEBUG_LOG) {
