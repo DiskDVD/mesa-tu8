@@ -1904,8 +1904,9 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
             break;
          }
       }
-
-      keys[last_pre_rast_stage].fdm_per_layer = is_target_gpu ? false : builder->fdm_per_layer;
+/* Keep A810 conservative, but don't down-profile A825/A829 to A810. */
+      keys[last_pre_rast_stage].fdm_per_layer =
+         is_a810 ? false : builder->fdm_per_layer;
    }
 
    if (builder->state & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) {
