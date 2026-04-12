@@ -509,7 +509,7 @@ tu_autotune_sysmem_drawcall_threshold(const struct tu_cmd_buffer *cmd_buffer)
    uint64_t chip_id = cmd_buffer->device->physical_device->dev_id.chip_id;
 
    if (tu_is_a810(chip_id))
-      return 1;
+      return 3;
 
    if (tu_is_balanced_a8xx(chip_id))
       return 2;
@@ -525,12 +525,23 @@ tu_autotune_apply_a8xx_bandwidth_bias(const struct tu_cmd_buffer *cmd_buffer,
    uint64_t chip_id = cmd_buffer->device->physical_device->dev_id.chip_id;
 
    if (tu_is_a810(chip_id)) {
-      /* A810 is much more bandwidth-constrained than the larger A8xx parts,
-       * so prefer GMEM a bit more aggressively when both paths are viable.
-       */
-      *sysmem_bandwidth = (*sysmem_bandwidth * 13) / 10;
-      *gmem_bandwidth = (*gmem_bandwidth * 9) / 10;
-      return;
+      /* A810 has a much smaller on-chip memory budget than larger A8xx parts.
+       * Prefer sysmem/bypass a bit more as draw complexity grows to avoid
+       * over-tiling penalties.*/
+            const uint32_t draws = cmd_buffer->state.rp.drawcall_count;
+
+      if (draws <= 1) {
+         /* Cheap passes can still benefit from GMEM locality. */
+         *sysmem_bandwidth = (*sysmem_bandwidth * 11) / 10;
+      } else if (draws >= 4) {
+         /* For busy passes, bias away from GMEM on A810. */
+         *gmem_bandwidth = (*gmem_bandwidth * 12) / 10;
+      }
+
+      if (cmd_buffer->state.pass->num_views > 1 ||
+          cmd_buffer->state.framebuffer->layers > 1) {
+         *gmem_bandwidth = (*gmem_bandwidth * 11) / 10;
+      }
    }
 
    if (tu_is_balanced_a8xx(chip_id)) {
