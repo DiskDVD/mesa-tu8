@@ -519,6 +519,7 @@ tu_autotune_sysmem_drawcall_threshold(const struct tu_cmd_buffer *cmd_buffer)
 
 static inline void
 tu_autotune_apply_a8xx_bandwidth_bias(const struct tu_cmd_buffer *cmd_buffer,
+                                      uint64_t total_draw_call_bandwidth,
                                       uint64_t *sysmem_bandwidth,
                                       uint64_t *gmem_bandwidth)
 {
@@ -542,6 +543,10 @@ tu_autotune_apply_a8xx_bandwidth_bias(const struct tu_cmd_buffer *cmd_buffer,
           cmd_buffer->state.framebuffer->layers > 1) {
          *gmem_bandwidth = (*gmem_bandwidth * 11) / 10;
       }
+      if (total_draw_call_bandwidth > *gmem_bandwidth / 2) {
+         /* Shader-heavy passes become tile-management bound quickly on A810. */
+         *gmem_bandwidth = (*gmem_bandwidth * 11) / 10;
+      }
    }
 
    if (tu_is_balanced_a8xx(chip_id)) {
@@ -563,6 +568,11 @@ tu_autotune_apply_a8xx_bandwidth_bias(const struct tu_cmd_buffer *cmd_buffer,
       if (cmd_buffer->state.pass->num_views > 1 ||
           cmd_buffer->state.framebuffer->layers > 1) {
          /* Layered/multiview passes amplify per-tile overhead. */
+         *gmem_bandwidth = (*gmem_bandwidth * 21) / 20;
+      }
+
+      if (total_draw_call_bandwidth > *gmem_bandwidth / 2) {
+         /* Heavy shading tends to scale better in bypass on A825/A829. */
          *gmem_bandwidth = (*gmem_bandwidth * 21) / 20;
       }
    }
@@ -690,6 +700,7 @@ tu_autotune_use_bypass(struct tu_autotune *at,
       gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
 
       tu_autotune_apply_a8xx_bandwidth_bias(cmd_buffer,
+                                            total_draw_call_bandwidth,
                                             &sysmem_bandwidth,
                                             &gmem_bandwidth);
 
