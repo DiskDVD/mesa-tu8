@@ -512,7 +512,7 @@ tu_autotune_sysmem_drawcall_threshold(const struct tu_cmd_buffer *cmd_buffer)
       return 3;
 
    if (tu_is_balanced_a8xx(chip_id))
-      return 2;
+      return 3;
 
    return 5;
 }
@@ -545,11 +545,26 @@ tu_autotune_apply_a8xx_bandwidth_bias(const struct tu_cmd_buffer *cmd_buffer,
    }
 
    if (tu_is_balanced_a8xx(chip_id)) {
-      /* A825/A829 still benefit from avoiding unnecessary external-memory
-       * traffic, but they have enough on-chip resources that the bias should
-       * stay moderate.
+      /* A825/A829 have much stronger memory bandwidth than A810 while still
+       * paying a noticeable cost for GMEM setup/state churn on busy passes.
+       * Keep a slight preference for GMEM on tiny passes, but avoid
+       * over-tiling once draw complexity starts increasing.
        */
-      *sysmem_bandwidth = (*sysmem_bandwidth * 11) / 10;
+      const uint32_t draws = cmd_buffer->state.rp.drawcall_count;
+
+      if (draws <= 1) {
+         /* Preserve locality wins for very cheap passes. */
+         *sysmem_bandwidth = (*sysmem_bandwidth * 21) / 20;
+      } else if (draws >= 3) {
+         /* Push complex passes towards bypass/sysmem. */
+         *gmem_bandwidth = (*gmem_bandwidth * 11) / 10;
+      }
+
+      if (cmd_buffer->state.pass->num_views > 1 ||
+          cmd_buffer->state.framebuffer->layers > 1) {
+         /* Layered/multiview passes amplify per-tile overhead. */
+         *gmem_bandwidth = (*gmem_bandwidth * 21) / 20;
+      }
    }
 }
 
