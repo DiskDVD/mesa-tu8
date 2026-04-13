@@ -831,7 +831,8 @@ a7xx_gen2 = GPUProps(
         has_ray_intersection = True,
         has_hw_bin_scaling = True,
         has_image_processing = True,
-    )
+        has_64b_image_atomics = True,
+)
 
 a7xx_gen3 = GPUProps(
         has_event_write_sample_count = True,
@@ -859,6 +860,7 @@ a7xx_gen3 = GPUProps(
         new_control_regs = True,
         has_hw_bin_scaling = True,
         has_image_processing = True,
+        has_64b_image_atomics = True,
     )
 
 a730_magic_regs = dict(
