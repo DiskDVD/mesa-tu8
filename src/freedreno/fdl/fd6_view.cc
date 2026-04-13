@@ -236,6 +236,10 @@ fdl6_view_init(struct fdl6_view *view, const struct fdl_layout **layouts,
       else
          storage_format = FMT6_8_8_8_8_UNORM;
    }
+      if (args->format == PIPE_FORMAT_R64_SINT || args->format == PIPE_FORMAT_R64_UINT) {
+      storage_format = FMT6_32_32_UINT;
+      }
+   
 
    view->format = args->format;
 
