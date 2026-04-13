@@ -721,6 +721,11 @@ tu_get_features(struct tu_physical_device *pdevice,
 
    /* VK_EXT_host_image_copy */
    features->hostImageCopy = true;
+   
+   /* VK_EXT_shader_image_atomic_int64 */
+   features->shaderImageInt64Atomics = pdevice->info->props.has_64b_image_atomics;
+   features->sparseImageInt64Atomics = false;
+   
 
    /* VK_EXT_image_2d_view_of_3d  */
    features->image2DViewOf3D = true;
