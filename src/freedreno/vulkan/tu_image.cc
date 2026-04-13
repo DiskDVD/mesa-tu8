@@ -415,6 +415,10 @@ ubwc_possible(struct tu_device *device,
        samples > VK_SAMPLE_COUNT_1_BIT) {
       return false;
    }
+   if (format == VK_FORMAT_R64_UINT || format == VK_FORMAT_R64_SINT) {
+      return false;
+   }
+   
 
    return true;
 }
