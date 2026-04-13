@@ -139,6 +139,19 @@ tu_physical_device_get_format_properties(
    bool supported_color = tu6_format_color_supported(physical_device->info, format);
    bool supported_tex = fd6_texture_format_supported(physical_device->info, format,
                                                      TILE6_LINEAR, false);
+   if ((format == PIPE_FORMAT_R64_UINT || format == PIPE_FORMAT_R64_SINT) &&
+       physical_device->info->props.has_64b_image_atomics) {
+      assert(!(supported_vtx || supported_color || supported_tex));
+      optimal = VK_FORMAT_FEATURE_2_STORAGE_IMAGE_BIT |
+                VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT;
+      out_properties->linearTilingFeatures = optimal;
+      out_properties->optimalTilingFeatures = optimal;
+      out_properties->bufferFeatures =
+         VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_BIT |
+         VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_ATOMIC_BIT;
+      return;
+   }
+   
    bool is_npot = !util_is_power_of_two_or_zero(desc->block.bits);
 
    if (format == PIPE_FORMAT_NONE ||
