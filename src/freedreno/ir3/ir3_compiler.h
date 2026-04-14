@@ -390,13 +390,45 @@ bool ir3_shader_bisect_disasm_select(struct ir3_shader_variant *v);
 
 /* ========== A8XX HELPER FUNCTIONS ========== */
 
+struct ir3_gpu_profile {
+    uint32_t reg_efficiency;
+    uint32_t max_sy_inflight;
+    uint32_t max_ss_inflight;
+    bool force_double_threadsize;
+};
+
+static inline struct ir3_gpu_profile
+ir3_get_gpu_profile(uint32_t chip_id)
+{
+    switch (chip_id) {
+
+    case 0x44010000: return (struct ir3_gpu_profile){90, 4, 4, false}; // 810
+    case 0x44030000: return (struct ir3_gpu_profile){85, 8, 8, true};  // 825
+    case 0x44030A20: return (struct ir3_gpu_profile){80, 10, 8, true}; // 829
+
+    case 0x44050001:
+    case 0xffff44050000:
+        return (struct ir3_gpu_profile){75, 16, 12, true}; // 830
+
+    case 0xffff44050A31:
+        return (struct ir3_gpu_profile){70, 20, 16, true}; // 840
+
+    default:
+        return (struct ir3_gpu_profile){85, 8, 8, false};
+    }
+}
+
 /* Helper function to check if double threadsize should be forced for A8XX */
 static inline bool
 ir3_force_double_threadsize(struct ir3_compiler *compiler)
 {
-   if (compiler->gen >= 8)
-      return true;
-   return compiler->info->props.supports_double_threadsize;
+    struct ir3_gpu_profile p =
+        ir3_get_gpu_profile(compiler->dev_id->chip_id);
+
+    if (compiler->gen >= 8)
+        return p.force_double_threadsize;
+
+    return compiler->info->props.supports_double_threadsize;
 }
 
 /* Helper function to check if A8XX should use aggressive const limits */
