@@ -294,16 +294,10 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
       /* Compute shaders don't share a const file with the FS. Instead they
        * have their own file, which is smaller than the FS one. On a7xx the size
        * was doubled, although this doesn't work on X1-85.
-       * 
-       * A8XX: Increase to 1024 for high-throughput chips (A825/829/830/840).
+       *
+       * TODO: is this true on earlier gen's?
        */
-      if (compiler->gen >= 8) {
-         compiler->max_const_compute = 1024;
-      } else if (compiler->gen >= 7) {
-         compiler->max_const_compute = 512;
-      } else {
-         compiler->max_const_compute = 256;
-      }
+      compiler->max_const_compute = compiler->gen >= 7 ? 512 : 256;
 
       if (dev_info->props.is_a702) {
          /* No GS/tess, 128 per stage otherwise: */
