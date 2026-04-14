@@ -1,3 +1,5 @@
+[file name]: ir3_sched.c
+[file content begin]
 /*
  * Copyright © 2014 Rob Clark <robclark@freedesktop.org>
  * SPDX-License-Identifier: MIT
@@ -11,36 +13,6 @@
 
 #include "ir3.h"
 #include "ir3_compiler.h"
-
-// ===== A8XX scheduler tuning =====
-
-struct ir3_gpu_profile {
-    uint32_t reg_efficiency;
-    uint32_t max_sy_inflight;
-    uint32_t max_ss_inflight;
-    bool force_double_threadsize;
-};
-
-static inline struct ir3_gpu_profile
-ir3_get_gpu_profile(uint32_t chip_id)
-{
-    switch (chip_id) {
-
-    case 0x44010000: return (struct ir3_gpu_profile){90, 4, 4, false};
-    case 0x44030000: return (struct ir3_gpu_profile){85, 8, 8, true};
-    case 0x44030A20: return (struct ir3_gpu_profile){80, 10, 8, true};
-
-    case 0x44050001:
-    case 0xffff44050000:
-        return (struct ir3_gpu_profile){75, 16, 12, true};
-
-    case 0xffff44050A31:
-        return (struct ir3_gpu_profile){70, 20, 16, true};
-
-    default:
-        return (struct ir3_gpu_profile){85, 8, 8, false};
-    }
-}
 
 #if MESA_DEBUG
 #define SCHED_DEBUG (ir3_shader_debug & IR3_DBG_SCHEDMSGS)
@@ -656,15 +628,13 @@ should_defer(struct ir3_sched_ctx *ctx, struct ir3_instruction *instr)
          return true;
    }
 
-   struct ir3_gpu_profile profile =
-        ir3_get_gpu_profile(ctx->compiler->dev_id->chip_id);
-
    /* Avoid scheduling too many outstanding texture or sfu instructions at
     * once by deferring further tex/SFU instructions. This both prevents
     * stalls when the queue of texture/sfu instructions becomes too large,
     * and prevents unacceptably large increases in register pressure from too
     * many outstanding texture instructions.
     */
+   struct ir3_gpu_profile profile = ir3_get_gpu_profile(ctx->compiler->dev_id->chip_id);
    if (ctx->sy_index - ctx->first_outstanding_sy_index >= profile.max_sy_inflight && is_sy_producer(instr))
       return true;
 
@@ -708,6 +678,23 @@ node_delay(struct ir3_sched_ctx *ctx, struct ir3_sched_node *n)
    return MAX2(n->earliest_ip, ctx->ip) - ctx->ip;
 }
 
+static unsigned
+estimate_live_regs(struct ir3_instruction *instr)
+{
+   unsigned regs = 0;
+   foreach_dst (dst, instr) {
+      if (!is_dest_gpr(dst))
+         continue;
+      regs += reg_elems(dst);
+   }
+   foreach_ssa_src (src, instr) {
+      if (src->block != instr->block)
+         continue;
+      regs += new_regs(src);
+   }
+   return regs;
+}
+
 /**
  * Chooses an instruction to schedule using the Goodman/Hsu (1988) CSR (Code
  * Scheduling for Register pressure) heuristic.
@@ -722,12 +709,7 @@ choose_instr_dec(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes,
    const char *mode = defer ? "-d" : "";
    struct ir3_sched_node *chosen = NULL;
    enum choose_instr_dec_rank chosen_rank = DEC_NEUTRAL;
-
-   struct ir3_gpu_profile profile =
-        ir3_get_gpu_profile(ctx->compiler->dev_id->chip_id);
-
-   uint32_t effective_regs =
-        (ctx->compiler->reg_size_vec4 * profile.reg_efficiency) / 100;
+   uint32_t effective_regs = ir3_effective_reg_size(ctx->compiler);
 
    foreach_sched_node (n, &ctx->dag->heads) {
       if (defer && should_defer(ctx, n->instr))
@@ -736,38 +718,28 @@ choose_instr_dec(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes,
       unsigned d = node_delay(ctx, n);
 
       int live = live_effect(n->instr);
-      if (live > 0)
-         continue;
+      if (live > 0) {
+         unsigned est_regs = estimate_live_regs(n->instr);
+         if (est_regs > effective_regs)
+            continue;
+      }
 
       if (!check_instr(ctx, notes, n->instr))
          continue;
 
       enum choose_instr_dec_rank rank;
       if (live < 0) {
-         /* Prioritize instrs which free up regs and can be scheduled with no
-          * delay.
-          */
          if (d == 0)
             rank = DEC_FREED_READY;
          else
             rank = DEC_FREED;
       } else {
-         /* Contra the paper, pick a leader with no effect on used regs.  This
-          * may open up new opportunities, as otherwise a single-operand instr
-          * consuming a value will tend to block finding freeing that value.
-          * This had a massive effect on reducing spilling on V3D.
-          *
-          * XXX: Should this prioritize ready?
-          */
          if (d == 0)
             rank = DEC_NEUTRAL_READY;
          else
             rank = DEC_NEUTRAL;
       }
 
-      /* Prefer higher-ranked instructions, or in the case of a rank tie, the
-       * highest latency-to-end-of-program instruction.
-       */
       if (!chosen || rank > chosen_rank ||
           (rank == chosen_rank && chosen->max_delay < n->max_delay)) {
          chosen = n;
@@ -812,21 +784,10 @@ choose_instr_inc(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes,
    const char *mode = defer ? "-d" : "";
    struct ir3_sched_node *chosen = NULL;
    enum choose_instr_inc_rank chosen_rank = INC_DISTANCE;
+   uint32_t effective_regs = ir3_effective_reg_size(ctx->compiler);
 
-   /*
-    * From hear on out, we are picking something that increases
-    * register pressure.  So try to pick something which will
-    * be consumed soon:
-    */
    unsigned chosen_distance = 0;
 
-   struct ir3_gpu_profile profile =
-        ir3_get_gpu_profile(ctx->compiler->dev_id->chip_id);
-
-   uint32_t effective_regs =
-        (ctx->compiler->reg_size_vec4 * profile.reg_efficiency) / 100;
-
-   /* Pick the max delay of the remaining ready set. */
    foreach_sched_node (n, &ctx->dag->heads) {
       if (avoid_output && n->output)
          continue;
@@ -835,6 +796,10 @@ choose_instr_inc(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes,
          continue;
 
       if (!check_instr(ctx, notes, n->instr))
+         continue;
+
+      unsigned est_regs = estimate_live_regs(n->instr);
+      if (est_regs > effective_regs)
          continue;
 
       unsigned d = node_delay(ctx, n);
@@ -1469,3 +1434,4 @@ ir3_sched_add_deps(struct ir3 *ir)
 
    return progress;
 }
+[file content end]

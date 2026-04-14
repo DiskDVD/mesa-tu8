@@ -1,3 +1,5 @@
+[file name]: ir3_compiler.c
+[file content begin]
 /*
  * Copyright © 2015 Rob Clark <robclark@freedesktop.org>
  * SPDX-License-Identifier: MIT
@@ -13,45 +15,6 @@
 
 #include "ir3_compiler.h"
 #include "ir3_nir.h"
-
-// ===== A8XX GPU tuning (INLINE) =====
-
-struct ir3_gpu_profile {
-    uint32_t reg_efficiency;
-    uint32_t max_sy_inflight;
-    uint32_t max_ss_inflight;
-    bool force_double_threadsize;
-};
-
-static inline struct ir3_gpu_profile
-ir3_get_gpu_profile(uint32_t chip_id)
-{
-    switch (chip_id) {
-
-    case 0x44010000: return (struct ir3_gpu_profile){90, 4, 4, false}; // 810
-    case 0x44030000: return (struct ir3_gpu_profile){85, 8, 8, true};  // 825
-    case 0x44030A20: return (struct ir3_gpu_profile){80, 10, 8, true}; // 829
-
-    case 0x44050001:
-    case 0xffff44050000:
-        return (struct ir3_gpu_profile){75, 16, 12, true}; // 830
-
-    case 0xffff44050A31:
-        return (struct ir3_gpu_profile){70, 20, 16, true}; // 840
-
-    default:
-        return (struct ir3_gpu_profile){85, 8, 8, false};
-    }
-}
-
-static inline uint32_t
-ir3_effective_reg_size(struct ir3_compiler *c)
-{
-    struct ir3_gpu_profile p =
-        ir3_get_gpu_profile(c->dev_id->chip_id);
-
-    return (c->reg_size_vec4 * p.reg_efficiency) / 100;
-}
 
 static const struct debug_named_value shader_debug_options[] = {
    /* clang-format off */
@@ -94,6 +57,40 @@ DEBUG_GET_ONCE_OPTION(ir3_shader_override_path, "IR3_SHADER_OVERRIDE_PATH",
 
 enum ir3_shader_debug ir3_shader_debug = 0;
 const char *ir3_shader_override_path = NULL;
+
+struct ir3_gpu_profile {
+    uint32_t reg_efficiency;
+    uint32_t max_sy_inflight;
+    uint32_t max_ss_inflight;
+    bool force_double_threadsize;
+};
+
+static inline struct ir3_gpu_profile
+ir3_get_gpu_profile(uint32_t chip_id)
+{
+    switch (chip_id) {
+    case 0x44010000: /* Adreno 810 */
+        return (struct ir3_gpu_profile){90, 4, 4, false};
+    case 0x44030000: /* Adreno 825 */
+        return (struct ir3_gpu_profile){85, 8, 8, true};
+    case 0x44030A20: /* Adreno 829 */
+        return (struct ir3_gpu_profile){80, 10, 8, true};
+    case 0x44050001: /* Adreno 830 */
+    case 0xffff44050000:
+        return (struct ir3_gpu_profile){75, 16, 12, true};
+    case 0xffff44050A31: /* Adreno 840 */
+        return (struct ir3_gpu_profile){70, 20, 16, true};
+    default:
+        return (struct ir3_gpu_profile){85, 8, 8, false};
+    }
+}
+
+static inline uint32_t
+ir3_effective_reg_size(struct ir3_compiler *compiler)
+{
+    struct ir3_gpu_profile profile = ir3_get_gpu_profile(compiler->dev_id->chip_id);
+    return compiler->reg_size_vec4 * profile.reg_efficiency / 100;
+}
 
 void
 ir3_compiler_destroy(struct ir3_compiler *compiler)
@@ -516,3 +513,4 @@ ir3_shader_debug_as_string()
 {
    return debug_dump_flags(shader_debug_options, ir3_shader_debug);
 }
+[file content end]
