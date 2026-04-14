@@ -631,11 +631,14 @@ should_defer(struct ir3_sched_ctx *ctx, struct ir3_instruction *instr)
     * stalls when the queue of texture/sfu instructions becomes too large,
     * and prevents unacceptably large increases in register pressure from too
     * many outstanding texture instructions.
+    *
+    * A8XX: Increased from 8 to 16 to maximize ALU utilization and cache 
+    * latency hiding on high-throughput chips (A825/829/830/840).
     */
-   if (ctx->sy_index - ctx->first_outstanding_sy_index >= 8 && is_sy_producer(instr))
+   if (ctx->sy_index - ctx->first_outstanding_sy_index >= 16 && is_sy_producer(instr))
       return true;
 
-   if (ctx->ss_index - ctx->first_outstanding_ss_index >= 8 && is_ss_producer(instr))
+   if (ctx->ss_index - ctx->first_outstanding_ss_index >= 16 && is_ss_producer(instr))
       return true;
 
    return false;
@@ -851,6 +854,50 @@ choose_instr_prio(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes)
    return NULL;
 }
 
+/**
+ * A8XX Optimization: Prioritize texture instructions that are ready to issue
+ * immediately (delay == 0). This helps hide memory latency by overlapping
+ * texture fetches with ALU instructions, maximizing throughput on
+ * high-performance chips (A825/829/830/840).
+ */
+static struct ir3_sched_node *
+choose_instr_tex_prio(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes)
+{
+   struct ir3_sched_node *chosen = NULL;
+   unsigned chosen_distance = ~0;
+
+   foreach_sched_node (n, &ctx->dag->heads) {
+      /* Skip non-texture instructions */
+      if (!is_tex(n->instr))
+         continue;
+
+      /* Check if instruction is ready to schedule (no addr/pred conflicts) */
+      if (!check_instr(ctx, notes, n->instr))
+         continue;
+
+      /* Only pick texture instructions that can be issued immediately
+       * without NOPs (delay == 0). This ensures we don't stall the
+       * pipeline waiting for texture coordinates to be ready.
+       */
+      if (node_delay(ctx, n) > 0)
+         continue;
+
+      unsigned distance = nearest_use(n->instr);
+
+      if (!chosen || distance < chosen_distance) {
+         chosen = n;
+         chosen_distance = distance;
+      }
+   }
+
+   if (chosen) {
+      di(chosen->instr, "tex_prio: chose (early texture for latency hiding)");
+      return chosen;
+   }
+
+   return NULL;
+}
+
 static void
 dump_state(struct ir3_sched_ctx *ctx)
 {
@@ -878,6 +925,11 @@ choose_instr(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes)
    dump_state(ctx);
 
    chosen = choose_instr_prio(ctx, notes);
+   if (chosen)
+      return chosen->instr;
+
+   /* A8XX Latency Hiding: Prioritize texture instructions that are ready */
+   chosen = choose_instr_tex_prio(ctx, notes);
    if (chosen)
       return chosen->instr;
 
