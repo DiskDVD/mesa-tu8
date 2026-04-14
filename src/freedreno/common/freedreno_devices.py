@@ -1445,13 +1445,13 @@ add_gpus([
             gmem_vpc_attr_buf_size = 196608,
             gmem_vpc_pos_buf_size = 98304,
             gmem_vpc_bv_pos_buf_size = 98304,
-             
+    
             disable_gmem = False,
             gmem_size = 12 * 1024 * 1024,
             has_ray_intersection = True,
             has_sw_fuse = False,
             has_coherent_ubwc_flag_caches = True,
-            has_fs_tex_prefetch = False,
+            
             has_salu_int_narrowing_quirk = True,
             shading_rate_matches_vk = True,
          )],
