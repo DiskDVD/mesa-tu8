@@ -1,5 +1,3 @@
-[file name]: ir3_sched.c
-[file content begin]
 /*
  * Copyright © 2014 Rob Clark <robclark@freedesktop.org>
  * SPDX-License-Identifier: MIT
@@ -1434,4 +1432,3 @@ ir3_sched_add_deps(struct ir3 *ir)
 
    return progress;
 }
-[file content end]

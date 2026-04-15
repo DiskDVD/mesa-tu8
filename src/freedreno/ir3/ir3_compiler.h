@@ -1,5 +1,3 @@
-[file name]: ir3_compiler.h
-[file content begin]
 /*
  * Copyright © 2013 Rob Clark <robclark@freedesktop.org>
  * SPDX-License-Identifier: MIT
@@ -446,4 +444,3 @@ ir3_get_non_alu_delay(struct ir3_compiler *compiler)
 ENDC;
 
 #endif /* IR3_COMPILER_H_ */
-[file content end]

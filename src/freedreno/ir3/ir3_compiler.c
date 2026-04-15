@@ -1,5 +1,3 @@
-[file name]: ir3_compiler.c
-[file content begin]
 /*
  * Copyright © 2015 Rob Clark <robclark@freedesktop.org>
  * SPDX-License-Identifier: MIT
@@ -65,7 +63,7 @@ struct ir3_gpu_profile {
     bool force_double_threadsize;
 };
 
-static inline struct ir3_gpu_profile
+struct ir3_gpu_profile
 ir3_get_gpu_profile(uint32_t chip_id)
 {
     switch (chip_id) {
@@ -85,7 +83,7 @@ ir3_get_gpu_profile(uint32_t chip_id)
     }
 }
 
-static inline uint32_t
+uint32_t
 ir3_effective_reg_size(struct ir3_compiler *compiler)
 {
     struct ir3_gpu_profile profile = ir3_get_gpu_profile(compiler->dev_id->chip_id);
@@ -513,4 +511,3 @@ ir3_shader_debug_as_string()
 {
    return debug_dump_flags(shader_debug_options, ir3_shader_debug);
 }
-[file content end]
