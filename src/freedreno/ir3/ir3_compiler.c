@@ -56,13 +56,6 @@ DEBUG_GET_ONCE_OPTION(ir3_shader_override_path, "IR3_SHADER_OVERRIDE_PATH",
 enum ir3_shader_debug ir3_shader_debug = 0;
 const char *ir3_shader_override_path = NULL;
 
-struct ir3_gpu_profile {
-    uint32_t reg_efficiency;
-    uint32_t max_sy_inflight;
-    uint32_t max_ss_inflight;
-    bool force_double_threadsize;
-};
-
 struct ir3_gpu_profile
 ir3_get_gpu_profile(uint32_t chip_id)
 {
@@ -74,9 +67,10 @@ ir3_get_gpu_profile(uint32_t chip_id)
     case 0x44030A20: /* Adreno 829 */
         return (struct ir3_gpu_profile){80, 10, 8, true};
     case 0x44050001: /* Adreno 830 */
-    case 0xffff44050000:
         return (struct ir3_gpu_profile){75, 16, 12, true};
-    case 0xffff44050A31: /* Adreno 840 */
+    case 0x43050A31: /* Adreno 830 variant */
+        return (struct ir3_gpu_profile){75, 16, 12, true};
+    case 0x43050A32: /* Adreno 840 */
         return (struct ir3_gpu_profile){70, 20, 16, true};
     default:
         return (struct ir3_gpu_profile){85, 8, 8, false};
