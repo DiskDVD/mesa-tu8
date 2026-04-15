@@ -54,9 +54,9 @@ tu_autotune_free_results_locked(struct tu_device *dev, struct list_head *results
 #define TU_AUTOTUNE_LOG_AT_FINISH 0
 
 /* How many last renderpass stats are taken into account. */
-#define MAX_HISTORY_RESULTS 5
+#define MAX_HISTORY_RESULTS 3
 /* For how many submissions we store renderpass stats. */
-#define MAX_HISTORY_LIFETIME 128
+#define MAX_HISTORY_LIFETIME 64
 
 
 /**
