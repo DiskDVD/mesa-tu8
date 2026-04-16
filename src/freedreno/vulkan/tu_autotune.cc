@@ -97,6 +97,8 @@ struct a8xx_profile {
    float gmem_threshold_scale;
    uint32_t max_history;
    bool prefer_gmem;
+   bool force_big_gmem;
+   bool prefer_tune_small;
 };
 
 static inline struct a8xx_profile
@@ -104,18 +106,18 @@ get_a8xx_profile(uint32_t chip_id)
 {
    switch (chip_id) {
    case 0x44010000: /* Adreno 810 */
-      return (struct a8xx_profile){0.85f, 4, true};
+      return (struct a8xx_profile){0.82f, 5, true, true, true};
    case 0x44030000: /* Adreno 825 */
-      return (struct a8xx_profile){0.75f, 4, true};
+      return (struct a8xx_profile){0.72f, 5, true, true, true};
    case 0x44030A20: /* Adreno 829 */
-      return (struct a8xx_profile){0.75f, 4, true};
+      return (struct a8xx_profile){0.70f, 5, true, true, true};
    case 0x44050001:
    case 0xffff44050000: /* Adreno 830 */
-      return (struct a8xx_profile){0.7f, 4, true};
+      return (struct a8xx_profile){0.68f, 4, true, false, true};
    case 0xffff44050A31: /* Adreno 840 */
-      return (struct a8xx_profile){0.6f, 4, true};
+      return (struct a8xx_profile){0.62f, 4, true, false, true};
    default:
-      return (struct a8xx_profile){1.0f, 3, false};
+      return (struct a8xx_profile){1.0f, 3, false, false, false};
    }
 }
 
@@ -349,6 +351,23 @@ tu_autotune::get_env_config()
             mod_flags &= supported_mod_flags;
          }
       }
+
+      const struct a8xx_profile profile = get_a8xx_profile(device->physical_device->dev_id.chip_id);
+      if (!algo_strv.empty()) {
+         /* Explicit user or instance config takes precedence. */
+      } else if (profile.prefer_gmem) {
+         algo = algorithm::PREFER_GMEM;
+      }
+
+      if (!flags_env_str) {
+         if (profile.force_big_gmem)
+            mod_flags |= (uint32_t) mod_flag::BIG_GMEM;
+         if (profile.prefer_tune_small)
+            mod_flags |= (uint32_t) mod_flag::TUNE_SMALL;
+      }
+
+      if ((mod_flags & ~supported_mod_flags) != 0)
+         mod_flags &= supported_mod_flags;
 
       assert((uint8_t) mod_flags == mod_flags);
       at_config = config_t(algo, (uint8_t) mod_flags);
@@ -1097,13 +1116,12 @@ struct tu_autotune::rp_history {
       bool should_reset = false; /* If true, will reset sysmem_probability before next update. */
       bool locked = false;       /* If true, the probability will no longer be updated. */
       uint64_t seed[2] { 0x3bffb83978e24f88, 0x9238d5d56c71cd35 };
-      uint32_t chip_id;
 
       bool is_sysmem_winning = false;
       uint64_t winning_since_ts = 0;
 
     public:
-      profiled_algo(uint64_t hash, uint32_t chip_id) : chip_id(chip_id)
+      explicit profiled_algo(uint64_t hash)
       {
          seed[1] = hash;
       }
@@ -1337,7 +1355,7 @@ struct tu_autotune::rp_history {
       }
    } preempt_optimize;
 
-   rp_history(uint64_t hash, uint32_t chip_id) : hash(hash), last_use_ts(os_time_get_nano()), bandwidth(chip_id), profiled(hash, chip_id)
+   rp_history(uint64_t hash, uint32_t chip_id) : hash(hash), last_use_ts(os_time_get_nano()), bandwidth(chip_id), profiled(hash)
    {
    }
 
