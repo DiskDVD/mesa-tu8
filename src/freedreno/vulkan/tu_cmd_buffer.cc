@@ -28,29 +28,37 @@
 #include "tu_tile_config.h"
 #include "tu_tracepoints.h"
 
+// Adreno 8xx chip identification helpers
 static inline bool
 tu_is_a810(struct tu_device *dev)
 {
-   return dev->physical_device->info->chip_id == 0x44010000ull;
+   return dev->physical_device->dev_id.chip_id == 0x44010000ull;
 }
 
 static inline bool
 tu_is_a829(struct tu_device *dev)
 {
-   return dev->physical_device->info->chip_id == 0x44030A20ull;
+   return dev->physical_device->dev_id.chip_id == 0x44030A20ull;
 }
 
 static inline bool
 tu_is_a830(struct tu_device *dev)
 {
-   uint64_t id = dev->physical_device->info->ship_id;
+   uint64_t id = dev->physical_device->dev_id.chip_id;
    return id == 0x44050001ull || id == 0xffff44050000ull;
 }
 
 static inline bool
 tu_is_a840(struct tu_device *dev)
 {
-   return dev->physical_device->info->chip_id == 0xffff44050A31ull;
+   return dev->physical_device->dev_id.chip_id == 0xffff44050A31ull;
+}
+
+static inline bool
+tu_is_a8xx(struct tu_device *dev)
+{
+   return tu_is_a810(dev) || tu_is_a829(dev) ||
+          tu_is_a830(dev) || tu_is_a840(dev);
 }
 
 enum tu_cmd_buffer_status {
@@ -2630,12 +2638,14 @@ tu6_emit_binning_pass(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
     * by allowing the GPU to fetch bindless texture descriptors earlier.
     * Sets CP_SET_PSEUDO_REG for both GFX and CS bindless prefetch to max (0xff).
     */
+#if 0
    if (CHIP >= A8XX) {
       tu_cs_emit_pkt7(cs, CP_SET_PSEUDO_REG, 3);
       tu_cs_emit(cs, A6XX_CP_SET_PSEUDO_REG__0_PSEUDO_REG(SP_PREFETCH_CNTL));
       tu_cs_emit(cs, 0xff); // GFX bindless prefetch
       tu_cs_emit(cs, 0xff); // CS bindless prefetch
    }
+   #endif
    if ((!(cmd->usage_flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) ||
         fdm_offsets) && cmd->fdm_bin_patchpoints.size != 0) {
       unsigned num_views = tu_fdm_num_layers(cmd);
