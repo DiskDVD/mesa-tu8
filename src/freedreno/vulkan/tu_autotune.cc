@@ -91,93 +91,6 @@ render_mode_str(tu_autotune::render_mode mode)
    }
 }
 
-/** A8xx-specific optimizations **/
-
-struct a8xx_profile {
-   float gmem_threshold_scale;
-   uint32_t max_history;
-   bool prefer_gmem;
-   bool force_big_gmem;
-   bool prefer_tune_small;
-   // === НОВОЕ: флаги для динамических корректировок из OLD ===
-   bool aggressive_gmem_avoidance;   // для A810
-   bool balanced_large_gmem;         // для A825/829
-};
-
-static inline struct a8xx_profile
-get_a8xx_profile(uint32_t chip_id)
-{
-   switch (chip_id) {
-   case 0x44010000: /* Adreno 810 */
-      return {0.82f, 5, true, true, true, true, false};
-   case 0x44030000: /* Adreno 825 */
-      return {0.72f, 5, true, true, true, false, true};
-   case 0x44030A20: /* Adreno 829 */
-      return {0.70f, 5, true, true, true, false, true};
-   case 0x44050001:
-   case 0xffff44050000: /* Adreno 830 */
-      return {0.68f, 4, true, false, true, false, false};
-   case 0xffff44050A31: /* Adreno 840 */
-      return {0.62f, 4, true, false, true, false, false};
-   default:
-      return {1.0f, 3, false, false, false, false, false};
-   }
-}
-
-// --- НАЧАЛО ВСТАВКИ ИЗ OLD ---
-// Перенос динамической логики из tu_autotune_apply_a8xx_bandwidth_bias (OLD)
-static void
-apply_dynamic_a8xx_bias(const struct a8xx_profile &profile,
-                        uint32_t drawcall_count,
-                        bool has_multiview_or_layers,
-                        uint64_t total_draw_call_bandwidth,
-                        uint64_t *sysmem_bandwidth,
-                        uint64_t *gmem_bandwidth)
-{
-   if (profile.aggressive_gmem_avoidance) {
-      // Adreno 810
-      if (drawcall_count <= 1) {
-         *sysmem_bandwidth = (*sysmem_bandwidth * 11) / 10;
-      } else if (drawcall_count >= 4) {
-         *gmem_bandwidth = (*gmem_bandwidth * 12) / 10;
-      }
-
-      if (has_multiview_or_layers) {
-         *gmem_bandwidth = (*gmem_bandwidth * 11) / 10;
-      }
-      if (total_draw_call_bandwidth > *gmem_bandwidth / 2) {
-         *gmem_bandwidth = (*gmem_bandwidth * 11) / 10;
-      }
-   } else if (profile.balanced_large_gmem) {
-      // Adreno 825/829
-      if (drawcall_count <= 1) {
-         *sysmem_bandwidth = (*sysmem_bandwidth * 21) / 20;
-      } else if (drawcall_count >= 3) {
-         *gmem_bandwidth = (*gmem_bandwidth * 11) / 10;
-      }
-
-      if (has_multiview_or_layers) {
-         *gmem_bandwidth = (*gmem_bandwidth * 21) / 20;
-      }
-
-      if (total_draw_call_bandwidth > *gmem_bandwidth / 2) {
-         *gmem_bandwidth = (*gmem_bandwidth * 21) / 20;
-      }
-   }
-}
-
-// Пороги для fallback (когда история отсутствует) из OLD
-static unsigned
-get_a8xx_sysmem_drawcall_threshold(uint32_t chip_id)
-{
-   if (chip_id == 0x44010000) // A810
-      return 3;
-   if (chip_id == 0x44030000 || chip_id == 0x44030A20) // A825/A829
-      return 3;
-   return 5; // default
-}
-// --- КОНЕЦ ВСТАВКИ ИЗ OLD ---
-
 /** Configuration **/
 
 enum class tu_autotune::algorithm : uint8_t {
@@ -392,7 +305,6 @@ tu_autotune::get_env_config()
       const char *flags_env_str = os_get_option("TU_AUTOTUNE_FLAGS");
       uint32_t mod_flags = 0;
       if (flags_env_str) {
-         bool has_flags_override = false;
          static const struct debug_control tu_at_flags_control[] = {
             { "big_gmem", (uint32_t) mod_flag::BIG_GMEM },
             { "tune_small", (uint32_t) mod_flag::TUNE_SMALL },
@@ -401,7 +313,6 @@ tu_autotune::get_env_config()
          };
 
          mod_flags = parse_debug_string(flags_env_str, tu_at_flags_control);
-         has_flags_override = true;
          if (TU_DEBUG(STARTUP))
             mesa_logi("TU_AUTOTUNE_FLAGS=0x%x (%s)", mod_flags, flags_env_str);
 
@@ -411,24 +322,6 @@ tu_autotune::get_env_config()
          }
       }
 
-      const struct a8xx_profile profile = get_a8xx_profile(device->physical_device->dev_id.chip_id);
-      if (!algo_strv.empty()) {
-         /* Explicit user or instance config takes precedence. */
-      } else if (profile.prefer_gmem) {
-         algo = algorithm::PREFER_GMEM;
-      }
-
-      if (!flags_env_str) {
-         if (profile.force_big_gmem)
-            mod_flags |= (uint32_t) mod_flag::BIG_GMEM;
-         if (profile.prefer_tune_small)
-            mod_flags |= (uint32_t) mod_flag::TUNE_SMALL;
-      }
-
-       
-      if ((mod_flags & ~supported_mod_flags) != 0)
-         mod_flags &= supported_mod_flags;
-      
       assert((uint8_t) mod_flags == mod_flags);
       at_config = config_t(algo, (uint8_t) mod_flags);
    });
@@ -1080,28 +973,19 @@ struct tu_autotune::rp_history {
    std::atomic<uint32_t> refcount = 0; /* Reference count to prevent deletion when active. */
    std::atomic<uint64_t> last_use_ts;  /* Last time the reference count was updated, in monotonic nanoseconds. */
 
+   rp_history(uint64_t hash): hash(hash), last_use_ts(os_time_get_nano()), profiled(hash)
+   {
+   }
+
    /** Bandwidth Estimation Algorithm **/
    struct bandwidth_algo {
     private:
       exponential_average<uint32_t> mean_samples_passed;
-      std::deque<uint64_t> history_samples;
-      uint32_t chip_id;
 
     public:
-      bandwidth_algo(uint32_t chip_id) : chip_id(chip_id) {}
-
-      // === НОВОЕ: публичный метод для проверки пустоты ===
-      bool empty() const { return mean_samples_passed.empty(); }
-
       void update(uint32_t samples)
       {
          mean_samples_passed.add(samples);
-         
-         struct a8xx_profile profile = get_a8xx_profile(chip_id);
-         history_samples.push_back(samples);
-         if (history_samples.size() > profile.max_history) {
-            history_samples.pop_front();
-         }
       }
 
       render_mode get_optimal_mode(rp_history &history,
@@ -1146,20 +1030,6 @@ struct tu_autotune::rp_history {
           */
          gmem_bandwidth = (gmem_bandwidth * 11 + total_draw_call_bandwidth) / 10;
 
-         struct a8xx_profile profile = get_a8xx_profile(chip_id);
-         gmem_bandwidth = (uint64_t)(gmem_bandwidth * profile.gmem_threshold_scale);
-
-         // --- НАЧАЛО ВСТАВКИ ИЗ OLD ---
-         // Применяем динамические корректировки, которых нет в статическом a8xx_profile
-         bool has_multiview_or_layers = (cmd_state->pass->num_views > 1) || (cmd_state->framebuffer->layers > 1);
-         apply_dynamic_a8xx_bias(profile,
-                                 rp_state->drawcall_count,
-                                 has_multiview_or_layers,
-                                 total_draw_call_bandwidth,
-                                 &sysmem_bandwidth,
-                                 &gmem_bandwidth);
-         // --- КОНЕЦ ВСТАВКИ ИЗ OLD ---
-
          bool select_sysmem = sysmem_bandwidth <= gmem_bandwidth;
          render_mode mode = select_sysmem ? render_mode::SYSMEM : render_mode::GMEM;
 
@@ -1168,12 +1038,11 @@ struct tu_autotune::rp_history {
             "%" PRIu32 " selecting %s\n"
             "   mean_samples=%" PRIu64 ", draw_bandwidth_per_sample=%.2f, total_draw_call_bandwidth=%" PRIu64
             ", render_areas[0]=%" PRIu32 "x%" PRIu32 ", sysmem_bandwidth_per_pixel=%" PRIu32
-            ", gmem_bandwidth_per_pixel=%" PRIu32 ", sysmem_bandwidth=%" PRIu64 ", gmem_bandwidth=%" PRIu64
-            ", gmem_scale=%.2f",
+            ", gmem_bandwidth_per_pixel=%" PRIu32 ", sysmem_bandwidth=%" PRIu64 ", gmem_bandwidth=%" PRIu64,
             history.hash, rp_state->drawcall_count, render_mode_str(mode), mean_samples,
             (float) rp_state->drawcall_bandwidth_per_sample_sum / rp_state->drawcall_count, total_draw_call_bandwidth,
             extent.width, extent.height, pass->sysmem_bandwidth_per_pixel, pass->gmem_bandwidth_per_pixel,
-            sysmem_bandwidth, gmem_bandwidth, profile.gmem_threshold_scale);
+            sysmem_bandwidth, gmem_bandwidth);
 
          return mode;
       }
@@ -1190,13 +1059,12 @@ struct tu_autotune::rp_history {
       bool should_reset = false; /* If true, will reset sysmem_probability before next update. */
       bool locked = false;       /* If true, the probability will no longer be updated. */
       uint64_t seed[2] { 0x3bffb83978e24f88, 0x9238d5d56c71cd35 };
-      
 
       bool is_sysmem_winning = false;
       uint64_t winning_since_ts = 0;
 
     public:
-      explicit profiled_algo(uint64_t hash)
+      profiled_algo(uint64_t hash)
       {
          seed[1] = hash;
       }
@@ -1430,10 +1298,6 @@ struct tu_autotune::rp_history {
       }
    } preempt_optimize;
 
-   rp_history(uint64_t hash, uint32_t chip_id) : hash(hash), last_use_ts(os_time_get_nano()), bandwidth(chip_id), profiled(hash)
-{
-}
-
    void process(rp_entry &entry, tu_autotune &at)
    {
       /* We use entry config to know what metrics it has, autotune config to know what algorithms are enabled. */
@@ -1491,22 +1355,17 @@ tu_autotune::find_rp_history(const rp_key &key)
 tu_autotune::rp_history_handle
 tu_autotune::find_or_create_rp_history(const rp_key &key)
 {
-   rp_history_handle existing = find_rp_history(key);
+   rp_history *existing = find_rp_history(key);
    if (existing)
-      return existing;
+      return *existing;
 
    /* If we reach here, we have to create a new history. */
    std::unique_lock lock(rp_mutex);
    auto it = rp_histories.find(key);
    if (it != rp_histories.end())
-      return rp_history_handle(it->second); /* Another thread created the history while we were waiting for the lock. */
-   
-   uint32_t chip_id = device->physical_device->dev_id.chip_id;
-   auto result = rp_histories.emplace(
-      std::piecewise_construct,
-      std::forward_as_tuple(key),
-      std::forward_as_tuple(key.hash, chip_id));
-   return rp_history_handle(result.first->second);
+      return it->second; /* Another thread created the history while we were waiting for the lock. */
+   auto history = rp_histories.emplace(std::make_pair(key, key.hash));
+   return rp_history_handle(history.first->second);
 }
 
 void
@@ -2029,22 +1888,6 @@ tu_autotune::get_optimal_mode(struct tu_cmd_buffer *cmd_buffer, rp_ctx_t *rp_ctx
                     render_mode_str(*early_return_mode));
       return *early_return_mode;
    }
-
-   // --- НАЧАЛО ВСТАВКИ ИЗ OLD: fallback на основе drawcall-порогов ---
-   // Если включён BANDWIDTH, но история пуста — используем fallback на основе drawcall-порогов (как в OLD)
-   if (config.is_enabled(algorithm::BANDWIDTH) && *rp_ctx) {
-      rp_entry *entry = *rp_ctx;
-      if (entry->history->bandwidth.empty()) {
-         unsigned threshold = get_a8xx_sysmem_drawcall_threshold(device->physical_device->dev_id.chip_id);
-         at_log_base_h("no history, drawcall_count=%u, threshold=%u, using %s", key.hash, rp_state->drawcall_count,
-                       threshold, rp_state->drawcall_count > threshold ? "GMEM" : "SYSMEM");
-         if (rp_state->drawcall_count > threshold)
-            return render_mode::GMEM;
-         else
-            return render_mode::SYSMEM;
-      }
-   }
-   // --- КОНЕЦ ВСТАВКИ ИЗ OLD ---
 
    if (config.is_enabled(algorithm::PROFILED) || config.is_enabled(algorithm::PROFILED_IMM))
       return history.profiled.get_optimal_mode(history);
