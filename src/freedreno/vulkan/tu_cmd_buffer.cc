@@ -28,6 +28,30 @@
 #include "tu_tile_config.h"
 #include "tu_tracepoints.h"
 
+static inline bool
+tu_is_a810(struct tu_device *dev)
+{
+   return dev->physical_device->dev_id.chip_id == 0x44010000ull;
+}
+
+static inline bool
+tu_is_a829(struct tu_device *dev)
+{
+   return dev->physical_device->dev_id.chip_id == 0x44030A20ull;
+}
+
+static inline bool
+tu_is_a830(struct tu_device *dev)
+{
+   uint64_t id = dev->physical_device->dev_id.chip_id;
+   return id == 0x44050001ull || id == 0xffff44050000ull;
+}
+
+static inline bool
+tu_is_a840(struct tu_device *dev)
+{
+   return dev->physical_device->dev_id.chip_id == 0xffff44050A31ull;
+
 enum tu_cmd_buffer_status {
    TU_CMD_BUFFER_STATUS_IDLE = 0,
    TU_CMD_BUFFER_STATUS_ACTIVE = 1,
