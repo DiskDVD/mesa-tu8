@@ -2633,6 +2633,17 @@ tu6_emit_binning_pass(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
     * offset the viewport also needs to be transformed during the binning
     * phase.
     */
+   /* Enable aggressive texture prefetching for Adreno 8xx.
+    * This reduces cache misses and improves texture-heavy workload performance
+    * by allowing the GPU to fetch bindless texture descriptors earlier.
+    * Sets CP_SET_PSEUDO_REG for both GFX and CS bindless prefetch to max (0xff).
+    */
+   if (CHIP >= A8XX) {
+      tu_cs_emit_pkt7(cs, CP_SET_PSEUDO_REG, 3);
+      tu_cs_emit(cs, A6XX_CP_SET_PSEUDO_REG__0_PSEUDO_REG(SP_PREFETCH_CNTL));
+      tu_cs_emit(cs, 0xff); // GFX bindless prefetch
+      tu_cs_emit(cs, 0xff); // CS bindless prefetch
+   }
    if ((!(cmd->usage_flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) ||
         fdm_offsets) && cmd->fdm_bin_patchpoints.size != 0) {
       unsigned num_views = tu_fdm_num_layers(cmd);
