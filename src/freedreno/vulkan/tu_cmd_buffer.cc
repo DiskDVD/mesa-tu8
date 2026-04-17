@@ -31,26 +31,27 @@
 static inline bool
 tu_is_a810(struct tu_device *dev)
 {
-   return dev->physical_device->dev_id.chip_id == 0x44010000ull;
+   return dev->physical_device->info->chip_id == 0x44010000ull;
 }
 
 static inline bool
 tu_is_a829(struct tu_device *dev)
 {
-   return dev->physical_device->dev_id.chip_id == 0x44030A20ull;
+   return dev->physical_device->info->chip_id == 0x44030A20ull;
 }
 
 static inline bool
 tu_is_a830(struct tu_device *dev)
 {
-   uint64_t id = dev->physical_device->dev_id.chip_id;
+   uint64_t id = dev->physical_device->info->ship_id;
    return id == 0x44050001ull || id == 0xffff44050000ull;
 }
 
 static inline bool
 tu_is_a840(struct tu_device *dev)
 {
-   return dev->physical_device->dev_id.chip_id == 0xffff44050A31ull;
+   return dev->physical_device->info->chip_id == 0xffff44050A31ull;
+}
 
 enum tu_cmd_buffer_status {
    TU_CMD_BUFFER_STATUS_IDLE = 0,
@@ -611,41 +612,32 @@ emit_rb_ccu_cntl(struct tu_cs *cs, struct tu_device *dev, bool gmem)
    uint32_t depth_offset_hi = depth_offset >> 21;
    depth_offset &= 0x1fffff;
 
-   enum a6xx_ccu_cache_size color_cache_size = !gmem ? CCU_CACHE_SIZE_FULL : !gmem ? CCU_CACHE_SIZE_FULL :
-      (a6xx_ccu_cache_size)(dev->physical_device->info->props.gmem_ccu_color_cache_fraction);
+enum a6xx_ccu_cache_size color_cache_size = !gmem ? CCU_CACHE_SIZE_FULL : !gmem ? CCU_CACHE_SIZE_FULL :
+   (a6xx_ccu_cache_size)(dev->physical_device->info->props.gmem_ccu_color_cache_fraction);
 
-   if (CHIP == A8XX) {
-      tu_cs_emit_regs(cs, RB_CCU_CACHE_CNTL(CHIP,
-         .depth_cache_size = (enum a6xx_ccu_cache_size)cfg->depth_cache_fraction,
-         .depth_offset = cfg->depth_ccu_offset,
-         .color_cache_size = (enum a6xx_ccu_cache_size)cfg->color_cache_fraction,
-         .color_offset = cfg->color_ccu_offset,
-      ));
-   } else if (CHIP == A7XX) {
+// Force FULL CCU cache size for all A8xx variants to improve performance
+// and reduce cache thrashing given the larger caches (576KB - 18MB).
+if (CHIP >= A8XX) {
+   color_cache_size = CCU_CACHE_SIZE_FULL;
+}
 
-        if (CHIP >= A8XX) {
-      // Force FULL CCU cache size for all A8xx variants to improve performance
-      // and reduce cache thrashing given the larger caches (576KB - 18MB).
-      color_cache_size = CCU_CACHE_SIZE_FULL;
-   }
 if (CHIP == A8XX) {
-      tu_cs_emit_regs(cs, RB_CCU_CACHE_CNTL(CHIP,
-         .depth_cache_size = (enum a6xx_ccu_cache_size)cfg->depth_cache_fraction,
-         .depth_offset = cfg->depth_ccu_offset,
-         .color_cache_size = color_cache_size,
-         .color_offset = cfg->color_ccu_offset,
-      ));
-   } else if (CHIP == A7XX) {
-
-      tu_cs_emit_regs(cs, RB_CCU_CACHE_CNTL(CHIP,
-         .depth_offset_hi = depth_offset_hi,
-         .color_offset_hi = color_offset_hi,
-         .depth_cache_size = CCU_CACHE_SIZE_FULL,
-         .depth_offset = depth_offset,
-         .color_cache_size = color_cache_size,
-         .color_offset = color_offset
-      ));
-   } else if (CHIP == A6XX) {
+   tu_cs_emit_regs(cs, RB_CCU_CACHE_CNTL(CHIP,
+      .depth_cache_size = (enum a6xx_ccu_cache_size)cfg->depth_cache_fraction,
+      .depth_offset = cfg->depth_ccu_offset,
+      .color_cache_size = color_cache_size,
+      .color_offset = cfg->color_ccu_offset,
+   ));
+} else if (CHIP == A7XX) {
+   tu_cs_emit_regs(cs, RB_CCU_CACHE_CNTL(CHIP,
+      .depth_offset_hi = depth_offset_hi,
+      .color_offset_hi = color_offset_hi,
+      .depth_cache_size = CCU_CACHE_SIZE_FULL,
+      .depth_offset = depth_offset,
+      .color_cache_size = color_cache_size,
+      .color_offset = color_offset
+   ));
+} else if (CHIP == A6XX) {
       tu_cs_emit_regs(cs, RB_CCU_CNTL(CHIP,
          .gmem_fast_clear_disable =
             !dev->physical_device->info->props.has_gmem_fast_clear,
