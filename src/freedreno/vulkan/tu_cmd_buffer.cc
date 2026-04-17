@@ -622,6 +622,21 @@ emit_rb_ccu_cntl(struct tu_cs *cs, struct tu_device *dev, bool gmem)
          .color_offset = cfg->color_ccu_offset,
       ));
    } else if (CHIP == A7XX) {
+
+        if (CHIP >= A8XX) {
+      // Force FULL CCU cache size for all A8xx variants to improve performance
+      // and reduce cache thrashing given the larger caches (576KB - 18MB).
+      color_cache_size = CCU_CACHE_SIZE_FULL;
+   }
+if (CHIP == A8XX) {
+      tu_cs_emit_regs(cs, RB_CCU_CACHE_CNTL(CHIP,
+         .depth_cache_size = (enum a6xx_ccu_cache_size)cfg->depth_cache_fraction,
+         .depth_offset = cfg->depth_ccu_offset,
+         .color_cache_size = color_cache_size,
+         .color_offset = cfg->color_ccu_offset,
+      ));
+   } else if (CHIP == A7XX) {
+
       tu_cs_emit_regs(cs, RB_CCU_CACHE_CNTL(CHIP,
          .depth_offset_hi = depth_offset_hi,
          .color_offset_hi = color_offset_hi,
