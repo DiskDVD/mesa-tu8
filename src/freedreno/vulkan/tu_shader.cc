@@ -2151,33 +2151,9 @@ tu6_emit_fs_inputs(struct tu_cs *cs, const struct ir3_shader_variant *fs)
             sysval_regs += 2;
       }
 
-bool defer_wave_alloc_dis = true;
-
-   if (CHIP >= A8XX) {
-      uint32_t chip = dev->physical_device->chip_id;
-
-      switch (chip) {
-      case 0x44010000:          /* Adreno 810 */
-      case 0xffff44010000:
-      case 0x44030A20:          /* Adreno 829 */
-         defer_wave_alloc_dis = true;
-         break;
-
-      case 0x44050001:          /* Adreno 830 */
-      case 0xffff44050000:
-      case 0xffff44050A31:      /* Adreno 840 */
-         defer_wave_alloc_dis = false;
-         break;
-
-      default:
-         defer_wave_alloc_dis = false;
-         break;
-      }
-   }
-
       tu_cs_emit_regs(cs, SP_PS_CNTL_1(CHIP,
          .sysval_regs_count = sysval_regs,
-         .defer_wave_alloc_dis = defer_wave_alloc_dis,
+         .defer_wave_alloc_dis = true,
          .evict_buf_mode = 1,
       ));
    }
