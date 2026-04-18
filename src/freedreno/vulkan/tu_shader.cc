@@ -2054,6 +2054,44 @@ template <chip CHIP>
 static void
 tu6_emit_fs_inputs(struct tu_cs *cs, const struct ir3_shader_variant *fs)
 {
+   const uint64_t chip_id = cs->device->physical_device->dev_id.chip_id;
+   struct {
+      bool force_thread64;
+      uint32_t sysval_regs_cap;
+      uint32_t evict_buf_mode;
+      bool defer_wave_alloc_dis;
+   } profile = {
+      .force_thread64 = false,
+      .sysval_regs_cap = UINT32_MAX,
+      .evict_buf_mode = 1,
+      .defer_wave_alloc_dis = CHIP < A8XX,
+   };
+
+   switch (chip_id) {
+   case 0xffff44010000ull: /* Adreno 810 */
+      profile.force_thread64 = true;
+      profile.sysval_regs_cap = 24;
+      profile.evict_buf_mode = 1;
+      profile.defer_wave_alloc_dis = true;
+      break;
+   case 0x44030a20ull: /* Adreno 829 (KGSL) */
+      profile.force_thread64 = true;
+      profile.sysval_regs_cap = 28;
+      profile.evict_buf_mode = 1;
+      profile.defer_wave_alloc_dis = false;
+      break;
+   case 0xffff44050000ull: /* Adreno 830 */
+   case 0x44050001ull:     /* Adreno 830 (KGSL) */
+      profile.evict_buf_mode = 1;
+      profile.defer_wave_alloc_dis = false;
+      break;
+   case 0xffff44050a31ull: /* Adreno 840 */
+      profile.evict_buf_mode = 1;
+      profile.defer_wave_alloc_dis = false;
+      break;
+   default:
+      break;
+   }
    uint32_t face_regid, coord_regid, zwcoord_regid, samp_id_regid;
    uint32_t ij_regid[IJ_COUNT];
    uint32_t smask_in_regid, shading_rate_regid;
@@ -2151,6 +2189,7 @@ tu6_emit_fs_inputs(struct tu_cs *cs, const struct ir3_shader_variant *fs)
             sysval_regs += 2;
       }
 
+sysval_regs = MIN2(sysval_regs, profile.sysval_regs_cap);
 bool defer_wave_alloc_dis = true;
 
    if (CHIP >= A8XX) {
@@ -2182,7 +2221,8 @@ bool defer_wave_alloc_dis = true;
       ));
    }
 
-   enum a6xx_threadsize thrsz = fs->info.double_threadsize ? THREAD128 : THREAD64;
+   enum a6xx_threadsize thrsz = (profile.force_thread64 || !fs->info.double_threadsize) ?
+      THREAD64 : THREAD128;
    tu_cs_emit_regs(cs, SP_PS_WAVE_CNTL(CHIP, .threadsize = thrsz, .varyings = enable_varyings));
 
    bool need_size = fs->frag_face || fs->fragcoord_compmask != 0;
