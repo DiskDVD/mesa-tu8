@@ -811,24 +811,48 @@ tu_render_pass_gmem_config(struct tu_render_pass *pass,
                               ? phys_dev->usable_gmem_size_gmem
                               : phys_dev->config_gmem.color_ccu_offset;
       uint32_t gmem_blocks = gmem_size / gmem_align;
+      bool gmem_layout_possible = true;
+      uint32_t nblocks[2 * pass->attachment_count];
       uint32_t offset = 0, pixels = ~0u, i;
       for (i = 0; i < num_gmem_alloc; i++) {
          struct tu_gmem_alloc *alloc = &gmem_alloc[i];
 
          uint32_t align = MAX2(1, alloc->cpp >> block_align_shift);
-         uint32_t nblocks = MAX2((gmem_blocks * alloc->cpp / cpp_total) & ~(align - 1), align);
+         nblocks[i] = MAX2((gmem_blocks * alloc->cpp / cpp_total) & ~(align - 1), align);
 
-         if (nblocks > gmem_blocks) {
+         if (nblocks[i] > gmem_blocks) {
             /* gmem layout impossible */
             pass->gmem_pixels[layout] = 0;
-            continue;
+            gmem_layout_possible = false;
+            break;
          }
 
-         gmem_blocks -= nblocks;
+         gmem_blocks -= nblocks[i];
          cpp_total -= alloc->cpp;
+      }
+
+      if (!gmem_layout_possible)
+         continue;
+
+      while (gmem_blocks > 0 && num_gmem_alloc > 0) {
+         uint32_t min_pixels = UINT32_MAX;
+         int min_idx = -1;
+         for (i = 0; i < num_gmem_alloc; i++) {
+            const uint32_t alloc_pixels = nblocks[i] * gmem_align / gmem_alloc[i].cpp;
+            if (alloc_pixels < min_pixels) {
+               min_pixels = alloc_pixels;
+               min_idx = i;
+            }
+         }
+         nblocks[min_idx]++;
+         gmem_blocks--;
+      }
+
+      for (i = 0; i < num_gmem_alloc; i++) {
+         struct tu_gmem_alloc *alloc = &gmem_alloc[i];
          alloc->gmem_offset = offset;
-         offset += nblocks * gmem_align;
-         pixels = MIN2(pixels, nblocks * gmem_align / alloc->cpp);
+         offset += nblocks[i] * gmem_align;
+         pixels = MIN2(pixels, nblocks[i] * gmem_align / alloc->cpp);
       }
 
       pass->gmem_pixels[layout] = pixels;
@@ -1144,7 +1168,8 @@ tu_CreateRenderPass2(VkDevice _device,
    const VkRenderPassFragmentDensityMapCreateInfoEXT *fdm_info =
       vk_find_struct_const(pCreateInfo->pNext,
                            RENDER_PASS_FRAGMENT_DENSITY_MAP_CREATE_INFO_EXT);
-   if (fdm_info && !tu_render_pass_disable_fdm(device, pass)) {
+   const bool disable_fdm = tu_render_pass_disable_fdm(device, pass);
+   if (fdm_info && !disable_fdm) {
       pass->fragment_density_map.attachment =
          fdm_info->fragmentDensityMapAttachment.attachment;
       pass->has_fdm = true;
@@ -1154,7 +1179,7 @@ tu_CreateRenderPass2(VkDevice _device,
       pass->fragment_density_map.attachment = VK_ATTACHMENT_UNUSED;
    }
 
-   if (TU_DEBUG(FDM) && !tu_render_pass_disable_fdm(device, pass))
+   if (TU_DEBUG(FDM) && !disable_fdm)
       pass->has_fdm = true;
 
    p = pass->subpass_attachments;
