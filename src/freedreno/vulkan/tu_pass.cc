@@ -875,6 +875,34 @@ tu_render_pass_bandwidth_config(struct tu_render_pass *pass)
 }
 
 static void
+tu_render_pass_trace_config(struct tu_render_pass *pass)
+{
+   pass->trace_load_cpp = 0;
+   pass->trace_store_cpp = 0;
+   pass->trace_clear_cpp = 0;
+   pass->trace_has_depth = false;
+   pass->max_samples = (VkSampleCountFlagBits) 0;
+
+   for (uint32_t i = 0; i < pass->attachment_count; i++) {
+      const struct tu_render_pass_attachment *att = &pass->attachments[i];
+
+      if (att->load)
+         pass->trace_load_cpp += att->cpp;
+      if (att->store)
+         pass->trace_store_cpp += att->cpp;
+      if (att->clear_mask)
+         pass->trace_clear_cpp += att->cpp;
+
+      pass->trace_has_depth |= vk_format_has_depth(att->format);
+   }
+
+   for (uint32_t i = 0; i < pass->subpass_count; i++) {
+      pass->max_samples = (VkSampleCountFlagBits)
+         MAX2(pass->max_samples, pass->subpasses[i].samples);
+   }
+}
+
+static void
 attachment_set_ops(struct tu_device *device,
                    struct tu_render_pass_attachment *att,
                    VkAttachmentLoadOp load_op,
@@ -1332,6 +1360,7 @@ tu_CreateRenderPass2(VkDevice _device,
    tu_render_pass_cond_config(device, pass);
    tu_render_pass_gmem_config(pass, device->physical_device);
    tu_render_pass_bandwidth_config(pass);
+   tu_render_pass_trace_config(pass);
    tu_render_pass_calc_views(pass);
 
    for (unsigned i = 0; i < pCreateInfo->dependencyCount; ++i) {
@@ -1811,6 +1840,7 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
    tu_render_pass_cond_config(device, pass);
    tu_render_pass_gmem_config(pass, device->physical_device);
    tu_render_pass_bandwidth_config(pass);
+   tu_render_pass_trace_config(pass);
    tu_render_pass_calc_views(pass);
 }
 
@@ -1889,6 +1919,8 @@ tu_setup_dynamic_inheritance(struct tu_cmd_buffer *cmd_buffer,
       subpass->stencil_used = false;
    }
 
+   pass->attachment_count = a;
+   tu_render_pass_trace_config(pass);
    tu_render_pass_calc_views(pass);
 }
 

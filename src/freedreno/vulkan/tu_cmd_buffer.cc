@@ -2909,31 +2909,11 @@ tu_trace_start_render_pass(struct tu_cmd_buffer *cmd)
    if (!u_trace_enabled(&cmd->device->trace_context))
       return;
 
-   uint32_t load_cpp = 0;
-   uint32_t store_cpp = 0;
-   uint32_t clear_cpp = 0;
-   bool has_depth = false;
+   const struct tu_render_pass *pass = cmd->state.pass;
    char ubwc[MAX_RTS + 3];
-   for (uint32_t i = 0; i < cmd->state.pass->attachment_count; i++) {
-      const struct tu_render_pass_attachment *attachment =
-         &cmd->state.pass->attachments[i];
-      if (attachment->load) {
-         load_cpp += attachment->cpp;
-      }
-
-      if (attachment->store) {
-         store_cpp += attachment->cpp;
-      }
-
-      if (attachment->clear_mask) {
-         clear_cpp += attachment->cpp;
-      }
-
-      has_depth |= vk_format_has_depth(attachment->format);
-   }
 
    uint8_t ubwc_len = 0;
-   const struct tu_subpass *subpass = &cmd->state.pass->subpasses[0];
+   const struct tu_subpass *subpass = &pass->subpasses[0];
    for (uint32_t i = 0; i < subpass->color_count; i++) {
       uint32_t att = subpass->color_attachments[i].attachment;
       ubwc[ubwc_len++] = att == VK_ATTACHMENT_UNUSED ? '-'
@@ -2951,14 +2931,10 @@ tu_trace_start_render_pass(struct tu_cmd_buffer *cmd)
    }
    ubwc[ubwc_len] = '\0';
 
-   uint32_t max_samples = 0;
-   for (uint32_t i = 0; i < cmd->state.pass->subpass_count; i++) {
-      max_samples = MAX2(max_samples, cmd->state.pass->subpasses[i].samples);
-   }
-
    trace_start_render_pass(&cmd->trace, &cmd->cs, cmd, cmd->state.framebuffer,
-                           cmd->state.tiling, max_samples, clear_cpp,
-                           load_cpp, store_cpp, has_depth, ubwc,
+                           cmd->state.tiling, pass->max_samples,
+                           pass->trace_clear_cpp, pass->trace_load_cpp,
+                           pass->trace_store_cpp, pass->trace_has_depth, ubwc,
                            cmd->state.rp.cb_disable_reason ? cmd->state.rp.cb_disable_reason : "");
 }
 

@@ -149,6 +149,11 @@ struct tu_render_pass
    /* memory bandwidth costs (in bytes) for gmem / sysmem rendering */
    uint32_t gmem_bandwidth_per_pixel;
    uint32_t sysmem_bandwidth_per_pixel;
+   VkSampleCountFlagBits max_samples;
+   uint32_t trace_load_cpp;
+   uint32_t trace_store_cpp;
+   uint32_t trace_clear_cpp;
+   bool trace_has_depth;
 
    unsigned num_views;
 
