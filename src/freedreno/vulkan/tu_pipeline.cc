@@ -1796,8 +1796,7 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
       bool allow_varying_subgroup_size =
          !stage_infos[stage] ||
          (stage_infos[stage]->flags &
-          VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT_EXT) ||
-         force_varying_subgroup_size;
+          VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT_EXT);
       bool require_full_subgroups =
          stage_infos[stage] &&
          (stage_infos[stage]->flags &
@@ -4934,7 +4933,8 @@ tu_compute_pipeline_create(VkDevice device,
    struct tu_shader_key key = { };
    bool allow_varying_subgroup_size =
       (stage_info->flags &
-       VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT_EXT);
+       VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT_EXT) ||
+      tu_force_varying_subgroup_size(dev);
    bool require_full_subgroups =
       stage_info->flags &
       VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT_EXT;
