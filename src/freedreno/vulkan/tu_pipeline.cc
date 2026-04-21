@@ -1729,11 +1729,6 @@ tu_nir_cache_insert(struct vk_pipeline_cache *cache,
       vk_pipeline_cache_add_object(cache, &shaders->base);
    return container_of(object, struct tu_nir_shaders, base);
 }
-static bool
-tu_force_varying_subgroup_size(const struct tu_device *device)
-{
-   return device->physical_device->dev_id.chip_id == 0x44030A20ull;
-}
 
 static VkResult
 tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
@@ -1748,13 +1743,14 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    };
    VkPipelineCreationFeedback stage_feedbacks[MESA_SHADER_STAGES] = { 0 };
 
+   /* === ДОБАВЛЕНО: Идентификация GPU Adreno 8xx === */
    const uint64_t chip_id = builder->device->physical_device->dev_id.chip_id;
    const bool is_a810 = chip_id == 0x44010000ull;
    const bool is_a825 = chip_id == 0x44030000ull;
    const bool is_a829 = chip_id == 0x44030A20ull;
    const bool is_target_gpu = is_a810 || is_a825 || is_a829;
-   
-   const bool force_varying_subgroup_size = tu_force_varying_subgroup_size(builder->device);
+   /* === КОНЕЦ ДОБАВЛЕНИЯ === */
+
    const bool executable_info =
       builder->create_flags &
       VK_PIPELINE_CREATE_2_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_KHR;
@@ -4933,8 +4929,7 @@ tu_compute_pipeline_create(VkDevice device,
    struct tu_shader_key key = { };
    bool allow_varying_subgroup_size =
       (stage_info->flags &
-       VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT_EXT) ||
-      tu_force_varying_subgroup_size(dev);
+       VK_PIPELINE_SHADER_STAGE_CREATE_ALLOW_VARYING_SUBGROUP_SIZE_BIT_EXT);
    bool require_full_subgroups =
       stage_info->flags &
       VK_PIPELINE_SHADER_STAGE_CREATE_REQUIRE_FULL_SUBGROUPS_BIT_EXT;
