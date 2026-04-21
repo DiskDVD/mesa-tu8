@@ -3469,6 +3469,7 @@ fail:
 
 void
 tu_shader_key_subgroup_size(struct tu_shader_key *key,
+                            mesa_shader_stage stage,
                             bool allow_varying_subgroup_size,
                             bool require_full_subgroups,
                             const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *subgroup_info,
@@ -3506,6 +3507,15 @@ tu_shader_key_subgroup_size(struct tu_shader_key *key,
    key->api_wavesize = api_wavesize;
    key->real_wavesize = real_wavesize;
 }
+const bool is_a829 =
+      dev->physical_device->dev_id.chip_id == 0x44030A20ull;
+
+   if (is_a829 && allow_varying_subgroup_size && !require_full_subgroups &&
+       !subgroup_info &&
+       (stage == MESA_SHADER_FRAGMENT || stage == MESA_SHADER_COMPUTE)) {
+      real_wavesize = IR3_DOUBLE_ONLY;
+   }
+
 
 void
 tu_shader_key_robustness(struct tu_shader_key *key,
