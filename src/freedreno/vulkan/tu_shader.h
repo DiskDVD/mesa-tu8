@@ -221,6 +221,7 @@ tu_shader_create(struct tu_device *dev,
 
 void
 tu_shader_key_subgroup_size(struct tu_shader_key *key,
+                            mesa_shader_stage stage,
                             bool allow_varying_subgroup_size,
                             bool require_full_subgroups,
                             const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *subgroup_info,
