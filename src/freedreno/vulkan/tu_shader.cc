@@ -39,6 +39,7 @@ init_ir3_nir_options(struct ir3_shader_nir_options *options,
 static const struct spirv_to_nir_options tu_spirv_options = {
    /* Use 16-bit math for RelaxedPrecision ALU ops */
    .mediump_16bit_alu = true,
+   .mediump_16bit_derivatives = true,
 
    .ubo_addr_format = nir_address_format_vec2_index_32bit_offset,
    .ssbo_addr_format = nir_address_format_vec2_index_32bit_offset,
@@ -443,6 +444,12 @@ lower_ssbo_ubo_intrinsic(struct tu_device *dev,
    /* Don't lower non-bindless UBO loads of driver params */
    if (intrin->src[buffer_src].ssa->num_components == 1)
       return false;
+
+   if (dev->physical_device->info->chip >= 8) {
+      nir_src_rewrite(&intrin->src[buffer_src],
+                      nir_channel(b, intrin->src[buffer_src].ssa, 1));
+      return true;
+   }
 
    nir_scalar scalar_idx = nir_scalar_resolved(intrin->src[buffer_src].ssa, 0);
    nir_def *descriptor_idx = nir_channel(b, intrin->src[buffer_src].ssa, 1);
@@ -1576,8 +1583,10 @@ tu_xs_get_immediates_packet_size_dwords(const struct ir3_shader_variant *xs)
    const struct ir3_const_state *const_state = ir3_const_state(xs);
    uint32_t base = const_state->allocs.max_const_offset_vec4;
    const struct ir3_imm_const_state *imm_state = &xs->imm_state;
-   int32_t size = xs->compiler->info->props.load_shader_consts_via_preamble ?
-      0 : DIV_ROUND_UP(imm_state->count, 4);
+   if (xs->compiler->info->props.load_shader_consts_via_preamble)
+      return 0;
+
+   int32_t size = DIV_ROUND_UP(imm_state->count, 4);
 
    /* truncate size to avoid writing constants that shader
     * does not use:
@@ -1632,6 +1641,11 @@ tu6_emit_xs(struct tu_crb &crb,
 
    enum a6xx_threadsize thrsz =
       xs->info.double_threadsize ? THREAD128 : THREAD64;
+   if (device->physical_device->dev_id.chip_id == 0xffff44010000) {
+      thrsz = THREAD64;
+   } else if (device->physical_device->info->num_slices >= 2) {
+      thrsz = THREAD128;
+   }
    switch (stage) {
    case MESA_SHADER_VERTEX:
       crb.add(A6XX_SP_VS_CNTL_0(.halfregfootprint = xs->info.max_half_reg + 1,
