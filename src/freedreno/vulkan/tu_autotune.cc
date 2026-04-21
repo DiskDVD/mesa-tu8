@@ -277,7 +277,7 @@ tu_autotune::get_env_config()
       const char *algo_str = os_get_option("TU_AUTOTUNE_ALGO");
       std::string_view algo_strv;
 
-      if (device->physical_device->dev_id.chip_id == 0x44030a20) {
+      if (device->physical_device->dev_id.chip_id == 0x44030A20ull) {
          /*
           * Adreno 829 tends to be sensitive to render mode selection. Favor
           * profiled decisions by default to reduce both sysmem bandwidth
