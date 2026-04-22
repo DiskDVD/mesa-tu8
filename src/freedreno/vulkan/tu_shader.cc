@@ -3474,13 +3474,23 @@ tu_shader_key_subgroup_size(struct tu_shader_key *key,
                             const VkPipelineShaderStageRequiredSubgroupSizeCreateInfo *subgroup_info,
                             struct tu_device *dev)
 {
+   const uint32_t gpu_id = dev->physical_device->dev_id.gpu_id;
+   const bool prefer_single_wave = gpu_id == 810;
+   const bool prefer_double_wave = gpu_id == 829;
    enum ir3_wavesize_option api_wavesize, real_wavesize;
    if (!dev->physical_device->info->props.supports_double_threadsize) {
       api_wavesize = IR3_SINGLE_ONLY;
       real_wavesize = IR3_SINGLE_ONLY;
    } else {
       if (allow_varying_subgroup_size) {
-         api_wavesize = real_wavesize = IR3_SINGLE_OR_DOUBLE;
+         api_wavesize = IR3_SINGLE_OR_DOUBLE;
+         if (prefer_single_wave) {
+            real_wavesize = IR3_SINGLE_ONLY;
+         } else if (prefer_double_wave) {
+            real_wavesize = IR3_DOUBLE_ONLY;
+         } else {
+            real_wavesize = IR3_SINGLE_OR_DOUBLE;
+         }
       } else {
          if (subgroup_info) {
             if (subgroup_info->requiredSubgroupSize == dev->compiler->info->threadsize_base) {
