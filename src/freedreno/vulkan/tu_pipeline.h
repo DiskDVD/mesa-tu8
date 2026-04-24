@@ -87,6 +87,9 @@ enum ir3_push_consts_type
 tu_push_consts_type(const struct tu_pipeline_layout *layout,
                     const struct ir3_compiler *compiler);
 
+bool
+tu_is_a810(const struct tu_device *dev);
+
 struct tu_program_descriptor_linkage
 {
    struct ir3_const_state const_state;
