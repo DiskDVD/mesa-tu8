@@ -1637,7 +1637,6 @@ static const VkQueueFamilyProperties tu_sparse_queue_family_properties = {
    .minImageTransferGranularity = { 1, 1, 1 },
 };
 
-/* Предварительная компиляция популярных шейдеров для A8XX */
 static void
 tu_device_precompile_shaders(struct tu_device *device)
 {
@@ -1646,21 +1645,20 @@ tu_device_precompile_shaders(struct tu_device *device)
 
    MESA_TRACE_FUNC();
 
-   const char *common_shaders[] = {
-      "builtin:vs_fullscreen",
-      "builtin:fs_fullscreen",
-      "builtin:vs_clear",
-      "builtin:fs_clear",
-      "builtin:vs_blit",
-      "builtin:fs_blit",
-   };
+   /* Prime common global shader variants so A8XX doesn't pay this cost
+    * in the first draw/clear/blit workload.
+    */
+   for (unsigned i = 0; i < GLOBAL_SH_COUNT; i++) {
+      if (!device->global_shaders[i])
+         continue;
 
-   for (int i = 0; i < ARRAY_SIZE(common_shaders); i++) {
-      struct vk_pipeline_cache_object *obj =
-         vk_pipeline_cache_lookup(device->mem_cache, common_shaders[i]);
-      if (!obj) {
-         vk_pipeline_cache_precompile(device->mem_cache, common_shaders[i]);
-      }
+      struct ir3_shader_key key = {};
+      struct ir3_shader_variant *variant =
+         ir3_shader_get_variant(device->global_shaders[i], &key,
+                                false, false, NULL, NULL);
+
+      if (variant)
+         device->global_shader_variants[i] = variant;
    }
 }
 
@@ -1711,9 +1709,7 @@ tu_physical_device_init(struct tu_physical_device *device,
       device->dev_info = info;
       device->info = &device->dev_info;
 
-      /* Оптимизации для A8XX */
       if (device->info->chip >= A8XX) {
-         device->vk.pipeline_cache_max_threads = 16;
          device->precompile_shaders = true;
       }
 
@@ -1841,8 +1837,7 @@ tu_physical_device_init(struct tu_physical_device *device,
    */
    char buf[VK_UUID_SIZE * 2 + 1];
    mesa_bytes_to_hex(buf, device->cache_uuid, VK_UUID_SIZE);
-   device->vk.disk_cache = disk_cache_create(device->name, buf,
-                                             DISK_CACHE_SUCCESS | DISK_CACHE_WRITE_THROUGH);
+   device->vk.disk_cache = disk_cache_create(device->name, buf, 0);
 
    device->vk.pipeline_cache_import_ops = cache_import_ops;
 
@@ -2209,7 +2204,7 @@ tu_GetPhysicalDeviceFragmentShadingRatesKHR(
    append_rate(4, 4, VK_SAMPLE_COUNT_1_BIT);
    append_rate(4, 2, VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT);
    /* Apparently hw didn't actually have this rate in a7xx: */
-   if (physical_device->info->chip >= A8XX && !TU_DEBUG(NOSHADINGRATE))
+   if (physical_device->info->chip >= A8XX)
       append_rate(2, 4, VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT);
    append_rate(2, 2, VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT);
    append_rate(2, 1, VK_SAMPLE_COUNT_1_BIT | VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT);
