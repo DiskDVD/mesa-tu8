@@ -140,6 +140,9 @@ struct tu_physical_device
 
    bool has_preemption;
 
+   /* Правка: Флаг для включения предкомпиляции шейдеров */
+   bool precompile_shaders;
+
    /* Whether performance counter selector registers can be written by userspace CSes. */
    bool is_perf_cntr_selectable;
 
@@ -386,6 +389,12 @@ struct tu_device
     */
    struct tu_suballocator pipeline_suballoc;
    mtx_t pipeline_mutex;
+
+   /* Правка: Device-global BO suballocator for reducing BO management for small
+    * gmem/sysmem autotune result buffers.  Synchronized by autotune_mutex.
+    */
+   struct tu_suballocator autotune_suballoc;
+   mtx_t autotune_mutex;
 
    /* KGSL requires a small chunk of GPU mem to retrieve raw GPU time on
     * each submission.
