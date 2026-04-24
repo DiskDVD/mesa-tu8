@@ -83,6 +83,12 @@ extern uint64_t os_page_size;
 
 struct tu_physical_device
 {
+   enum a8xx_performance_class {
+      TU_A8XX_LOW,
+      TU_A8XX_MID,
+      TU_A8XX_HIGH,
+   } a8xx_perf_class;
+
    struct vk_physical_device vk;
 
    struct tu_instance *instance;
