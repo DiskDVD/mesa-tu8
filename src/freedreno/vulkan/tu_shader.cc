@@ -205,10 +205,13 @@ tu_spirv_to_nir(struct tu_device *dev,
    const nir_shader_compiler_options *nir_options =
       ir3_get_compiler_options(dev->compiler);
 
+   spirv_to_nir_options spirv_options = tu_spirv_options;
+   spirv_options.mediump_16bit_derivatives = key->mediump_16bit_derivatives;
+
    nir_shader *nir;
    VkResult result =
       vk_pipeline_shader_stage_to_nir(&dev->vk, pipeline_flags, stage_info,
-                                      &tu_spirv_options, nir_options,
+                                      &spirv_options, nir_options,
                                       mem_ctx, &nir);
    if (result != VK_SUCCESS)
       return NULL;
