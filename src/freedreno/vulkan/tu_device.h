@@ -80,22 +80,17 @@ struct tu_queue_family {
 };
 
 extern uint64_t os_page_size;
+enum a8xx_performance_class {
+   TU_A8XX_LOW,
+   TU_A8XX_MID,
+   TU_A8XX_HIGH,
+};
 
 struct tu_physical_device
 {
-   enum a8xx_performance_class {
-      TU_A8XX_LOW,
-      TU_A8XX_MID,
-      TU_A8XX_HIGH,
-   } a8xx_perf_class;
-
    struct vk_physical_device vk;
 
-   enum a8xx_performance_class {
-      TU_A8XX_LOW,
-      TU_A8XX_MID,
-      TU_A8XX_HIGH,
-   } a8xx_perf_class;
+   enum a8xx_performance_class a8xx_perf_class;
 
    struct tu_instance *instance;
 
