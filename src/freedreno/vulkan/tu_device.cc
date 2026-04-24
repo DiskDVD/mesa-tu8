@@ -1111,6 +1111,13 @@ static void
 tu_get_properties(struct tu_physical_device *pdevice,
                   struct vk_properties *props)
 {
+   bool a8xx_mid_or_higher =
+      pdevice->info->chip >= A8XX &&
+      pdevice->a8xx_perf_class >= TU_A8XX_MID;
+   bool a8xx_high =
+      pdevice->info->chip >= A8XX &&
+      pdevice->a8xx_perf_class == TU_A8XX_HIGH;
+
    /* Limits */
    props->maxImageDimension1D = (1 << 14);
    props->maxImageDimension2D = (1 << 14);
@@ -1146,6 +1153,8 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->maxVertexInputAttributeOffset = 4095;
    props->maxVertexInputBindingStride = 2048;
    props->maxVertexOutputComponents = pdevice->info->props.is_a702 ? 64 : 128;
+   if (a8xx_mid_or_higher)
+      props->maxVertexOutputComponents = 128;
    if (!pdevice->info->props.is_a702) {
       props->maxTessellationGenerationLevel = 64;
       props->maxTessellationPatchSize = 32;
@@ -1164,6 +1173,8 @@ tu_get_properties(struct tu_physical_device *pdevice,
    // probably should be props->maxVertexOutputComponents - 4 but that is
    // below the limit on a702
    props->maxFragmentInputComponents = pdevice->info->props.is_a702 ? 112 : 124;
+   if (a8xx_mid_or_higher)
+      props->maxFragmentInputComponents = 128;
    props->maxFragmentOutputAttachments = 8;
    props->maxFragmentDualSrcAttachments = 1;
    props->maxFragmentCombinedOutputResources = MAX_RTS + max_descriptor_set_size * 2;
@@ -1175,6 +1186,8 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->maxComputeWorkGroupInvocations = pdevice->info->props.supports_double_threadsize ?
       pdevice->info->threadsize_base * 2 * pdevice->info->max_waves :
       pdevice->info->threadsize_base * pdevice->info->max_waves;
+   if (a8xx_high)
+      props->maxComputeWorkGroupInvocations = 2048;
    if (pdevice->info->props.is_a702) {
       props->maxComputeWorkGroupSize[0] =
          props->maxComputeWorkGroupSize[1] = 512;
@@ -1642,6 +1655,7 @@ tu_physical_device_init(struct tu_physical_device *device,
                         struct tu_instance *instance)
 {
    VkResult result = VK_SUCCESS;
+   device->a8xx_perf_class = TU_A8XX_LOW;
 
    const char *fd_name = fd_dev_name(&device->dev_id);
    if (!fd_name) {
@@ -1683,6 +1697,17 @@ tu_physical_device_init(struct tu_physical_device *device,
    case 8: {
       device->dev_info = info;
       device->info = &device->dev_info;
+      if (fd_dev_gen(&device->dev_id) == 8) {
+         device->dev_info.props.load_shader_consts_via_preamble = true;
+
+         if (device->dev_id.chip_id == UINT64_C(0xffff44010000)) {
+            device->a8xx_perf_class = TU_A8XX_LOW;
+         } else if (device->info->num_slices >= 3) {
+            device->a8xx_perf_class = TU_A8XX_HIGH;
+         } else {
+            device->a8xx_perf_class = TU_A8XX_MID;
+         }
+      }
 
       device->usable_gmem_size_gmem =
          fd6_calc_gmem_cache_offsets(&info, device->gmem_size,
@@ -2940,13 +2965,14 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       goto fail_queues;
 
    {
+      bool is_a8xx = physical_device->info->chip >= A8XX;
       struct ir3_compiler_options ir3_options = {
          .push_ubo_with_preamble = true,
          .disable_cache = true,
          .bindless_fb_read_descriptor = -1,
          .bindless_fb_read_slot = -1,
-         .storage_16bit = physical_device->info->props.storage_16bit,
-         .storage_8bit = physical_device->info->props.storage_8bit,
+         .storage_16bit = is_a8xx || physical_device->info->props.storage_16bit,
+         .storage_8bit = is_a8xx || physical_device->info->props.storage_8bit,
          .shared_push_consts = !TU_DEBUG(PUSH_CONSTS_PER_STAGE),
          .uche_trap_base = physical_device->uche_trap_base,
       };

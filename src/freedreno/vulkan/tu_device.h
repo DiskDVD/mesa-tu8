@@ -85,6 +85,12 @@ struct tu_physical_device
 {
    struct vk_physical_device vk;
 
+   enum a8xx_performance_class {
+      TU_A8XX_LOW,
+      TU_A8XX_MID,
+      TU_A8XX_HIGH,
+   } a8xx_perf_class;
+
    struct tu_instance *instance;
 
    const char *name;
