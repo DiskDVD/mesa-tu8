@@ -1637,31 +1637,6 @@ static const VkQueueFamilyProperties tu_sparse_queue_family_properties = {
    .minImageTransferGranularity = { 1, 1, 1 },
 };
 
-static void
-tu_device_precompile_shaders(struct tu_device *device)
-{
-   if (!device->physical_device->precompile_shaders)
-      return;
-
-   MESA_TRACE_FUNC();
-
-   /* Prime common global shader variants so A8XX doesn't pay this cost
-    * in the first draw/clear/blit workload.
-    */
-   for (unsigned i = 0; i < GLOBAL_SH_COUNT; i++) {
-      if (!device->global_shaders[i])
-         continue;
-
-      struct ir3_shader_key key = {};
-      struct ir3_shader_variant *variant =
-         ir3_shader_get_variant(device->global_shaders[i], &key,
-                                false, false, NULL, NULL);
-
-      if (variant)
-         device->global_shader_variants[i] = variant;
-   }
-}
-
 VkResult
 tu_physical_device_init(struct tu_physical_device *device,
                         struct tu_instance *instance)
@@ -1708,10 +1683,6 @@ tu_physical_device_init(struct tu_physical_device *device,
    case 8: {
       device->dev_info = info;
       device->info = &device->dev_info;
-
-      if (device->info->chip >= A8XX) {
-         device->precompile_shaders = true;
-      }
 
       device->usable_gmem_size_gmem =
          fd6_calc_gmem_cache_offsets(&info, device->gmem_size,
@@ -1834,7 +1805,7 @@ tu_physical_device_init(struct tu_physical_device *device,
 
    /* The gpu id is already embedded in the uuid so we just pass "tu"
     * when creating the cache.
-   */
+    */
    char buf[VK_UUID_SIZE * 2 + 1];
    mesa_bytes_to_hex(buf, device->cache_uuid, VK_UUID_SIZE);
    device->vk.disk_cache = disk_cache_create(device->name, buf, 0);
@@ -2767,7 +2738,6 @@ tu_device_destroy_mutexes(struct tu_device *device)
 {
    mtx_destroy(&device->bo_mutex);
    mtx_destroy(&device->pipeline_mutex);
-   mtx_destroy(&device->autotune_mutex);
    mtx_destroy(&device->kgsl_profiling_mutex);
    mtx_destroy(&device->event_mutex);
    mtx_destroy(&device->trace_mutex);
@@ -2882,7 +2852,6 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
 
    mtx_init(&device->bo_mutex, mtx_plain);
    mtx_init(&device->pipeline_mutex, mtx_plain);
-   mtx_init(&device->autotune_mutex, mtx_plain);
    mtx_init(&device->kgsl_profiling_mutex, mtx_plain);
    mtx_init(&device->event_mutex, mtx_plain);
    mtx_init(&device->trace_mutex, mtx_plain);
@@ -3012,14 +2981,11 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       global_size += TU_BORDER_COLOR_COUNT * sizeof(struct bcolor_entry);
 
    tu_bo_suballocator_init(
-      &device->pipeline_suballoc, device, 256 * 1024,
+      &device->pipeline_suballoc, device, 128 * 1024,
       (enum tu_bo_alloc_flags) (TU_BO_ALLOC_GPU_READ_ONLY |
                                 TU_BO_ALLOC_ALLOW_DUMP |
                                 TU_BO_ALLOC_INTERNAL_RESOURCE),
       "pipeline_suballoc");
-   tu_bo_suballocator_init(&device->autotune_suballoc, device,
-                           256 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE,
-                           "autotune_suballoc");
    if (is_kgsl(physical_device->instance)) {
       tu_bo_suballocator_init(&device->kgsl_profiling_suballoc, device,
                               128 * 1024, TU_BO_ALLOC_INTERNAL_RESOURCE,
@@ -3227,9 +3193,6 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
 
    device->vis_stream_count = 0;
 
-   /* Предварительная компиляция популярных шейдеров */
-   tu_device_precompile_shaders(device);
-
    *pDevice = tu_device_to_handle(device);
    return VK_SUCCESS;
 
@@ -3340,7 +3303,6 @@ tu_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    delete device->autotune;
 
    tu_bo_suballocator_finish(&device->pipeline_suballoc);
-   tu_bo_suballocator_finish(&device->autotune_suballoc);
    tu_bo_suballocator_finish(&device->kgsl_profiling_suballoc);
    tu_bo_suballocator_finish(&device->event_suballoc);
    tu_bo_suballocator_finish(&device->vis_stream_suballocator);
