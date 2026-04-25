@@ -782,7 +782,11 @@ ir3_setup_used_key(struct ir3_shader *shader)
     * ucp_enables to determine whether to lower legacy clip planes to
     * gl_ClipDistance.
     */
-   if (!mesa_shader_stage_is_compute(info->stage) &&
+   const bool is_cs_style_stage = mesa_shader_stage_is_compute(info->stage) ||
+                                  info->stage == MESA_SHADER_TASK ||
+                                  info->stage == MESA_SHADER_MESH;
+
+   if (!is_cs_style_stage &&
        (info->stage != MESA_SHADER_FRAGMENT || !shader->compiler->has_clip_cull))
       key->ucp_enables = 0xff;
 
@@ -810,7 +814,7 @@ ir3_setup_used_key(struct ir3_shader *shader)
        * enabled:
        */
       key->force_dual_color_blend = shader->compiler->options.dual_color_blend_by_location;
-   } else if (mesa_shader_stage_is_compute(info->stage)) {
+   } else if (is_cs_style_stage) {
       key->fastc_srgb = ~0;
       key->fsamples = ~0;
       memset(key->fsampler_swizzles, 0xff, sizeof(key->fsampler_swizzles));

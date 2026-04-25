@@ -310,6 +310,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_load_store_op_none = true,
       .EXT_map_memory_placed = true,
       .EXT_memory_budget = true,
+      .EXT_mesh_shader = device->info->chip >= 8,
       .EXT_multi_draw = true,
       .EXT_multisampled_render_to_single_sampled = true,
       .EXT_mutable_descriptor_type = true,
@@ -739,6 +740,15 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->memoryMapPlaced = true;
    features->memoryMapRangePlaced = false;
    features->memoryUnmapReserve = true;
+
+   /* VK_EXT_mesh_shader */
+   const bool has_mesh_shading = pdevice->info->chip >= 8;
+   features->taskShader = has_mesh_shading;
+   features->meshShader = has_mesh_shading;
+   features->multiviewMeshShader = has_mesh_shading;
+   features->primitiveFragmentShadingRateMeshShader =
+      has_mesh_shading && pdevice->info->props.has_primitive_shading_rate;
+   features->meshShaderQueries = has_mesh_shading;
 
    /* VK_EXT_multi_draw */
    features->multiDraw = true;
@@ -1346,6 +1356,14 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->transformFeedbackStreamsLinesTriangles = true;
    props->transformFeedbackRasterizationStreamSelect = true;
    props->transformFeedbackDraw = true;
+
+   if (pdevice->info->chip >= 8) {
+      /* VK_EXT_mesh_shader */
+      props->maxMeshWorkGroupTotalCount = 65535;
+      props->maxMeshOutputVertices = 256;
+      props->maxMeshOutputPrimitives = 256;
+      props->maxMeshMultiviewViewCount = 4;
+   }
 
    /* VK_EXT_sample_locations */
    props->sampleLocationSampleCounts =

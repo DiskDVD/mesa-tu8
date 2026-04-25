@@ -970,7 +970,9 @@ struct ir3_shader_variant {
 static inline bool
 ir3_shader_compute(const struct ir3_shader_variant *v)
 {
-   return mesa_shader_stage_is_compute(v->type);
+   return mesa_shader_stage_is_compute(v->type) ||
+          v->type == MESA_SHADER_TASK ||
+          v->type == MESA_SHADER_MESH;
 }
 
 static inline const char *
