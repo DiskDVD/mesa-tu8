@@ -992,7 +992,8 @@ struct tu_autotune::rp_history {
                                    const struct tu_cmd_state *cmd_state,
                                    const struct tu_render_pass *pass,
                                    const struct tu_framebuffer *framebuffer,
-                                   const struct tu_render_pass_state *rp_state)
+                                   const struct tu_render_pass_state *rp_state,
+                                   bool is_a810)
       {
          uint32_t pass_pixel_count = 0;
          if (cmd_state->per_layer_render_area) {
@@ -1024,6 +1025,8 @@ struct tu_autotune::rp_history {
 
          /* Drawcalls access the memory in SYSMEM rendering (ignoring CCU). */
          sysmem_bandwidth += total_draw_call_bandwidth;
+         if (is_a810)
+            sysmem_bandwidth *= 2;
 
          /* Drawcalls access GMEM in GMEM rendering, but we do not want to ignore them completely.  The state changes
           * between tiles also have an overhead.  The magic numbers of 11 and 10 are randomly chosen.
@@ -1895,7 +1898,9 @@ tu_autotune::get_optimal_mode(struct tu_cmd_buffer *cmd_buffer, rp_ctx_t *rp_ctx
       return history.profiled.get_optimal_mode(history);
 
    if (config.is_enabled(algorithm::BANDWIDTH))
-      return history.bandwidth.get_optimal_mode(history, cmd_state, pass, framebuffer, rp_state);
+      return history.bandwidth.get_optimal_mode(
+         history, cmd_state, pass, framebuffer, rp_state,
+         cmd_buffer->device->physical_device->dev_id.chip_id == UINT64_C(0xffff44010000));
 
    return default_mode;
 }
