@@ -459,6 +459,9 @@ tu_emit_cache_flush(struct tu_cmd_buffer *cmd_buffer)
    struct tu_cache_state *cache = &cmd_buffer->state.cache;
    BITMASK_ENUM(tu_cmd_flush_bits) flushes = cache->flush_bits;
 
+   if (flushes == 0 && likely(!tu_env.debug))
+      return;
+
    tu6_emit_flushes<CHIP>(cmd_buffer, cs, cache);
 
    if ((flushes & TU_CMD_FLAG_WAIT_FOR_BR) && CHIP >= A7XX &&
@@ -10039,6 +10042,7 @@ tu_CmdWriteBufferMarker2AMD(VkCommandBuffer commandBuffer,
       VK_PIPELINE_STAGE_2_DRAW_INDIRECT_BIT;
 
    bool is_top_of_pipe = !(pipelineStage & ~top_of_pipe_flags);
+   bool use_cp_mem_write = is_top_of_pipe;
 
    /* We have to WFI only if we flushed CCU here and are using CP_MEM_WRITE.
     * Otherwise:
@@ -10046,7 +10050,14 @@ tu_CmdWriteBufferMarker2AMD(VkCommandBuffer commandBuffer,
     * - There was a barrier to synchronize other writes with WriteBufferMarkerAMD
     *   and they had to include our pipelineStage which forces the WFI.
     */
-   if (cache->flush_bits && is_top_of_pipe) {
+   if (CHIP >= A8XX && cache->flush_bits && use_cp_mem_write) {
+      /* On A8xx avoid forcing WFI for marker writes when we can route through
+       * RB_DONE_TS and keep better overlap in command stream execution.
+       */
+      use_cp_mem_write = false;
+   }
+
+   if (cache->flush_bits && use_cp_mem_write) {
       cache->flush_bits |= TU_CMD_FLAG_WAIT_FOR_IDLE;
    }
 
@@ -10056,7 +10067,7 @@ tu_CmdWriteBufferMarker2AMD(VkCommandBuffer commandBuffer,
       tu_emit_cache_flush<CHIP>(cmd);
    }
 
-   if (is_top_of_pipe) {
+   if (use_cp_mem_write) {
       tu_cs_emit_pkt7(cs, CP_MEM_WRITE, 3);
       tu_cs_emit_qw(cs, va); /* ADDR_LO/HI */
       tu_cs_emit(cs, marker);

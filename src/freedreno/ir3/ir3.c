@@ -213,6 +213,8 @@ ir3_should_double_threadsize(struct ir3_shader_variant *v, unsigned regs_count)
    }
 
    switch (v->type) {
+   case MESA_SHADER_TASK:
+   case MESA_SHADER_MESH:
    case MESA_SHADER_KERNEL:
    case MESA_SHADER_COMPUTE:
    case MESA_SHADER_FRAGMENT: {

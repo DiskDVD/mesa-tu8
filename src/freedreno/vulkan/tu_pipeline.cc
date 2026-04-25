@@ -32,6 +32,12 @@
 #include "tu_pass.h"
 #include "tu_rmv.h"
 
+static inline bool
+tu_is_a810(const struct tu_device *dev)
+{
+   return dev->physical_device->dev_id.chip_id == UINT64_C(0xffff44010000);
+}
+
 /* Emit IB that preloads the descriptors that the shader uses */
 
 static void
@@ -54,12 +60,21 @@ emit_load_state(struct tu_cs *cs, unsigned opcode, enum a6xx_state_type st,
 }
 
 static unsigned
-tu6_load_state_size(struct tu_pipeline *pipeline,
+tu6_load_state_size(struct tu_device *dev,
+                    struct tu_pipeline *pipeline,
                     struct tu_pipeline_layout *layout)
 {
    const unsigned load_state_size = 4;
    unsigned size = 0;
-   for (unsigned i = 0; i < layout->num_sets; i++) {
+   unsigned set_count = layout->num_sets;
+
+   /* A810 has smaller cache/L2 budget; aggressively capping descriptor prefetch
+    * fanout avoids thrashing and keeps command-stream overhead lower.
+    */
+   if (tu_is_a810(dev))
+      set_count = MIN2(set_count, 4);
+
+   for (unsigned i = 0; i < set_count; i++) {
       if (!(pipeline->active_desc_sets & (1u << i)))
          continue;
 
@@ -118,7 +133,7 @@ tu6_emit_load_state(struct tu_device *device,
                     struct tu_pipeline *pipeline,
                     struct tu_pipeline_layout *layout)
 {
-   unsigned size = tu6_load_state_size(pipeline, layout);
+   unsigned size = tu6_load_state_size(device, pipeline, layout);
    if (size == 0)
       return;
 
@@ -1464,7 +1479,7 @@ tu_pipeline_allocate_cs(struct tu_device *dev,
                         struct tu_pipeline_builder *builder,
                         const struct ir3_shader_variant *compute)
 {
-   uint32_t size = 1024;
+   uint32_t size = dev->compiler->gen >= 8 ? 4096 : 1024;
 
    /* graphics case: */
    if (builder) {
@@ -1476,10 +1491,10 @@ tu_pipeline_allocate_cs(struct tu_device *dev,
       if (set_combined_state(builder, pipeline,
                              VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT |
                              VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT)) {
-         size += tu6_load_state_size(pipeline, layout);
+         size += tu6_load_state_size(dev, pipeline, layout);
       }
    } else {
-      size += tu6_load_state_size(pipeline, layout);
+      size += tu6_load_state_size(dev, pipeline, layout);
    }
 
    /* Allocate the space for the pipeline out of the device's RO suballocator.
@@ -1744,11 +1759,8 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
    VkPipelineCreationFeedback stage_feedbacks[MESA_SHADER_STAGES] = { 0 };
 
    /* === ДОБАВЛЕНО: Идентификация GPU Adreno 8xx === */
-   const uint64_t chip_id = builder->device->physical_device->dev_id.chip_id;
-   const bool is_a810 = chip_id == 0x44010000ull;
-   const bool is_a825 = chip_id == 0x44030000ull;
-   const bool is_a829 = chip_id == 0x44030A20ull;
-   const bool is_target_gpu = is_a810 || is_a825 || is_a829;
+   const bool is_a810 = tu_is_a810(builder->device);
+   const bool has_multi_slice = builder->device->physical_device->info->num_slices >= 2;
    /* === КОНЕЦ ДОБАВЛЕНИЯ === */
 
    const bool executable_info =
@@ -1766,11 +1778,13 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
 
    bool must_compile = false;
    for (uint32_t i = 0; i < builder->create_info->stageCount; i++) {
+      VkShaderStageFlagBits vk_stage = builder->create_info->pStages[i].stage;
+
       if (!(builder->active_stages & builder->create_info->pStages[i].stage))
          continue;
 
       mesa_shader_stage stage =
-         vk_to_mesa_shader_stage(builder->create_info->pStages[i].stage);
+         vk_to_mesa_shader_stage(vk_stage);
       stage_infos[stage] = &builder->create_info->pStages[i];
       must_compile = true;
    }
@@ -1800,6 +1814,13 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
       tu_shader_key_subgroup_size(&keys[stage], allow_varying_subgroup_size,
                                   require_full_subgroups, subgroup_info,
                                   builder->device);
+      if (is_a810) {
+         keys[stage].api_wavesize = IR3_SINGLE_ONLY;
+         keys[stage].real_wavesize = IR3_SINGLE_ONLY;
+      } else if (has_multi_slice) {
+         keys[stage].api_wavesize = IR3_DOUBLE_ONLY;
+         keys[stage].real_wavesize = IR3_DOUBLE_ONLY;
+      }
 
       if (stage_infos[stage]) {
          struct vk_pipeline_robustness_state rs;
@@ -1810,6 +1831,9 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
          if (builder->create_flags & VK_PIPELINE_CREATE_2_VIEW_INDEX_FROM_DEVICE_INDEX_BIT_KHR)
             keys[stage].lower_view_index_to_device_index = true;
       }
+
+      if (has_multi_slice)
+         keys[stage].mediump_16bit_derivatives = true;
    }
 
    if ((builder->state &
@@ -1895,7 +1919,11 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
 
    if (builder->state &
        VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) {
-      for (int i = MESA_SHADER_VERTEX; i <= MESA_SHADER_GEOMETRY; i++) {
+      for (unsigned i = 0; i < ARRAY_SIZE(nir); i++) {
+         if (!mesa_shader_stage_is_graphics((mesa_shader_stage) i) ||
+             i == MESA_SHADER_FRAGMENT)
+            continue;
+
          if (nir[i] || stage_infos[i]) {
             keys[i].multiview_mask =
                builder->graphics_state.mv->view_mask;
@@ -1903,7 +1931,11 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
       }
 
       mesa_shader_stage last_pre_rast_stage = MESA_SHADER_VERTEX;
-      for (int i = MESA_SHADER_GEOMETRY; i >= MESA_SHADER_VERTEX; i--) {
+      for (int i = MESA_SHADER_MESH; i >= MESA_SHADER_VERTEX; i--) {
+         if (!mesa_shader_stage_is_graphics((mesa_shader_stage) i) ||
+             i == MESA_SHADER_FRAGMENT)
+            continue;
+
          if (nir[i]) {
             last_pre_rast_stage = (mesa_shader_stage)i;
             break;
@@ -3919,6 +3951,9 @@ tu_pipeline_builder_emit_state(struct tu_pipeline_builder *builder,
    BITSET_DECLARE(pipeline_set, MESA_VK_DYNAMIC_GRAPHICS_STATE_ENUM_MAX) = {};
 
    vk_graphics_pipeline_get_state(&builder->graphics_state, pipeline_set);
+
+   if (tu_is_a810(builder->device))
+      BITSET_CLEAR(pipeline_set, MESA_VK_DYNAMIC_RS_LINE_WIDTH);
 
 #define EMIT_STATE(name, extra_cond)                                          \
    emit_pipeline_state(keep, remove, pipeline_set, tu_##name##_state,         \

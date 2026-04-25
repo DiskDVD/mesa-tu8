@@ -352,6 +352,8 @@ shader_debug_enabled(mesa_shader_stage type, bool internal)
       return !!(ir3_shader_debug & IR3_DBG_SHADER_GS);
    case MESA_SHADER_FRAGMENT:
       return !!(ir3_shader_debug & IR3_DBG_SHADER_FS);
+   case MESA_SHADER_TASK:
+   case MESA_SHADER_MESH:
    case MESA_SHADER_COMPUTE:
    case MESA_SHADER_KERNEL:
       return !!(ir3_shader_debug & IR3_DBG_SHADER_CS);

@@ -5440,9 +5440,11 @@ uses_store_output(struct ir3_shader_variant *so)
    case MESA_SHADER_TESS_EVAL:
       return !so->key.has_gs;
    case MESA_SHADER_GEOMETRY:
+   case MESA_SHADER_MESH:
    case MESA_SHADER_FRAGMENT:
       return true;
    case MESA_SHADER_TESS_CTRL:
+   case MESA_SHADER_TASK:
    case MESA_SHADER_COMPUTE:
    case MESA_SHADER_KERNEL:
       return false;
