@@ -518,6 +518,7 @@ struct tu_cmd_state
     * unaligned
     */
    uint8_t streamout_offset[IR3_MAX_SO_BUFFERS];
+   uint8_t streamout_buffer_mask;
 
    /* Renderpasses are tricky, because we may need to flush differently if
     * using sysmem vs. gmem and therefore we have to delay any flushing that
