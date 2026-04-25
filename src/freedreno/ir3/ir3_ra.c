@@ -2695,7 +2695,19 @@ calc_min_limit_pressure(struct ir3_shader_variant *v,
 
    ralloc_free(ctx);
 }
+static inline bool
+ir3_ra_should_run_validate(struct ir3_shader_variant *v)
+{
+   /* RA validation is primarily a correctness/debug aid and is expensive.
+    * For Adreno 810 we prioritize lower CPU compile cost unless explicit
+    * debug output is requested.
+    */
+   const bool is_a810 = v->compiler->dev_id->chip_id == 0x44010000;
+   const bool debug_validate =
+      ir3_shader_debug & (IR3_DBG_DISASM | IR3_DBG_OPTMSGS);
 
+   return !is_a810 || debug_validate;
+}
 /*
  * If barriers are used, it must be possible for all waves in the workgroup
  * to execute concurrently. Thus we may have to reduce the registers limit.
@@ -2807,11 +2819,12 @@ ir3_ra(struct ir3_shader_variant *v)
          ra_foreach_dst (dst, instr) {
             if ((dst->flags & IR3_REG_SHARED) && reg_elems(dst) > 1) {
                has_shared_vectors = true;
-               break;
+               goto found_shared_vector;
             }
          }
       }
    }
+found_shared_vector:
 
    struct ir3_pressure max_pressure;
    ir3_calc_pressure(v, live, &max_pressure);
