@@ -6243,7 +6243,7 @@ ir3_compile_shader_nir(struct ir3_compiler *compiler,
                               !so->writes_stencilref;
    }
 
-   if (mesa_shader_stage_is_compute(so->type)) {
+   if (ir3_shader_compute(so)) {
       so->cs.local_invocation_id =
          ir3_find_sysval_regid(so, SYSTEM_VALUE_LOCAL_INVOCATION_ID);
       so->cs.work_group_id =
