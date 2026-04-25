@@ -459,7 +459,7 @@ tu_emit_cache_flush(struct tu_cmd_buffer *cmd_buffer)
    struct tu_cache_state *cache = &cmd_buffer->state.cache;
    BITMASK_ENUM(tu_cmd_flush_bits) flushes = cache->flush_bits;
 
-   if (flushes == 0 && likely(!tu_env.debug))
+   if (!flushes && likely(!tu_env.debug))
       return;
 
    tu6_emit_flushes<CHIP>(cmd_buffer, cs, cache);
