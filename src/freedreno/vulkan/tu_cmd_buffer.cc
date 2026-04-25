@@ -177,14 +177,18 @@ static void
 tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
 {
    struct tu_device *dev = cmd->device;
+   const uint64_t chip_id = dev->physical_device->dev_id.chip_id;
+   const bool is_a810 = chip_id == UINT64_C(0xffff44010000);
    uint32_t num_vsc_pipes = dev->physical_device->info->num_vsc_pipes;
+   const uint32_t vsc_growth_factor = is_a810 ? 150 : 200;
 
    /* VSC buffers:
     * use vsc pitches from the largest values used so far with this device
     * if there hasn't been overflow, there will already be a scratch bo
     * allocated for these sizes
     *
-    * if overflow is detected, the stream size is increased by 2x
+    * if overflow is detected, the stream size is increased (2x by default,
+    * 1.5x on a810 to reduce RAM pressure).
     */
    mtx_lock(&dev->mutex);
 
@@ -193,11 +197,19 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 
-   if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
-      dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+   if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch) {
+      dev->vsc_draw_strm_pitch =
+         ((dev->vsc_draw_strm_pitch - VSC_PAD) * vsc_growth_factor) / 100 + VSC_PAD;
+      if (is_a810)
+         dev->vsc_draw_strm_pitch = MIN2(dev->vsc_draw_strm_pitch, 0x10000);
+   }
 
-   if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch)
-      dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+   if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch) {
+      dev->vsc_prim_strm_pitch =
+         ((dev->vsc_prim_strm_pitch - VSC_PAD) * vsc_growth_factor) / 100 + VSC_PAD;
+      if (is_a810)
+         dev->vsc_prim_strm_pitch = MIN2(dev->vsc_prim_strm_pitch, 0x10000);
+   }
 
    cmd->vsc_prim_strm_pitch = dev->vsc_prim_strm_pitch;
    cmd->vsc_draw_strm_pitch = dev->vsc_draw_strm_pitch;
@@ -216,6 +228,20 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    cmd->vsc_draw_strm_offset = prim_strm_size;
    cmd->vsc_draw_strm_size_offset = cmd->vsc_draw_strm_offset + draw_strm_size;
    cmd->vsc_state_offset = cmd->vsc_draw_strm_size_offset + draw_strm_size_size;
+}
+
+static uint32_t
+get_initial_cs_size(struct tu_device *dev)
+{
+   const uint64_t chip_id = dev->physical_device->dev_id.chip_id;
+
+   if (chip_id == UINT64_C(0xffff44010000))
+      return 1024;
+
+   if (chip_id >= UINT64_C(0xffff44050A30))
+      return 8192;
+
+   return 4096;
 }
 
 static void
@@ -4074,13 +4100,15 @@ tu_create_cmd_buffer(struct vk_command_pool *pool,
       }
    }
 
-   tu_cs_init(&cmd_buffer->cs, device, TU_CS_MODE_GROW, 4096, "cmd cs");
-   tu_cs_init(&cmd_buffer->draw_cs, device, TU_CS_MODE_GROW, 4096, "draw cs");
+   const uint32_t initial_cs_size = get_initial_cs_size(device);
+
+   tu_cs_init(&cmd_buffer->cs, device, TU_CS_MODE_GROW, initial_cs_size, "cmd cs");
+   tu_cs_init(&cmd_buffer->draw_cs, device, TU_CS_MODE_GROW, initial_cs_size, "draw cs");
    tu_cs_init(&cmd_buffer->tile_store_cs, device, TU_CS_MODE_GROW, 2048, "tile store cs");
-   tu_cs_init(&cmd_buffer->draw_epilogue_cs, device, TU_CS_MODE_GROW, 4096, "draw epilogue cs");
+   tu_cs_init(&cmd_buffer->draw_epilogue_cs, device, TU_CS_MODE_GROW, initial_cs_size, "draw epilogue cs");
    tu_cs_init(&cmd_buffer->sub_cs, device, TU_CS_MODE_SUB_STREAM, 2048, "draw sub cs");
-   tu_cs_init(&cmd_buffer->pre_chain.draw_cs, device, TU_CS_MODE_GROW, 4096, "prechain draw cs");
-   tu_cs_init(&cmd_buffer->pre_chain.draw_epilogue_cs, device, TU_CS_MODE_GROW, 4096, "prechain draw epiligoue cs");
+   tu_cs_init(&cmd_buffer->pre_chain.draw_cs, device, TU_CS_MODE_GROW, initial_cs_size, "prechain draw cs");
+   tu_cs_init(&cmd_buffer->pre_chain.draw_epilogue_cs, device, TU_CS_MODE_GROW, initial_cs_size, "prechain draw epiligoue cs");
 
    for (unsigned i = 0; i < MAX_BIND_POINTS; i++)
       cmd_buffer->descriptors[i].push_set.base.type = VK_OBJECT_TYPE_DESCRIPTOR_SET;
