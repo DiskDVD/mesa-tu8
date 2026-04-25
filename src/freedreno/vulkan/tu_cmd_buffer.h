@@ -454,6 +454,7 @@ struct tu_cmd_state
    struct tu_shader *shaders[MESA_SHADER_STAGES];
 
    struct tu_program_state program;
+   struct tu_lrz_state lrz;
 
    struct tu_render_pass_state rp;
 
@@ -517,6 +518,7 @@ struct tu_cmd_state
     * unaligned
     */
    uint8_t streamout_offset[IR3_MAX_SO_BUFFERS];
+   uint8_t streamout_buffer_mask;
 
    /* Renderpasses are tricky, because we may need to flush differently if
     * using sysmem vs. gmem and therefore we have to delay any flushing that
@@ -610,8 +612,6 @@ struct tu_cmd_state
    enum tu_suspend_resume_state suspend_resume;
 
    bool suspending, resuming;
-
-   struct tu_lrz_state lrz;
 
    struct tu_draw_state lrz_and_depth_plane_state;
 

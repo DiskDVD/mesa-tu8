@@ -177,14 +177,18 @@ static void
 tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
 {
    struct tu_device *dev = cmd->device;
+   const uint64_t chip_id = dev->physical_device->dev_id.chip_id;
+   const bool is_a810 = chip_id == UINT64_C(0xffff44010000);
    uint32_t num_vsc_pipes = dev->physical_device->info->num_vsc_pipes;
+   const uint32_t vsc_growth_factor = is_a810 ? 150 : 200;
 
    /* VSC buffers:
     * use vsc pitches from the largest values used so far with this device
     * if there hasn't been overflow, there will already be a scratch bo
     * allocated for these sizes
     *
-    * if overflow is detected, the stream size is increased by 2x
+    * if overflow is detected, the stream size is increased (2x by default,
+    * 1.5x on a810 to reduce RAM pressure).
     */
    mtx_lock(&dev->mutex);
 
@@ -193,11 +197,19 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    uint32_t vsc_draw_overflow = global->vsc_draw_overflow;
    uint32_t vsc_prim_overflow = global->vsc_prim_overflow;
 
-   if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch)
-      dev->vsc_draw_strm_pitch = (dev->vsc_draw_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+   if (vsc_draw_overflow >= dev->vsc_draw_strm_pitch) {
+      dev->vsc_draw_strm_pitch =
+         ((dev->vsc_draw_strm_pitch - VSC_PAD) * vsc_growth_factor) / 100 + VSC_PAD;
+      if (is_a810)
+         dev->vsc_draw_strm_pitch = MIN2(dev->vsc_draw_strm_pitch, 0x10000);
+   }
 
-   if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch)
-      dev->vsc_prim_strm_pitch = (dev->vsc_prim_strm_pitch - VSC_PAD) * 2 + VSC_PAD;
+   if (vsc_prim_overflow >= dev->vsc_prim_strm_pitch) {
+      dev->vsc_prim_strm_pitch =
+         ((dev->vsc_prim_strm_pitch - VSC_PAD) * vsc_growth_factor) / 100 + VSC_PAD;
+      if (is_a810)
+         dev->vsc_prim_strm_pitch = MIN2(dev->vsc_prim_strm_pitch, 0x10000);
+   }
 
    cmd->vsc_prim_strm_pitch = dev->vsc_prim_strm_pitch;
    cmd->vsc_draw_strm_pitch = dev->vsc_draw_strm_pitch;
@@ -216,6 +228,20 @@ tu6_lazy_init_vsc(struct tu_cmd_buffer *cmd)
    cmd->vsc_draw_strm_offset = prim_strm_size;
    cmd->vsc_draw_strm_size_offset = cmd->vsc_draw_strm_offset + draw_strm_size;
    cmd->vsc_state_offset = cmd->vsc_draw_strm_size_offset + draw_strm_size_size;
+}
+
+static uint32_t
+get_initial_cs_size(struct tu_device *dev)
+{
+   const uint64_t chip_id = dev->physical_device->dev_id.chip_id;
+
+   if (chip_id == UINT64_C(0xffff44010000))
+      return 1024;
+
+   if (chip_id >= UINT64_C(0xffff44050A30))
+      return 8192;
+
+   return 4096;
 }
 
 static void
@@ -4074,13 +4100,15 @@ tu_create_cmd_buffer(struct vk_command_pool *pool,
       }
    }
 
-   tu_cs_init(&cmd_buffer->cs, device, TU_CS_MODE_GROW, 4096, "cmd cs");
-   tu_cs_init(&cmd_buffer->draw_cs, device, TU_CS_MODE_GROW, 4096, "draw cs");
+   const uint32_t initial_cs_size = get_initial_cs_size(device);
+
+   tu_cs_init(&cmd_buffer->cs, device, TU_CS_MODE_GROW, initial_cs_size, "cmd cs");
+   tu_cs_init(&cmd_buffer->draw_cs, device, TU_CS_MODE_GROW, initial_cs_size, "draw cs");
    tu_cs_init(&cmd_buffer->tile_store_cs, device, TU_CS_MODE_GROW, 2048, "tile store cs");
-   tu_cs_init(&cmd_buffer->draw_epilogue_cs, device, TU_CS_MODE_GROW, 4096, "draw epilogue cs");
+   tu_cs_init(&cmd_buffer->draw_epilogue_cs, device, TU_CS_MODE_GROW, initial_cs_size, "draw epilogue cs");
    tu_cs_init(&cmd_buffer->sub_cs, device, TU_CS_MODE_SUB_STREAM, 2048, "draw sub cs");
-   tu_cs_init(&cmd_buffer->pre_chain.draw_cs, device, TU_CS_MODE_GROW, 4096, "prechain draw cs");
-   tu_cs_init(&cmd_buffer->pre_chain.draw_epilogue_cs, device, TU_CS_MODE_GROW, 4096, "prechain draw epiligoue cs");
+   tu_cs_init(&cmd_buffer->pre_chain.draw_cs, device, TU_CS_MODE_GROW, initial_cs_size, "prechain draw cs");
+   tu_cs_init(&cmd_buffer->pre_chain.draw_epilogue_cs, device, TU_CS_MODE_GROW, initial_cs_size, "prechain draw epiligoue cs");
 
    for (unsigned i = 0; i < MAX_BIND_POINTS; i++)
       cmd_buffer->descriptors[i].push_set.base.type = VK_OBJECT_TYPE_DESCRIPTOR_SET;
@@ -5088,6 +5116,7 @@ tu_CmdBindTransformFeedbackBuffersEXT(VkCommandBuffer commandBuffer,
                       VPC_SO_BUFFER_SIZE(CHIP, idx, size + offset));
 
       cmd->state.streamout_offset[idx] = offset;
+      cmd->state.streamout_buffer_mask |= BIT(idx);
    }
 
    tu_cond_exec_end(cs);
@@ -5111,9 +5140,11 @@ tu_CmdBeginTransformFeedbackEXT(VkCommandBuffer commandBuffer,
 
    tu_cs_emit_regs(cs, VPC_SO_OVERRIDE(CHIP, false));
 
-   /* TODO: only update offset for active buffers */
-   for (uint32_t i = 0; i < IR3_MAX_SO_BUFFERS; i++)
+   uint32_t streamout_buffer_mask = cmd->state.streamout_buffer_mask;
+   while (streamout_buffer_mask) {
+      uint32_t i = u_bit_scan(&streamout_buffer_mask);
       tu_cs_emit_regs(cs, VPC_SO_BUFFER_OFFSET(CHIP, i, cmd->state.streamout_offset[i]));
+   }
 
    for (uint32_t i = 0; i < (pCounterBuffers ? counterBufferCount : 0); i++) {
       uint32_t idx = firstCounterBuffer + i;
@@ -5161,8 +5192,9 @@ tu_CmdEndTransformFeedbackEXT(VkCommandBuffer commandBuffer,
 
    tu_cs_emit_regs(cs, VPC_SO_OVERRIDE(CHIP, true));
 
-   /* TODO: only flush buffers that need to be flushed */
-   for (uint32_t i = 0; i < IR3_MAX_SO_BUFFERS; i++) {
+   uint32_t streamout_buffer_mask = cmd->state.streamout_buffer_mask;
+   while (streamout_buffer_mask) {
+      uint32_t i = u_bit_scan(&streamout_buffer_mask);
       /* note: FLUSH_BASE is always the same, so it could go in init_hw()? */
       tu_cs_emit_regs(cs, VPC_SO_FLUSH_BASE(CHIP, i, .qword = global_iova_arr(cmd, flush_base, i)));
       tu_emit_event_write<CHIP>(cmd, cs, (enum fd_gpu_event) (FD_FLUSH_SO_0 + i));
@@ -6031,7 +6063,6 @@ vk2tu_dst_stage(struct tu_device *dev,
    return stage;
 }
 
-template <chip CHIP>
 static void
 tu_flush_for_stage(struct tu_cache_state *cache,
                    enum tu_stage src_stage, enum tu_stage dst_stage)
@@ -6047,20 +6078,8 @@ tu_flush_for_stage(struct tu_cache_state *cache,
       cache->flush_bits |= TU_CMD_FLAG_WAIT_FOR_IDLE;
       if (dst_stage <= TU_STAGE_BV) {
          cache->flush_bits |= TU_CMD_FLAG_WAIT_FOR_BR;
-
-         /* Extending on the comment in vk2tu_single_stage(), up to a8xx,
-          * indirect opcodes rely on an implicit wait before reading indirect
-          * parameters, which can help avoid emitting CP_WAIT_FOR_ME. Exception
-          * to this are devices with bugged firmware that enable indirect_draw_wfm_quirk.
-          * a8xx removes this implicit wait, so CP_WAIT_FOR_ME should be emitted
-          * without delay, which also matches proprietary driver.
-          */
-         if (dst_stage == TU_STAGE_BV_CP) {
-            if (CHIP >= A8XX)
-               cache->flush_bits |= TU_CMD_FLAG_WAIT_FOR_ME;
-            else
-               cache->pending_flush_bits |= TU_CMD_FLAG_WAIT_FOR_ME;
-         }
+         if (dst_stage == TU_STAGE_BV_CP)
+            cache->pending_flush_bits |= TU_CMD_FLAG_WAIT_FOR_ME;
       }
    }
 }
@@ -6079,6 +6098,7 @@ tu_render_pass_state_merge(struct tu_render_pass_state *dst,
    dst->draw_cs_writes_to_cond_pred |= src->draw_cs_writes_to_cond_pred;
    dst->shared_viewport |= src->shared_viewport;
 
+   dst->drawcall_count += src->drawcall_count;
    dst->drawcall_bandwidth_per_sample_sum +=
       src->drawcall_bandwidth_per_sample_sum;
    if (!dst->lrz_disable_reason && src->lrz_disable_reason) {
@@ -6095,8 +6115,6 @@ tu_render_pass_state_merge(struct tu_render_pass_state *dst,
    if (!dst->gmem_disable_reason && src->gmem_disable_reason) {
       dst->gmem_disable_reason = src->gmem_disable_reason;
    }
-
-   dst->drawcall_count += src->drawcall_count;
 }
 
 void
@@ -6446,7 +6464,6 @@ tu_CmdExecuteCommands(VkCommandBuffer commandBuffer,
    }
 }
 
-template <chip CHIP>
 static void
 tu_subpass_barrier(struct tu_cmd_buffer *cmd_buffer,
                    const struct tu_subpass_barrier *barrier,
@@ -6479,7 +6496,7 @@ tu_subpass_barrier(struct tu_cmd_buffer *cmd_buffer,
 
    enum tu_stage src_stage = vk2tu_src_stage(cmd_buffer->device, src_stage_vk);
    enum tu_stage dst_stage = vk2tu_dst_stage(cmd_buffer->device, dst_stage_vk);
-   tu_flush_for_stage<CHIP>(cache, src_stage, dst_stage);
+   tu_flush_for_stage(cache, src_stage, dst_stage);
 }
 
 template <chip CHIP>
@@ -6927,7 +6944,7 @@ tu_CmdBeginRenderPass2(VkCommandBuffer commandBuffer,
     * gets called. However deferred flushes could have to happen later as part
     * of the subpass.
     */
-   tu_subpass_barrier<CHIP>(cmd, &pass->subpasses[0].start_barrier, true);
+   tu_subpass_barrier(cmd, &pass->subpasses[0].start_barrier, true);
    cmd->state.renderpass_cache.pending_flush_bits =
       cmd->state.cache.pending_flush_bits;
    cmd->state.renderpass_cache.flush_bits = 0;
@@ -7318,7 +7335,7 @@ tu_CmdNextSubpass2(VkCommandBuffer commandBuffer,
       tu_cond_exec_end(cs);
 
    /* Handle dependencies for the next subpass */
-   tu_subpass_barrier<CHIP>(cmd, &cmd->state.subpass->start_barrier, false);
+   tu_subpass_barrier(cmd, &cmd->state.subpass->start_barrier, false);
 
    if (cmd->state.subpass->feedback_invalidate) {
       cmd->state.renderpass_cache.flush_bits |=
@@ -9541,7 +9558,7 @@ tu_CmdEndRenderPass2(VkCommandBuffer commandBuffer,
 
    cmd_buffer->state.cache.pending_flush_bits |=
       cmd_buffer->state.renderpass_cache.pending_flush_bits;
-   TU_CALLX(cmd_buffer->device, tu_subpass_barrier)(cmd_buffer, &cmd_buffer->state.pass->end_barrier, true);
+   tu_subpass_barrier(cmd_buffer, &cmd_buffer->state.pass->end_barrier, true);
 
    vk_free(&cmd_buffer->vk.pool->alloc, cmd_buffer->state.attachments);
 
@@ -9817,7 +9834,7 @@ tu_barrier(struct tu_cmd_buffer *cmd,
 
    enum tu_stage src_stage = vk2tu_src_stage(cmd->device, srcStage);
    enum tu_stage dst_stage = vk2tu_dst_stage(cmd->device, dstStage);
-   TU_CALLX(cmd->device, tu_flush_for_stage)(cache, src_stage, dst_stage);
+   tu_flush_for_stage(cache, src_stage, dst_stage);
 }
 
 VKAPI_ATTR void VKAPI_CALL
