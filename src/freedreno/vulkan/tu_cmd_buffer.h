@@ -454,6 +454,7 @@ struct tu_cmd_state
    struct tu_shader *shaders[MESA_SHADER_STAGES];
 
    struct tu_program_state program;
+   struct tu_lrz_state lrz;
 
    struct tu_render_pass_state rp;
 
@@ -610,8 +611,6 @@ struct tu_cmd_state
    enum tu_suspend_resume_state suspend_resume;
 
    bool suspending, resuming;
-
-   struct tu_lrz_state lrz;
 
    struct tu_draw_state lrz_and_depth_plane_state;
 
