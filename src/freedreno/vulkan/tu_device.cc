@@ -147,6 +147,13 @@ static bool tu_has_multiview(const struct tu_physical_device *device)
    return device->info->props.has_hw_multiview || TU_DEBUG(NOCONFORM);
 }
 
+static bool
+tu_allow_mesh_shader(const struct tu_physical_device *device)
+{
+   return device->info->chip >= 8 &&
+          debug_get_bool_option("TU_ENABLE_MESH", false);
+}
+
 /* We are generally VK 1.1 except A702, which has no multiview */
 static bool tu_is_vk_1_1(const struct tu_physical_device *device)
 {
@@ -340,6 +347,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_shader_stencil_export = true,
       .EXT_shader_uniform_buffer_unsized_array = true,
       .EXT_shader_viewport_index_layer = tu_has_multiview(device),
+      .EXT_mesh_shader = tu_allow_mesh_shader(device),
       .EXT_subgroup_size_control = tu_is_vk_1_1(device),
 #ifdef TU_USE_WSI_PLATFORM
       .EXT_swapchain_maintenance1 = true,
@@ -440,6 +448,8 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->shaderResourceMinLod = true;
    features->variableMultisampleRate = true;
    features->inheritedQueries = true;
+   features->meshShader = tu_allow_mesh_shader(pdevice);
+   features->taskShader = tu_allow_mesh_shader(pdevice);
 
    /* Vulkan 1.1 */
    features->storageBuffer16BitAccess            = pdevice->info->props.storage_16bit;
@@ -1329,6 +1339,48 @@ tu_get_properties(struct tu_physical_device *pdevice,
 
    /* VK_KHR_push_descriptor */
    props->maxPushDescriptors = MAX_PUSH_DESCRIPTORS;
+
+   /* VK_EXT_mesh_shader (experimental opt-in via TU_ENABLE_MESH=1) */
+   if (tu_allow_mesh_shader(pdevice)) {
+      props->maxTaskWorkGroupTotalCount = 4194304;
+      props->maxTaskWorkGroupCount[0] = 65535;
+      props->maxTaskWorkGroupCount[1] = 65535;
+      props->maxTaskWorkGroupCount[2] = 65535;
+      props->maxTaskWorkGroupInvocations = 256;
+      props->maxTaskWorkGroupSize[0] = 256;
+      props->maxTaskWorkGroupSize[1] = 256;
+      props->maxTaskWorkGroupSize[2] = 256;
+      props->maxTaskPayloadSize = 16384;
+      props->maxTaskSharedMemorySize = 32768;
+      props->maxTaskPayloadAndSharedMemorySize = 32768;
+
+      props->maxMeshWorkGroupTotalCount = 4194304;
+      props->maxMeshWorkGroupCount[0] = 65535;
+      props->maxMeshWorkGroupCount[1] = 65535;
+      props->maxMeshWorkGroupCount[2] = 65535;
+      props->maxMeshWorkGroupInvocations = 256;
+      props->maxMeshWorkGroupSize[0] = 256;
+      props->maxMeshWorkGroupSize[1] = 256;
+      props->maxMeshWorkGroupSize[2] = 256;
+      props->maxMeshOutputMemorySize = 32768;
+      props->maxMeshSharedMemorySize = 32768;
+      props->maxMeshPayloadAndSharedMemorySize = 32768;
+      props->maxMeshPayloadAndOutputMemorySize = 49152;
+      props->maxMeshOutputComponents = 128;
+      props->maxMeshOutputVertices = 256;
+      props->maxMeshOutputPrimitives = 256;
+      props->maxMeshOutputLayers = 8;
+      props->maxMeshMultiviewViewCount = MAX_VIEWS;
+      props->meshOutputPerVertexGranularity = 1;
+      props->meshOutputPerPrimitiveGranularity = 1;
+
+      props->maxPreferredTaskWorkGroupInvocations = 128;
+      props->maxPreferredMeshWorkGroupInvocations = 128;
+      props->prefersLocalInvocationVertexOutput = true;
+      props->prefersLocalInvocationPrimitiveOutput = true;
+      props->prefersCompactVertexOutput = true;
+      props->prefersCompactPrimitiveOutput = true;
+   }
 
    /* VK_EXT_transform_feedback */
    if (pdevice->info->props.is_a702) {
