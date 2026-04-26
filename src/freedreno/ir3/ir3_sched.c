@@ -611,6 +611,8 @@ live_effect(struct ir3_instruction *instr)
 static bool
 should_defer(struct ir3_sched_ctx *ctx, struct ir3_instruction *instr)
 {
+   unsigned max_outstanding_sy_ss = ctx->compiler->gen >= 8 ? 16 : 8; /* A8xx Optimization */
+
    if (ctx->ss_delay) {
       if (sched_check_src_cond(instr, is_outstanding_ss, ctx))
          return true;
@@ -632,10 +634,12 @@ should_defer(struct ir3_sched_ctx *ctx, struct ir3_instruction *instr)
     * and prevents unacceptably large increases in register pressure from too
     * many outstanding texture instructions.
     */
-   if (ctx->sy_index - ctx->first_outstanding_sy_index >= 8 && is_sy_producer(instr))
+   if (ctx->sy_index - ctx->first_outstanding_sy_index >= max_outstanding_sy_ss &&
+       is_sy_producer(instr))
       return true;
 
-   if (ctx->ss_index - ctx->first_outstanding_ss_index >= 8 && is_ss_producer(instr))
+   if (ctx->ss_index - ctx->first_outstanding_ss_index >= max_outstanding_sy_ss &&
+       is_ss_producer(instr))
       return true;
 
    return false;
@@ -881,9 +885,33 @@ choose_instr(struct ir3_sched_ctx *ctx, struct ir3_sched_notes *notes)
    if (chosen)
       return chosen->instr;
 
+   if (ctx->compiler->gen >= 8) { /* A8xx Optimization */
+      foreach_sched_node (n, &ctx->dag->heads) {
+         if (!check_instr(ctx, notes, n->instr))
+            continue;
+
+         if (!(is_tex(n->instr) || is_sfu(n->instr)))
+            continue;
+
+         if (!chosen || chosen->max_delay < n->max_delay)
+            chosen = n;
+      }
+
+      if (chosen) {
+         di(chosen->instr, "prio: chose (A8xx tex/sfu)");
+         return chosen->instr;
+      }
+   }
+
    chosen = choose_instr_dec(ctx, notes, true);
    if (chosen)
       return chosen->instr;
+
+   if (ctx->compiler->gen >= 8) { /* A8xx Optimization */
+      chosen = choose_instr_inc(ctx, notes, true, false);
+      if (chosen)
+         return chosen->instr;
+   }
 
    chosen = choose_instr_dec(ctx, notes, false);
    if (chosen)
