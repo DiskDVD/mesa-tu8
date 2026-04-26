@@ -40,8 +40,8 @@ static const struct spirv_to_nir_options tu_spirv_options = {
    /* Use 16-bit math for RelaxedPrecision ALU ops */
    .mediump_16bit_alu = true,
 
-   .ubo_addr_format = nir_address_format_vec2_index_32bit_offset,
-   .ssbo_addr_format = nir_address_format_vec2_index_32bit_offset,
+   .ubo_addr_format = nir_address_format_64bit_global_32bit_offset,
+   .ssbo_addr_format = nir_address_format_64bit_global_32bit_offset,
 
    /* Accessed via stg/ldg */
    .phys_ssbo_addr_format = nir_address_format_64bit_global,
