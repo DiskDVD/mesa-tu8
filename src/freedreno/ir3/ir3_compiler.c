@@ -325,7 +325,8 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
        *
        * TODO: is this true on earlier gen's?
        */
-      compiler->max_const_compute = compiler->gen >= 7 ? 512 : 256;
+      compiler->max_const_compute =
+         compiler->gen >= 8 ? 1024 : (compiler->gen >= 7 ? 512 : 256); /* A8xx Optimization */
 
       if (dev_info->props.is_a702) {
          /* No GS/tess, 128 per stage otherwise: */
@@ -382,7 +383,7 @@ ir3_compiler_create(struct fd_device *dev, const struct fd_dev_id *dev_id,
       compiler->compute_lb_size = dev_info->compute_lb_size;
    } else {
       compiler->compute_lb_size =
-         compiler->max_const_compute * 16 /* bytes/vec4 */ *
+         compiler->max_const_compute * 16 /* bytes/vec4, keep in sync with max_const_compute (A8xx Optimization) */ *
          compiler->info->wave_granularity + compiler->info->cs_shared_mem_size;
    }
 
