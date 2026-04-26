@@ -985,6 +985,10 @@ ir3_shader_stage(struct ir3_shader_variant *v)
       return "TES";
    case MESA_SHADER_GEOMETRY:
       return "GEOM";
+   case MESA_SHADER_TASK:
+      return "TASK";
+   case MESA_SHADER_MESH:
+      return "MESH";
    case MESA_SHADER_FRAGMENT:
       return "FRAG";
    case MESA_SHADER_COMPUTE:

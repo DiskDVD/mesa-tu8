@@ -8368,7 +8368,8 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_CONST, cmd->state.shader_const);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DESC_SETS, cmd->state.desc_sets);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DESC_SETS_LOAD, cmd->state.load_state);
-      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VB, cmd->state.vertex_buffers);
+      if (!cmd->state.shaders[MESA_SHADER_MESH])
+         tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VB, cmd->state.vertex_buffers);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VS_PARAMS, cmd->state.vs_params);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_FS_PARAMS, cmd->state.fs_params);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_LRZ_AND_DEPTH_PLANE, cmd->state.lrz_and_depth_plane_state);
@@ -8383,7 +8384,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
          util_bitcount(dynamic_draw_state_dirty) +
          ((dirty & TU_CMD_DIRTY_SHADER_CONSTS) ? 1 : 0) +
          ((dirty & TU_CMD_DIRTY_DESC_SETS) ? 1 : 0) +
-         ((dirty & TU_CMD_DIRTY_VERTEX_BUFFERS) ? 1 : 0) +
+         ((dirty & TU_CMD_DIRTY_VERTEX_BUFFERS) && !cmd->state.shaders[MESA_SHADER_MESH] ? 1 : 0) +
          ((dirty & TU_CMD_DIRTY_VS_PARAMS) ? 1 : 0) +
          (dirty_fs_params ? 1 : 0) +
          (dirty_lrz ? 1 : 0);
@@ -8397,7 +8398,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
          /* tu6_emit_descriptor_sets emitted the cmd->state.desc_sets draw state. */
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DESC_SETS_LOAD, cmd->state.load_state);
       }
-      if (dirty & TU_CMD_DIRTY_VERTEX_BUFFERS)
+      if ((dirty & TU_CMD_DIRTY_VERTEX_BUFFERS) && !cmd->state.shaders[MESA_SHADER_MESH])
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VB, cmd->state.vertex_buffers);
       u_foreach_bit (i, dynamic_draw_state_dirty) {
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DYNAMIC + i,
@@ -8937,6 +8938,104 @@ tu_CmdDrawIndirectByteCountEXT(VkCommandBuffer commandBuffer,
    trace_end_draw(&cmd->rp_trace, cs);
 }
 TU_GENX(tu_CmdDrawIndirectByteCountEXT);
+
+template <chip CHIP>
+static void
+tu_emit_mesh_draw(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
+                  uint32_t groupCountX, uint32_t groupCountY,
+                  uint32_t groupCountZ)
+{
+   tu_cs_emit_pkt7(cs, CP_DRAW_MESH, 4);
+   tu_cs_emit(cs, tu_draw_initiator(cmd, DI_SRC_SEL_AUTO_INDEX));
+   tu_cs_emit(cs, groupCountX);
+   tu_cs_emit(cs, groupCountY);
+   tu_cs_emit(cs, groupCountZ);
+}
+
+template <chip CHIP>
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdDrawMeshTasksEXT(VkCommandBuffer commandBuffer,
+                       uint32_t groupCountX,
+                       uint32_t groupCountY,
+                       uint32_t groupCountZ)
+{
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   struct tu_cs *cs = &cmd->draw_cs;
+
+   tu_emit_mesh_draw<CHIP>(cmd, cs, groupCountX, groupCountY, groupCountZ);
+   trace_end_draw(&cmd->rp_trace, cs);
+}
+TU_GENX(tu_CmdDrawMeshTasksEXT);
+
+template <chip CHIP>
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdDrawMeshTasksIndirectEXT(VkCommandBuffer commandBuffer,
+                               VkBuffer _buffer,
+                               VkDeviceSize offset,
+                               uint32_t drawCount,
+                               uint32_t stride)
+{
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_buffer, buf, _buffer);
+   struct tu_cs *cs = &cmd->draw_cs;
+
+   if (drawCount == 0)
+      return;
+
+   if (unlikely(!buf->bo->map))
+      return;
+
+   uint8_t *base = (uint8_t *) buf->bo->map + offset;
+   for (uint32_t i = 0; i < drawCount; i++) {
+      const VkDrawMeshTasksIndirectCommandEXT *draw =
+         (const VkDrawMeshTasksIndirectCommandEXT *) (base + i * stride);
+      tu_emit_mesh_draw<CHIP>(cmd, cs,
+                              draw->groupCountX,
+                              draw->groupCountY,
+                              draw->groupCountZ);
+   }
+
+   trace_end_draw(&cmd->rp_trace, cs);
+}
+TU_GENX(tu_CmdDrawMeshTasksIndirectEXT);
+
+template <chip CHIP>
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdDrawMeshTasksIndirectCountEXT(VkCommandBuffer commandBuffer,
+                                    VkBuffer _buffer,
+                                    VkDeviceSize offset,
+                                    VkBuffer countBuffer,
+                                    VkDeviceSize countBufferOffset,
+                                    uint32_t maxDrawCount,
+                                    uint32_t stride)
+{
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_buffer, buf, _buffer);
+   VK_FROM_HANDLE(tu_buffer, count_buf, countBuffer);
+   struct tu_cs *cs = &cmd->draw_cs;
+
+   if (maxDrawCount == 0)
+      return;
+
+   if (unlikely(!buf->bo->map || !count_buf->bo->map))
+      return;
+
+   const uint32_t drawCount =
+      MIN2(*(uint32_t *) ((uint8_t *) count_buf->bo->map + countBufferOffset),
+           maxDrawCount);
+   uint8_t *base = (uint8_t *) buf->bo->map + offset;
+   for (uint32_t i = 0; i < drawCount; i++) {
+      const VkDrawMeshTasksIndirectCommandEXT *draw =
+         (const VkDrawMeshTasksIndirectCommandEXT *) (base + i * stride);
+      tu_emit_mesh_draw<CHIP>(cmd, cs,
+                              draw->groupCountX,
+                              draw->groupCountY,
+                              draw->groupCountZ);
+   }
+
+   trace_end_draw(&cmd->rp_trace, cs);
+}
+TU_GENX(tu_CmdDrawMeshTasksIndirectCountEXT);
 
 struct tu_dispatch_info
 {

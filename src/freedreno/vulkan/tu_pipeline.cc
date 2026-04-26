@@ -4150,6 +4150,7 @@ tu_emit_draw_state(struct tu_cmd_buffer *cmd)
 {
    struct tu_cs cs;
    uint32_t dirty_draw_states = 0;
+   const bool has_mesh = cmd->state.shaders[MESA_SHADER_MESH];
 
 #define EMIT_STATE(name)                                                      \
    emit_draw_state(&cmd->vk.dynamic_graphics_state, tu_##name##_state,        \
@@ -4200,8 +4201,10 @@ tu_emit_draw_state(struct tu_cmd_buffer *cmd)
    }
 #define DRAW_STATE(name, id, ...) DRAW_STATE_COND(name, id, false, __VA_ARGS__)
 
-   DRAW_STATE(vertex_input, TU_DYNAMIC_STATE_VERTEX_INPUT,
-              cmd->vk.dynamic_graphics_state.vi);
+   if (!has_mesh) {
+      DRAW_STATE(vertex_input, TU_DYNAMIC_STATE_VERTEX_INPUT,
+                 cmd->vk.dynamic_graphics_state.vi);
+   }
 
    /* Vertex input stride is special because it's part of the vertex input in
     * the pipeline but a separate array when it's dynamic state so we have to
@@ -4210,9 +4213,11 @@ tu_emit_draw_state(struct tu_cmd_buffer *cmd)
 #define tu6_emit_vertex_stride tu6_emit_vertex_stride_dyn
 #define tu6_vertex_stride_size tu6_vertex_stride_size_dyn
 
-   DRAW_STATE(vertex_stride, TU_DYNAMIC_STATE_VB_STRIDE,
-              cmd->vk.dynamic_graphics_state.vi_binding_strides,
-              cmd->vk.dynamic_graphics_state.vi_bindings_valid);
+   if (!has_mesh) {
+      DRAW_STATE(vertex_stride, TU_DYNAMIC_STATE_VB_STRIDE,
+                 cmd->vk.dynamic_graphics_state.vi_binding_strides,
+                 cmd->vk.dynamic_graphics_state.vi_bindings_valid);
+   }
 
 #undef tu6_emit_vertex_stride
 #undef tu6_vertex_stride_size
