@@ -1003,21 +1003,21 @@ tu_get_physical_device_properties_1_2(struct tu_physical_device *pdevice,
    p->robustBufferAccessUpdateAfterBind                  = true;
    p->quadDivergentImplicitLod                           = false;
 
-   p->maxUpdateAfterBindDescriptorsInAllPools            = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindSamplers       = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindUniformBuffers = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindStorageBuffers = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindSampledImages  = max_descriptor_set_size;
-   p->maxPerStageDescriptorUpdateAfterBindStorageImages  = max_descriptor_set_size;
+   p->maxUpdateAfterBindDescriptorsInAllPools            = 500000;
+   p->maxPerStageDescriptorUpdateAfterBindSamplers       = 500000;
+   p->maxPerStageDescriptorUpdateAfterBindUniformBuffers = 500000;
+   p->maxPerStageDescriptorUpdateAfterBindStorageBuffers = 500000;
+   p->maxPerStageDescriptorUpdateAfterBindSampledImages  = 500000;
+   p->maxPerStageDescriptorUpdateAfterBindStorageImages  = 500000;
    p->maxPerStageDescriptorUpdateAfterBindInputAttachments = MAX_RTS;
-   p->maxPerStageUpdateAfterBindResources                = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindSamplers            = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindUniformBuffers      = max_descriptor_set_size;
+   p->maxPerStageUpdateAfterBindResources                = 500000;
+   p->maxDescriptorSetUpdateAfterBindSamplers            = 500000;
+   p->maxDescriptorSetUpdateAfterBindUniformBuffers      = 500000;
    p->maxDescriptorSetUpdateAfterBindUniformBuffersDynamic = MAX_DYNAMIC_UNIFORM_BUFFERS;
-   p->maxDescriptorSetUpdateAfterBindStorageBuffers      = max_descriptor_set_size;
+   p->maxDescriptorSetUpdateAfterBindStorageBuffers      = 500000;
    p->maxDescriptorSetUpdateAfterBindStorageBuffersDynamic = MAX_DYNAMIC_STORAGE_BUFFERS;
-   p->maxDescriptorSetUpdateAfterBindSampledImages       = max_descriptor_set_size;
-   p->maxDescriptorSetUpdateAfterBindStorageImages       = max_descriptor_set_size;
+   p->maxDescriptorSetUpdateAfterBindSampledImages       = 500000;
+   p->maxDescriptorSetUpdateAfterBindStorageImages       = 500000;
    p->maxDescriptorSetUpdateAfterBindInputAttachments    = MAX_RTS;
 
    p->supportedDepthResolveModes    =
@@ -1134,9 +1134,9 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->maxPerStageDescriptorInputAttachments = MAX_RTS;
    props->maxPerStageResources = max_descriptor_set_size;
    props->maxDescriptorSetSamplers = max_descriptor_set_size;
-   props->maxDescriptorSetUniformBuffers = max_descriptor_set_size;
+   props->maxDescriptorSetUniformBuffers = MAX2(max_descriptor_set_size, 64);
    props->maxDescriptorSetUniformBuffersDynamic = MAX_DYNAMIC_UNIFORM_BUFFERS;
-   props->maxDescriptorSetStorageBuffers = max_descriptor_set_size;
+   props->maxDescriptorSetStorageBuffers = MAX2(max_descriptor_set_size, 64);
    props->maxDescriptorSetStorageBuffersDynamic = MAX_DYNAMIC_STORAGE_BUFFERS;
    props->maxDescriptorSetSampledImages = max_descriptor_set_size;
    props->maxDescriptorSetStorageImages = max_descriptor_set_size;
@@ -1175,6 +1175,15 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->maxComputeWorkGroupInvocations = pdevice->info->props.supports_double_threadsize ?
       pdevice->info->threadsize_base * 2 * pdevice->info->max_waves :
       pdevice->info->threadsize_base * pdevice->info->max_waves;
+   if (pdevice->info->chip >= A8XX) {
+      const unsigned gpu_id = fd_dev_gpu_id(&pdevice->dev_id);
+      if (gpu_id == 830 || gpu_id == 840)
+         props->maxComputeWorkGroupInvocations = 2048;
+      else if (gpu_id == 825 || gpu_id == 829)
+         props->maxComputeWorkGroupInvocations = 1536;
+      else if (gpu_id == 810)
+         props->maxComputeWorkGroupInvocations = 1024;
+   }
    if (pdevice->info->props.is_a702) {
       props->maxComputeWorkGroupSize[0] =
          props->maxComputeWorkGroupSize[1] = 512;
@@ -1190,7 +1199,7 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->maxDrawIndexedIndexValue = UINT32_MAX;
    props->maxDrawIndirectCount = UINT32_MAX;
    props->maxSamplerLodBias = 4095.0 / 256.0; /* [-16, 15.99609375] */
-   props->maxSamplerAnisotropy = 16;
+   props->maxSamplerAnisotropy = 16.0f;
    props->maxViewports =
          tu_has_multiview(pdevice) ? MAX_VIEWPORTS : 1;
    props->maxViewportDimensions[0] =
