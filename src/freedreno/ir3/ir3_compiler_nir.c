@@ -3023,8 +3023,22 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
       b = NULL;
       break;
    case nir_intrinsic_store_output:
+   case nir_intrinsic_store_per_primitive_output:
    case nir_intrinsic_store_per_view_output:
       setup_output(ctx, intr);
+      break;
+   case nir_intrinsic_load_task_payload:
+      emit_intrinsic_load_shared(ctx, intr, dst);
+      break;
+   case nir_intrinsic_store_task_payload:
+      emit_intrinsic_store_shared(ctx, intr);
+      break;
+   case nir_intrinsic_task_payload_atomic:
+   case nir_intrinsic_task_payload_atomic_swap:
+      dst[0] = emit_intrinsic_atomic_shared(ctx, intr);
+      break;
+   case nir_intrinsic_launch_mesh_workgroups:
+   case nir_intrinsic_launch_mesh_workgroups_with_payload_deref:
       break;
    case nir_intrinsic_load_base_vertex:
    case nir_intrinsic_load_first_vertex:
@@ -3057,6 +3071,9 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
             create_sysval_input(ctx, SYSTEM_VALUE_VIEW_INDEX, 0x1);
       }
       dst[0] = ctx->view_index;
+      break;
+   case nir_intrinsic_load_mesh_view_count:
+      dst[0] = create_driver_param(ctx, IR3_DP_CS(num_work_groups_z));
       break;
    case nir_intrinsic_load_vertex_id_zero_base:
    case nir_intrinsic_load_vertex_id:
@@ -5348,7 +5365,8 @@ setup_output(struct ir3_context *ctx, nir_intrinsic_instr *intr)
       }
    } else if (ctx->so->type == MESA_SHADER_VERTEX ||
               ctx->so->type == MESA_SHADER_TESS_EVAL ||
-              ctx->so->type == MESA_SHADER_GEOMETRY) {
+              ctx->so->type == MESA_SHADER_GEOMETRY ||
+              ctx->so->type == MESA_SHADER_MESH) {
       switch (slot) {
       case VARYING_SLOT_POS:
          so->writes_pos = true;
@@ -5364,7 +5382,8 @@ setup_output(struct ir3_context *ctx, nir_intrinsic_instr *intr)
          break;
       case VARYING_SLOT_PRIMITIVE_ID:
       case VARYING_SLOT_GS_VERTEX_FLAGS_IR3:
-         assert(ctx->so->type == MESA_SHADER_GEOMETRY);
+         if (ctx->so->type == MESA_SHADER_GEOMETRY)
+            break;
          FALLTHROUGH;
       case VARYING_SLOT_COL0:
       case VARYING_SLOT_COL1:
@@ -5441,8 +5460,10 @@ uses_store_output(struct ir3_shader_variant *so)
       return !so->key.has_gs;
    case MESA_SHADER_GEOMETRY:
    case MESA_SHADER_FRAGMENT:
+   case MESA_SHADER_MESH:
       return true;
    case MESA_SHADER_TESS_CTRL:
+   case MESA_SHADER_TASK:
    case MESA_SHADER_COMPUTE:
    case MESA_SHADER_KERNEL:
       return false;
