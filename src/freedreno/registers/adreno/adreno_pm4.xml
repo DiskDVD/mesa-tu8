@@ -418,6 +418,7 @@ xsi:schemaLocation="https://gitlab.freedesktop.org/freedreno/ rules-fd.xsd">
 	</doc>
 	<value name="CP_SET_DRAW_STATE" value="0x43" variants="A4XX-"/>
 	<value name="CP_DRAW_INDX_OFFSET" value="0x38"/>
+	<value name="CP_DRAW_MESH" value="0x30" variants="A8XX-"/>
 	<value name="CP_DRAW_INDIRECT" value="0x28" variants="A4XX-"/>
 	<value name="CP_DRAW_INDX_INDIRECT" value="0x29" variants="A4XX-"/>
 	<value name="CP_DRAW_INDIRECT_MULTI" value="0x2a" variants="A6XX-"/>
@@ -1050,6 +1051,13 @@ opcode: CP_LOAD_STATE4 (30) (4 dwords)
 	<reg32 offset="5" name="5">
 		<bitfield name="STRIDE" low="0" high="31" type="uint"/>
 	</reg32>
+</domain>
+
+<domain name="CP_DRAW_MESH" width="32" variants="A8XX-">
+	<reg32 offset="0" name="0" type="vgt_draw_initiator_a4xx"/>
+	<reg32 offset="1" name="GROUP_COUNT_X" type="uint"/>
+	<reg32 offset="2" name="GROUP_COUNT_Y" type="uint"/>
+	<reg32 offset="3" name="GROUP_COUNT_Z" type="uint"/>
 </domain>
 
 <domain name="CP_DRAW_PRED_ENABLE_GLOBAL" width="32" varset="chip">
@@ -2444,4 +2452,3 @@ opcode: CP_LOAD_STATE4 (30) (4 dwords)
 </domain>
 
 </database>
-
