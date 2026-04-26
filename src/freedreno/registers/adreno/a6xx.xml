@@ -4888,6 +4888,8 @@ by a particular renderpass/blit.
 		<bitfield name="GS_STATE" pos="3" type="boolean"/>
 		<bitfield name="FS_STATE" pos="4" type="boolean"/>
 		<bitfield name="CS_STATE" pos="5" type="boolean"/>
+		<bitfield name="TASK_STATE" pos="25" type="boolean"/>
+		<bitfield name="MESH_STATE" pos="26" type="boolean"/>
 
 		<bitfield name="CS_UAV" pos="6" type="boolean"/>
 		<bitfield name="GFX_UAV" pos="7" type="boolean"/>
@@ -4911,6 +4913,8 @@ by a particular renderpass/blit.
 		<bitfield name="GS_STATE" pos="3" type="boolean"/>
 		<bitfield name="FS_STATE" pos="4" type="boolean"/>
 		<bitfield name="CS_STATE" pos="5" type="boolean"/>
+		<bitfield name="TASK_STATE" pos="25" type="boolean"/>
+		<bitfield name="MESH_STATE" pos="26" type="boolean"/>
 	</reg32>
 
 	<reg32 offset="0xa9c0" name="SP_CS_BINDLESS_INVALIDATE" usage="compute"/>
