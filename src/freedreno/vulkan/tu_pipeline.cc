@@ -1355,18 +1355,31 @@ tu6_emit_program_config(struct tu_cs *cs,
       prog->shared_consts.type == IR3_PUSH_CONSTS_SHARED;
    tu6_emit_shared_consts_enable<CHIP>(crb, shared_consts_enable);
 
-   crb.add(SP_UPDATE_CNTL(CHIP, .vs_state = true, .hs_state = true,
-                          .ds_state = true, .gs_state = true,
-                          .fs_state = true, .gfx_uav = true,
-                          .gfx_shared_const = shared_consts_enable));
-
    const struct ir3_shader_variant *vs = variants[MESA_SHADER_VERTEX];
    const struct ir3_shader_variant *hs = variants[MESA_SHADER_TESS_CTRL];
    const struct ir3_shader_variant *ds = variants[MESA_SHADER_TESS_EVAL];
    const struct ir3_shader_variant *gs = variants[MESA_SHADER_GEOMETRY];
+   const struct ir3_shader_variant *ts = variants[MESA_SHADER_TASK];
+   const struct ir3_shader_variant *ms = variants[MESA_SHADER_MESH];
    const struct ir3_shader_variant *fs = variants[MESA_SHADER_FRAGMENT];
+   const bool has_mesh = ms != NULL;
 
-   tu6_emit_xs_config<CHIP>(crb, { .vs = vs, .hs = hs, .ds = ds, .gs = gs, .fs = fs });
+   crb.add(SP_UPDATE_CNTL(CHIP, .vs_state = !has_mesh, .hs_state = !has_mesh,
+                          .ds_state = !has_mesh, .gs_state = !has_mesh,
+                          .fs_state = true, .task_state = ts != NULL,
+                          .mesh_state = ms != NULL, .gfx_uav = true,
+                          .gfx_shared_const = shared_consts_enable));
+
+   /* Mesh/task shaders on A8XX have dedicated configuration programming.
+    * Keep legacy VS/HS/DS/GS slots disabled for mesh pipelines.
+    */
+   tu6_emit_xs_config<CHIP>(crb, {
+      .vs = has_mesh ? NULL : vs,
+      .hs = has_mesh ? NULL : hs,
+      .ds = has_mesh ? NULL : ds,
+      .gs = has_mesh ? NULL : gs,
+      .fs = fs
+   });
 
    crb.flush();
 
@@ -1376,12 +1389,17 @@ tu6_emit_program_config(struct tu_cs *cs,
       tu6_emit_dynamic_offset(cs, variants[stage], shaders[stage], prog);
    }
 
-   if (hs) {
+   if (ts)
+      tu6_emit_dynamic_offset(cs, ts, shaders[MESA_SHADER_TASK], prog);
+   if (ms)
+      tu6_emit_dynamic_offset(cs, ms, shaders[MESA_SHADER_MESH], prog);
+
+   if (!has_mesh && hs) {
       tu6_emit_link_map(cs, vs, hs, SB6_HS_SHADER);
       tu6_emit_link_map(cs, hs, ds, SB6_DS_SHADER);
    }
 
-   if (gs) {
+   if (!has_mesh && gs) {
       if (hs) {
          tu6_emit_link_map(cs, ds, gs, SB6_GS_SHADER);
       } else {
@@ -1407,9 +1425,13 @@ tu6_emit_program_config(struct tu_cs *cs,
          prim_size = 63;
       tu_cs_emit_pkt4(cs, REG_A6XX_SP_GS_CNTL_1, 1);
       tu_cs_emit(cs, prim_size);
+   } else if (has_mesh && CHIP == A6XX) {
+      tu_cs_emit_regs(cs, PC_PRIMITIVE_CNTL_6(CHIP,
+         .stride_in_vpc = 0,
+      ));
    }
 
-   if (gs || hs) {
+   if (!has_mesh && (gs || hs)) {
       tu6_emit_geom_tess_consts<CHIP>(cs, vs, hs, ds, gs);
    }
 }

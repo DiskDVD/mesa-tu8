@@ -5386,6 +5386,7 @@ setup_output(struct ir3_context *ctx, nir_intrinsic_instr *intr)
          FALLTHROUGH;
       case VARYING_SLOT_GS_VERTEX_FLAGS_IR3:
          if (ctx->so->type != MESA_SHADER_GEOMETRY)
+         if (ctx->so->type == MESA_SHADER_GEOMETRY)
             break;
          FALLTHROUGH;
       case VARYING_SLOT_COL0:
