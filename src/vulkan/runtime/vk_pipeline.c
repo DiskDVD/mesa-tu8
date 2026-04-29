@@ -1152,7 +1152,7 @@ static bool
 vk_device_supports_stage(struct vk_device *device,
                          mesa_shader_stage stage)
 {
-   const struct vk_features *features = &device->physical->supported_features;
+   const struct vk_features *features = &device->enabled_features;
 
    switch (stage) {
    case MESA_SHADER_VERTEX:

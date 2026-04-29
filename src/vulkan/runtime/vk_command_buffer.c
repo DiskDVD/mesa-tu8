@@ -704,6 +704,11 @@ vk_common_CmdDrawMeshTasksIndirectEXT(
    VK_FROM_HANDLE(vk_command_buffer, cmd_buffer, commandBuffer);
    VK_FROM_HANDLE(vk_buffer, buffer, _buffer);
 
+   if (!cmd_buffer->base.device->enabled_features.meshShader) {
+      vk_command_buffer_set_error(&cmd_buffer->base, VK_ERROR_FEATURE_NOT_PRESENT);
+      return;
+   }
+
    const struct vk_device_dispatch_table *disp =
       &cmd_buffer->base.device->dispatch_table;
    disp->CmdDrawMeshTasksIndirect2EXT(
@@ -729,6 +734,11 @@ vk_common_CmdDrawMeshTasksIndirectCountEXT(
    VK_FROM_HANDLE(vk_command_buffer, cmd_buffer, commandBuffer);
    VK_FROM_HANDLE(vk_buffer, buffer, _buffer);
    VK_FROM_HANDLE(vk_buffer, count_buffer, countBuffer);
+
+   if (!cmd_buffer->base.device->enabled_features.meshShader) {
+      vk_command_buffer_set_error(&cmd_buffer->base, VK_ERROR_FEATURE_NOT_PRESENT);
+      return;
+   }
 
    const struct vk_device_dispatch_table *disp =
       &cmd_buffer->base.device->dispatch_table;
