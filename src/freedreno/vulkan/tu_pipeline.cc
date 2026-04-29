@@ -809,6 +809,8 @@ tu6_emit_vpc(struct tu_cs *cs,
       assert(fs);
       /* Mesh pipelines don't use legacy VS/HS/DS/GS linkage in VPC. */
       tu6_emit_vpc_varying_modes<CHIP>(cs, fs, fs);
+      tu_cs_emit_pkt4(cs, REG_A6XX_SP_HS_WCLIP_CNTL, 1);
+      tu_cs_emit(cs, A6XX_SP_HS_WCLIP_CNTL_ZERO_GB_SCALE_Z);
       return;
    } else if (gs) {
       last_shader = gs;
