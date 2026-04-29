@@ -1364,9 +1364,45 @@ tu6_emit_program_config(struct tu_cs *cs,
    const struct ir3_shader_variant *hs = variants[MESA_SHADER_TESS_CTRL];
    const struct ir3_shader_variant *ds = variants[MESA_SHADER_TESS_EVAL];
    const struct ir3_shader_variant *gs = variants[MESA_SHADER_GEOMETRY];
+   const struct ir3_shader_variant *task = variants[MESA_SHADER_TASK];
+   const struct ir3_shader_variant *mesh = variants[MESA_SHADER_MESH];
    const struct ir3_shader_variant *fs = variants[MESA_SHADER_FRAGMENT];
 
    tu6_emit_xs_config<CHIP>(crb, { .vs = vs, .hs = hs, .ds = ds, .gs = gs, .fs = fs });
+
+   if (mesh) {
+      /* mesh/task: mesh path must bypass legacy vertex fetch on A8xx. */
+      crb.add(A6XX_VFD_MODE_CNTL(.vertex = false, .instance = false));
+
+#ifdef A8XX_VPC_MS_CNTL
+      /* mesh/task: mesh output limits (VPC_MS_CNTL) come from shader info. */
+      crb.add(VPC_MS_CNTL(CHIP,
+         .max_vertices = mesh->mesh.max_vertices_out,
+         .max_primitives = mesh->mesh.max_primitives_out));
+#endif
+#ifdef A8XX_VPC_SO_CNTL
+      /* mesh/task: streamout should stay disabled for mesh path unless enabled explicitly later. */
+      crb.add(VPC_SO_CNTL(CHIP, 0));
+#endif
+
+#ifdef A8XX_SP_MS_CONFIG
+      /* mesh/task: descriptor+register configuration for mesh shader on A8xx. */
+      crb.add(SP_MS_CONFIG(CHIP,
+         .enabled = true,
+         .ntex = mesh->num_samp,
+         .nsamp = mesh->num_samp,
+         .nuav = ir3_shader_num_uavs(mesh),
+         .bindless_tex = mesh->bindless_tex,
+         .bindless_samp = mesh->bindless_samp,
+         .bindless_uav = mesh->bindless_ibo,
+         .bindless_ubo = mesh->bindless_ubo));
+#endif
+#ifdef A8XX_SP_TASK_CONFIG
+      /* mesh/task: allow task->mesh when task shader exists, mesh-only otherwise. */
+      crb.add(SP_TASK_CONFIG(CHIP,
+         .enabled = task != NULL));
+#endif
+   }
 
    crb.flush();
 
@@ -1375,6 +1411,9 @@ tu6_emit_program_config(struct tu_cs *cs,
       mesa_shader_stage stage = (mesa_shader_stage) stage_idx;
       tu6_emit_dynamic_offset(cs, variants[stage], shaders[stage], prog);
    }
+   /* mesh/task: make sure descriptor offsets are propagated for new pre-raster stages. */
+   tu6_emit_dynamic_offset(cs, task, shaders[MESA_SHADER_TASK], prog);
+   tu6_emit_dynamic_offset(cs, mesh, shaders[MESA_SHADER_MESH], prog);
 
    if (hs) {
       tu6_emit_link_map(cs, vs, hs, SB6_HS_SHADER);
