@@ -768,7 +768,8 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->multiviewMeshShader = has_mesh_shader && tu_has_multiview(pdevice);
    features->primitiveFragmentShadingRateMeshShader =
       has_mesh_shader && pdevice->info->props.has_primitive_shading_rate;
-   features->meshShaderQueries = has_mesh_shader;
+   /* mesh/task: query plumbing is staged incrementally, keep feature strict. */
+   features->meshShaderQueries = VK_FALSE;
 
    /* VK_EXT_mutable_descriptor_type */
    features->mutableDescriptorType = true;

@@ -344,6 +344,18 @@ tu_CreateQueryPool(VkDevice _device,
    if (!pool)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
+   if (pCreateInfo->queryType == VK_QUERY_TYPE_PIPELINE_STATISTICS) {
+      const uint32_t unsupported_mesh_task_stats =
+         VK_QUERY_PIPELINE_STATISTIC_TASK_SHADER_INVOCATIONS_BIT_EXT |
+         VK_QUERY_PIPELINE_STATISTIC_MESH_SHADER_INVOCATIONS_BIT_EXT;
+      /* mesh/task: keep query behavior strict until dedicated HW counter wiring lands. */
+      if (pCreateInfo->pipelineStatistics & unsupported_mesh_task_stats) {
+         vk_query_pool_destroy(&device->vk, pAllocator, &pool->vk);
+         return vk_errorf(device, VK_ERROR_FEATURE_NOT_PRESENT,
+                          "mesh/task pipeline statistics queries are not supported");
+      }
+   }
+
    pool->perf_query_type = perf_query_type;
 
    if (is_perf_query_raw(pool)) {
@@ -531,6 +543,10 @@ statistics_index(uint32_t *statistics)
       return COUNTER_OFFSET(DSINVOCATIONS);
    case VK_QUERY_PIPELINE_STATISTIC_COMPUTE_SHADER_INVOCATIONS_BIT:
       return COUNTER_OFFSET(CSINVOCATIONS);
+   case VK_QUERY_PIPELINE_STATISTIC_TASK_SHADER_INVOCATIONS_BIT_EXT:
+   case VK_QUERY_PIPELINE_STATISTIC_MESH_SHADER_INVOCATIONS_BIT_EXT:
+      /* mesh/task: unsupported for now, rejected in query pool creation. */
+      return 0;
    default:
       return 0;
    }

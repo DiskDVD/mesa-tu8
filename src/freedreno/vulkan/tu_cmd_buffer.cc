@@ -7557,8 +7557,21 @@ tu6_const_size(struct tu_cmd_buffer *cmd,
       dwords +=
          tu6_user_consts_size(&cmd->state.shaders[MESA_SHADER_COMPUTE]->const_state, ldgk, MESA_SHADER_COMPUTE);
    } else {
-      for (uint32_t type = MESA_SHADER_VERTEX; type <= MESA_SHADER_FRAGMENT; type++)
-         dwords += tu6_user_consts_size(&cmd->state.shaders[type]->const_state, ldgk, (mesa_shader_stage) type);
+      /* mesh/task: include all graphics-producing stages in const upload size. */
+      static const mesa_shader_stage gfx_stages[] = {
+         MESA_SHADER_VERTEX,
+         MESA_SHADER_TESS_CTRL,
+         MESA_SHADER_TESS_EVAL,
+         MESA_SHADER_GEOMETRY,
+         MESA_SHADER_TASK,
+         MESA_SHADER_MESH,
+         MESA_SHADER_FRAGMENT,
+      };
+      for (unsigned i = 0; i < ARRAY_SIZE(gfx_stages); i++) {
+         mesa_shader_stage stage = gfx_stages[i];
+         dwords += tu6_user_consts_size(&cmd->state.shaders[stage]->const_state,
+                                        ldgk, stage);
+      }
    }
 
    return dwords;
@@ -7601,16 +7614,25 @@ tu_emit_consts(struct tu_cmd_buffer *cmd, bool compute)
    } else {
       struct tu_descriptor_state *descriptors =
          tu_get_descriptors_state(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
-      for (uint32_t type = MESA_SHADER_VERTEX; type <= MESA_SHADER_FRAGMENT; type++) {
+      /* mesh/task: keep push const + inline UBO programming in sync with RADV mesh path. */
+      static const mesa_shader_stage gfx_stages[] = {
+         MESA_SHADER_VERTEX,
+         MESA_SHADER_TESS_CTRL,
+         MESA_SHADER_TESS_EVAL,
+         MESA_SHADER_GEOMETRY,
+         MESA_SHADER_TASK,
+         MESA_SHADER_MESH,
+         MESA_SHADER_FRAGMENT,
+      };
+      for (unsigned i = 0; i < ARRAY_SIZE(gfx_stages); i++) {
+         mesa_shader_stage stage = gfx_stages[i];
          const struct tu_program_descriptor_linkage *link =
-            &cmd->state.program.link[type];
+            &cmd->state.program.link[stage];
          tu6_emit_per_stage_push_consts(&cs, &link->tu_const_state,
-                                        &link->const_state,
-                                        (mesa_shader_stage) type,
+                                        &link->const_state, stage,
                                         cmd->push_constants);
          tu_emit_inline_ubo(&cs, &link->tu_const_state,
-                            &link->const_state, link->constlen,
-                            (mesa_shader_stage) type, descriptors);
+                            &link->const_state, link->constlen, stage, descriptors);
       }
    }
 
