@@ -1943,7 +1943,7 @@ static const driOptionDescription tu_dri_options[] = {
       DRI_CONF_TU_IGNORE_FRAG_DEPTH_DIRECTION(false)
       DRI_CONF_TU_ENABLE_SOFTFLOAT32(false)
       DRI_CONF_TU_EMULATE_ALPHA_TO_COVERAGE(false)
-      DRI_CONF_OPT_B(mesh_shader, false, "Enable VK_EXT_mesh_shader rollout on A8xx")
+      DRI_CONF_OPT_B(mesh_shader, true, "Enable VK_EXT_mesh_shader rollout on A8xx")
       DRI_CONF_TU_AUTOTUNE_ALGORITHM()
    DRI_CONF_SECTION_END
 };
