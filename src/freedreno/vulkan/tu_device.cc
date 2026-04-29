@@ -156,8 +156,12 @@ tu_has_mesh_shader_support(const struct tu_physical_device *pdev)
    if (pdev->info->chip < A8XX)
       return false;
 
-   const bool rollout_enabled =
-      TU_DEBUG_START(MESH) || pdev->instance->mesh_shader;
+   /*
+    * Mesh shader exposure should follow rollout/app-profile policy only.
+    * Keep TU_DEBUG_MESH out of feature gating so users don't need
+    * TU_DEBUG=mesh and apps still get correct extension behavior.
+    */
+   const bool rollout_enabled = pdev->instance->mesh_shader;
 
    return rollout_enabled && pdev->info->props.has_getfiberid;
 }
@@ -1939,7 +1943,7 @@ static const driOptionDescription tu_dri_options[] = {
       DRI_CONF_TU_IGNORE_FRAG_DEPTH_DIRECTION(false)
       DRI_CONF_TU_ENABLE_SOFTFLOAT32(false)
       DRI_CONF_TU_EMULATE_ALPHA_TO_COVERAGE(false)
-      DRI_CONF_OPT_B(mesh_shader, false, "Enable VK_EXT_mesh_shader rollout on A8xx")
+      DRI_CONF_OPT_B(mesh_shader, true, "Enable VK_EXT_mesh_shader rollout on A8xx")
       DRI_CONF_TU_AUTOTUNE_ALGORITHM()
    DRI_CONF_SECTION_END
 };
