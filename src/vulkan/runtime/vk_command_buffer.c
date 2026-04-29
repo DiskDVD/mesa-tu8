@@ -705,7 +705,7 @@ vk_common_CmdDrawMeshTasksIndirectEXT(
    VK_FROM_HANDLE(vk_buffer, buffer, _buffer);
 
    if (!cmd_buffer->base.device->enabled_features.meshShader) {
-      vk_command_buffer_set_error(&cmd_buffer->base, VK_ERROR_FEATURE_NOT_PRESENT);
+      vk_command_buffer_set_error(cmd_buffer, VK_ERROR_FEATURE_NOT_PRESENT);
       return;
    }
 
@@ -736,7 +736,7 @@ vk_common_CmdDrawMeshTasksIndirectCountEXT(
    VK_FROM_HANDLE(vk_buffer, count_buffer, countBuffer);
 
    if (!cmd_buffer->base.device->enabled_features.meshShader) {
-      vk_command_buffer_set_error(&cmd_buffer->base, VK_ERROR_FEATURE_NOT_PRESENT);
+      vk_command_buffer_set_error(cmd_buffer, VK_ERROR_FEATURE_NOT_PRESENT);
       return;
    }
 

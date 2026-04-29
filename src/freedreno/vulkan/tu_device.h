@@ -238,6 +238,9 @@ struct tu_instance
     */
    bool emulate_alpha_to_coverage;
 
+   /* Enable VK_EXT_mesh_shader rollout. */
+   bool mesh_shader;
+
    /* Configuration option to use a specific autotune algorithm by default. */
    const char *autotune_algo;
 };

@@ -421,6 +421,8 @@ xsi:schemaLocation="https://gitlab.freedesktop.org/freedreno/ rules-fd.xsd">
 	<value name="CP_DRAW_INDIRECT" value="0x28" variants="A4XX-"/>
 	<value name="CP_DRAW_INDX_INDIRECT" value="0x29" variants="A4XX-"/>
 	<value name="CP_DRAW_INDIRECT_MULTI" value="0x2a" variants="A6XX-"/>
+	<value name="CP_DRAW_MESH" value="0x30" variants="A8XX-"/>
+	<value name="CP_DRAW_MESH_INDIRECT" value="0x31" variants="A8XX-"/>
 	<value name="CP_DRAW_AUTO" value="0x24"/>
 
 	<doc>
