@@ -147,6 +147,23 @@ static bool tu_has_multiview(const struct tu_physical_device *device)
    return device->info->props.has_hw_multiview || TU_DEBUG(NOCONFORM);
 }
 
+static bool
+tu_has_mesh_shader_support(const struct tu_physical_device *pdev)
+{
+   if (TU_DEBUG(NOMESHSHADER))
+      return false;
+
+   if (pdev->info->chip < A8XX)
+      return false;
+
+   const uint32_t gpu_id = fd_dev_gpu_id(&pdev->dev_id);
+   const bool is_adreno_8xx =
+      gpu_id == 810 || gpu_id == 825 || gpu_id == 829 ||
+      gpu_id == 830 || gpu_id == 840;
+
+   return is_adreno_8xx && pdev->info->props.has_getfiberid;
+}
+
 /* We are generally VK 1.1 except A702, which has no multiview */
 static bool tu_is_vk_1_1(const struct tu_physical_device *device)
 {
@@ -309,6 +326,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_line_rasterization = true,
       .EXT_load_store_op_none = true,
       .EXT_map_memory_placed = true,
+      .EXT_mesh_shader = tu_has_mesh_shader_support(device),
       .EXT_memory_budget = true,
       .EXT_multi_draw = true,
       .EXT_multisampled_render_to_single_sampled = true,
@@ -742,6 +760,15 @@ tu_get_features(struct tu_physical_device *pdevice,
 
    /* VK_EXT_multi_draw */
    features->multiDraw = true;
+
+   /* VK_EXT_mesh_shader */
+   const bool has_mesh_shader = tu_has_mesh_shader_support(pdevice);
+   features->taskShader = has_mesh_shader;
+   features->meshShader = has_mesh_shader;
+   features->multiviewMeshShader = has_mesh_shader && tu_has_multiview(pdevice);
+   features->primitiveFragmentShadingRateMeshShader =
+      has_mesh_shader && pdevice->info->props.has_primitive_shading_rate;
+   features->meshShaderQueries = has_mesh_shader;
 
    /* VK_EXT_mutable_descriptor_type */
    features->mutableDescriptorType = true;
@@ -1297,7 +1324,7 @@ tu_get_properties(struct tu_physical_device *pdevice,
    tu_get_physical_device_properties_1_3(pdevice, props);
 
    /* VK_KHR_compute_shader_derivatives */
-   props->meshAndTaskShaderDerivatives = false;
+   props->meshAndTaskShaderDerivatives = tu_has_mesh_shader_support(pdevice);
 
    /* VK_KHR_fragment_shading_rate */
    if (pdevice->info->props.has_attachment_shading_rate) {
@@ -1326,6 +1353,45 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->fragmentShadingRateWithFragmentShaderInterlock = false;
    props->fragmentShadingRateWithCustomSampleLocations = true;
    props->fragmentShadingRateStrictMultiplyCombiner = true;
+
+   /* VK_EXT_mesh_shader */
+   const bool has_mesh_shader = tu_has_mesh_shader_support(pdevice);
+   props->maxTaskWorkGroupTotalCount = has_mesh_shader ? 65535 : 0;
+   props->maxTaskWorkGroupCount[0] = has_mesh_shader ? 65535 : 0;
+   props->maxTaskWorkGroupCount[1] = has_mesh_shader ? 65535 : 0;
+   props->maxTaskWorkGroupCount[2] = has_mesh_shader ? 65535 : 0;
+   props->maxTaskWorkGroupInvocations = has_mesh_shader ? 128 : 0;
+   props->maxTaskWorkGroupSize[0] = has_mesh_shader ? 128 : 0;
+   props->maxTaskWorkGroupSize[1] = has_mesh_shader ? 1 : 0;
+   props->maxTaskWorkGroupSize[2] = has_mesh_shader ? 1 : 0;
+   props->maxTaskPayloadSize = has_mesh_shader ? 16384 : 0;
+   props->maxTaskSharedMemorySize = has_mesh_shader ? 32768 : 0;
+   props->maxTaskPayloadAndSharedMemorySize = has_mesh_shader ? 32768 : 0;
+   props->maxMeshWorkGroupTotalCount = has_mesh_shader ? 65535 : 0;
+   props->maxMeshWorkGroupCount[0] = has_mesh_shader ? 65535 : 0;
+   props->maxMeshWorkGroupCount[1] = has_mesh_shader ? 65535 : 0;
+   props->maxMeshWorkGroupCount[2] = has_mesh_shader ? 1 : 0;
+   props->maxMeshWorkGroupInvocations = has_mesh_shader ? 128 : 0;
+   props->maxMeshWorkGroupSize[0] = has_mesh_shader ? 128 : 0;
+   props->maxMeshWorkGroupSize[1] = has_mesh_shader ? 1 : 0;
+   props->maxMeshWorkGroupSize[2] = has_mesh_shader ? 1 : 0;
+   props->maxMeshSharedMemorySize = has_mesh_shader ? 32768 : 0;
+   props->maxMeshPayloadAndSharedMemorySize = has_mesh_shader ? 32768 : 0;
+   props->maxMeshOutputMemorySize = has_mesh_shader ? 32768 : 0;
+   props->maxMeshPayloadAndOutputMemorySize = has_mesh_shader ? 32768 : 0;
+   props->maxMeshOutputComponents = has_mesh_shader ? 128 : 0;
+   props->maxMeshOutputVertices = has_mesh_shader ? 256 : 0;
+   props->maxMeshOutputPrimitives = has_mesh_shader ? 256 : 0;
+   props->maxMeshOutputLayers = has_mesh_shader ? MAX_VIEWS : 0;
+   props->maxMeshMultiviewViewCount = has_mesh_shader ? MAX_VIEWS : 0;
+   props->meshOutputPerVertexGranularity = has_mesh_shader ? 1 : 0;
+   props->meshOutputPerPrimitiveGranularity = has_mesh_shader ? 1 : 0;
+   props->maxPreferredTaskWorkGroupInvocations = has_mesh_shader ? 64 : 0;
+   props->maxPreferredMeshWorkGroupInvocations = has_mesh_shader ? 64 : 0;
+   props->prefersLocalInvocationVertexOutput = has_mesh_shader;
+   props->prefersLocalInvocationPrimitiveOutput = has_mesh_shader;
+   props->prefersCompactVertexOutput = has_mesh_shader;
+   props->prefersCompactPrimitiveOutput = has_mesh_shader;
 
    /* VK_KHR_push_descriptor */
    props->maxPushDescriptors = MAX_PUSH_DESCRIPTORS;
