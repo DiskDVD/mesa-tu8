@@ -1961,35 +1961,46 @@ tu_pipeline_builder_compile_shaders(struct tu_pipeline_builder *builder,
 
    if (builder->state &
        VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) {
-      const bool mesh_pipeline = nir[MESA_SHADER_MESH] || stage_infos[MESA_SHADER_MESH];
-      const int pre_rast_max_stage = mesh_pipeline ? MESA_SHADER_MESH : MESA_SHADER_GEOMETRY;
-      for (int i = MESA_SHADER_VERTEX; i <= pre_rast_max_stage; i++) {
-         if (nir[i] || stage_infos[i]) {
-            keys[i].multiview_mask = builder->graphics_state.mv->view_mask;
+      const bool mesh_pipeline =
+         nir[MESA_SHADER_MESH] || stage_infos[MESA_SHADER_MESH] ||
+         nir[MESA_SHADER_TASK] || stage_infos[MESA_SHADER_TASK];
+
+      if (mesh_pipeline) {
+         for (int i = MESA_SHADER_VERTEX; i <= MESA_SHADER_MESH; i++) {
+            if (nir[i] || stage_infos[i])
+               keys[i].multiview_mask = builder->graphics_state.mv->view_mask;
          }
-      }
 
-      const mesa_shader_stage last_pre_rast_stage = mesh_pipeline ?
-         tu_get_last_pre_rast_stage((const void **) nir) : MESA_SHADER_VERTEX;
-      const mesa_shader_stage last_pre_rast_producer_stage = mesh_pipeline ?
-         tu_get_last_pre_rast_producer_stage((const void **) nir) :
-         last_pre_rast_stage;
+         const mesa_shader_stage last_pre_rast_stage =
+            tu_get_last_pre_rast_stage((const void **) nir);
+         const mesa_shader_stage last_pre_rast_producer_stage =
+            tu_get_last_pre_rast_producer_stage((const void **) nir);
 
-      if (!mesh_pipeline) {
-         for (int i = MESA_SHADER_GEOMETRY; i >= MESA_SHADER_VERTEX; i--) {
-            if (nir[i]) {
-               keys[i].fdm_per_layer = is_a810 ? false : builder->fdm_per_layer;
-               goto pre_rast_fdm_done;
+         /* === ИЗМЕНЕНО: Отключаем FDM per layer на A810 === */
+         keys[last_pre_rast_stage].fdm_per_layer =
+            is_a810 ? false : builder->fdm_per_layer;
+         keys[last_pre_rast_producer_stage].fdm_per_layer =
+            is_a810 ? false : builder->fdm_per_layer;
+      } else {
+         /* Keep legacy pre-raster shader-key flow untouched for VS pipelines. */
+         for (int i = MESA_SHADER_VERTEX; i <= MESA_SHADER_GEOMETRY; i++) {
+            if (nir[i] || stage_infos[i]) {
+               keys[i].multiview_mask =
+                  builder->graphics_state.mv->view_mask;
             }
          }
-      }
 
-      /* === ИЗМЕНЕНО: Отключаем FDM per layer на A810 === */
-      keys[last_pre_rast_stage].fdm_per_layer =
-         is_a810 ? false : builder->fdm_per_layer;
-      keys[last_pre_rast_producer_stage].fdm_per_layer =
-         is_a810 ? false : builder->fdm_per_layer;
-pre_rast_fdm_done:;
+         mesa_shader_stage last_pre_rast_stage = MESA_SHADER_VERTEX;
+         for (int i = MESA_SHADER_GEOMETRY; i >= MESA_SHADER_VERTEX; i--) {
+            if (nir[i]) {
+               last_pre_rast_stage = (mesa_shader_stage) i;
+               break;
+            }
+         }
+
+         keys[last_pre_rast_stage].fdm_per_layer =
+            is_a810 ? false : builder->fdm_per_layer;
+      }
    }
 
    if (builder->state & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) {
@@ -2520,7 +2531,6 @@ tu_emit_program_state(struct tu_cs *sub_cs,
          tu_get_last_pre_rast_stage((const void **) variants);
       last_shader = shaders[last_pre_rast_stage];
       last_variant = variants[last_pre_rast_stage];
-      prog->vs_binning_state = prog->vs_state;
    } else {
       /* Keep legacy VS-based path unchanged for non-mesh pipelines. */
       if (gs) {
