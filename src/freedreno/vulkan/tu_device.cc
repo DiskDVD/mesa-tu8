@@ -156,12 +156,10 @@ tu_has_mesh_shader_support(const struct tu_physical_device *pdev)
    if (pdev->info->chip < A8XX)
       return false;
 
-   const uint32_t gpu_id = fd_dev_gpu_id(&pdev->dev_id);
-   const bool is_adreno_8xx =
-      gpu_id == 810 || gpu_id == 825 || gpu_id == 829 ||
-      gpu_id == 830 || gpu_id == 840;
+   const bool rollout_enabled =
+      TU_DEBUG_START(MESH) || pdev->instance->mesh_shader;
 
-   return is_adreno_8xx && pdev->info->props.has_getfiberid;
+   return rollout_enabled && pdev->info->props.has_getfiberid;
 }
 
 /* We are generally VK 1.1 except A702, which has no multiview */
@@ -1941,6 +1939,7 @@ static const driOptionDescription tu_dri_options[] = {
       DRI_CONF_TU_IGNORE_FRAG_DEPTH_DIRECTION(false)
       DRI_CONF_TU_ENABLE_SOFTFLOAT32(false)
       DRI_CONF_TU_EMULATE_ALPHA_TO_COVERAGE(false)
+      DRI_CONF_OPT_B(mesh_shader, false, "Enable VK_EXT_mesh_shader rollout on A8xx")
       DRI_CONF_TU_AUTOTUNE_ALGORITHM()
    DRI_CONF_SECTION_END
 };
@@ -1974,6 +1973,8 @@ tu_init_dri_options(struct tu_instance *instance)
          driQueryOptionb(&instance->dri_options, "tu_enable_softfloat32");
    instance->emulate_alpha_to_coverage =
          driQueryOptionb(&instance->dri_options, "tu_emulate_alpha_to_coverage");
+   instance->mesh_shader =
+         driQueryOptionb(&instance->dri_options, "mesh_shader");
    instance->autotune_algo =
          driQueryOptionstr(&instance->dri_options, "tu_autotune_algorithm");
 }

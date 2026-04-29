@@ -28,6 +28,15 @@
 #include "tu_tile_config.h"
 #include "tu_tracepoints.h"
 
+#ifndef CP_DRAW_MESH
+#define CP_DRAW_MESH 0x30
+#endif
+
+#ifndef CP_DRAW_MESH_INDIRECT
+#define CP_DRAW_MESH_INDIRECT 0x31
+#endif
+
+
 enum tu_cmd_buffer_status {
    TU_CMD_BUFFER_STATUS_IDLE = 0,
    TU_CMD_BUFFER_STATUS_ACTIVE = 1,
@@ -8942,6 +8951,58 @@ tu_CmdDrawIndirectByteCountEXT(VkCommandBuffer commandBuffer,
    trace_end_draw(&cmd->rp_trace, cs);
 }
 TU_GENX(tu_CmdDrawIndirectByteCountEXT);
+
+
+template <chip CHIP>
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdDrawMeshTasksEXT(VkCommandBuffer commandBuffer,
+                       uint32_t groupCountX,
+                       uint32_t groupCountY,
+                       uint32_t groupCountZ)
+{
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   struct tu_cs *cs = &cmd->draw_cs;
+
+   tu_emit_graphics_state<CHIP>(cmd, false);
+   tu_lrz_before_draw(cmd, cs);
+
+   tu_cs_emit_pkt7(cs, CP_DRAW_MESH, 3);
+   tu_cs_emit(cs, groupCountX);
+   tu_cs_emit(cs, groupCountY);
+   tu_cs_emit(cs, groupCountZ);
+
+   tu_lrz_after_draw(cmd, cs);
+   trace_end_draw(&cmd->rp_trace, cs);
+}
+TU_GENX(tu_CmdDrawMeshTasksEXT);
+
+template <chip CHIP>
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdDrawMeshTasksIndirectEXT(VkCommandBuffer commandBuffer,
+                               VkBuffer _buffer,
+                               VkDeviceSize offset,
+                               uint32_t drawCount,
+                               uint32_t stride)
+{
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_buffer, buf, _buffer);
+   struct tu_cs *cs = &cmd->draw_cs;
+
+   tu_emit_graphics_state<CHIP>(cmd, false);
+   tu_lrz_before_draw(cmd, cs);
+
+   for (uint32_t i = 0; i < drawCount; i++) {
+      tu_cs_emit_pkt7(cs, CP_DRAW_MESH_INDIRECT, 4);
+      tu_cs_emit(cs, 0);
+      tu_cs_emit_qw(cs, vk_buffer_address(&buf->vk, offset + (VkDeviceSize)i * stride));
+   }
+
+   tu_lrz_after_draw(cmd, cs);
+   if (drawCount)
+      trace_end_draw(&cmd->rp_trace, cs);
+}
+TU_GENX(tu_CmdDrawMeshTasksIndirectEXT);
+
 
 struct tu_dispatch_info
 {

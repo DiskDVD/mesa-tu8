@@ -58,6 +58,7 @@ static const struct debug_control tu_debug_options[] = {
    { "forcecb", TU_DEBUG_FORCE_CONCURRENT_BINNING },
    { "deck_emu", TU_DEBUG_DECK_EMU },
    { "nomeshshader", TU_DEBUG_NOMESHSHADER },
+   { "mesh", TU_DEBUG_MESH },
    { NULL, 0 }
 };
 
