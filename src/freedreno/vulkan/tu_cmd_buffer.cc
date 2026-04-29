@@ -8963,15 +8963,13 @@ tu_CmdDrawMeshTasksEXT(VkCommandBuffer commandBuffer,
    VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
    struct tu_cs *cs = &cmd->draw_cs;
 
-   tu_emit_graphics_state<CHIP>(cmd, false);
-   tu_lrz_before_draw(cmd, cs);
+   tu6_draw_common<CHIP>(cmd, cs, false, 0);
 
    tu_cs_emit_pkt7(cs, CP_DRAW_MESH, 3);
    tu_cs_emit(cs, groupCountX);
    tu_cs_emit(cs, groupCountY);
    tu_cs_emit(cs, groupCountZ);
 
-   tu_lrz_after_draw(cmd, cs);
    trace_end_draw(&cmd->rp_trace, cs);
 }
 TU_GENX(tu_CmdDrawMeshTasksEXT);
@@ -8988,8 +8986,7 @@ tu_CmdDrawMeshTasksIndirectEXT(VkCommandBuffer commandBuffer,
    VK_FROM_HANDLE(tu_buffer, buf, _buffer);
    struct tu_cs *cs = &cmd->draw_cs;
 
-   tu_emit_graphics_state<CHIP>(cmd, false);
-   tu_lrz_before_draw(cmd, cs);
+   tu6_draw_common<CHIP>(cmd, cs, false, 0);
 
    for (uint32_t i = 0; i < drawCount; i++) {
       tu_cs_emit_pkt7(cs, CP_DRAW_MESH_INDIRECT, 4);
@@ -8997,7 +8994,6 @@ tu_CmdDrawMeshTasksIndirectEXT(VkCommandBuffer commandBuffer,
       tu_cs_emit_qw(cs, vk_buffer_address(&buf->vk, offset + (VkDeviceSize)i * stride));
    }
 
-   tu_lrz_after_draw(cmd, cs);
    if (drawCount)
       trace_end_draw(&cmd->rp_trace, cs);
 }

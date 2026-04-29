@@ -156,8 +156,12 @@ tu_has_mesh_shader_support(const struct tu_physical_device *pdev)
    if (pdev->info->chip < A8XX)
       return false;
 
-   const bool rollout_enabled =
-      TU_DEBUG_START(MESH) || pdev->instance->mesh_shader;
+   /*
+    * Mesh shader exposure should follow rollout/app-profile policy only.
+    * Keep TU_DEBUG_MESH out of feature gating so users don't need
+    * TU_DEBUG=mesh and apps still get correct extension behavior.
+    */
+   const bool rollout_enabled = pdev->instance->mesh_shader;
 
    return rollout_enabled && pdev->info->props.has_getfiberid;
 }
