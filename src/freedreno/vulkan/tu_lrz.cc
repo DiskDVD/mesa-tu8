@@ -5,13 +5,13 @@
 
 #include "tu_lrz.h"
 
-#include "common/freedreno_gpu_event.h"
-#include "common/freedreno_lrz.h"
 #include "tu_clear_blit.h"
 #include "tu_cmd_buffer.h"
 #include "tu_cs.h"
 #include "tu_image.h"
-#include "tu_tracepoints.h"
+
+#include "common/freedreno_gpu_event.h"
+#include "common/freedreno_lrz.h"
 
 /* See lrz.rst for how HW works. Here are only the implementation notes.
  *
@@ -99,7 +99,6 @@ tu_lrz_disable_write_for_rp(struct tu_cmd_buffer *cmd, const char *reason)
 
    cmd->state.lrz.disable_write_for_rp = true;
    cmd->state.rp.lrz_write_disabled_at_draw = cmd->state.rp.drawcall_count;
-   cmd->state.rp.lrz_write_disable_reason = reason;
    perf_debug(
       cmd->device,
       "Disabling LRZ write for the rest of the RP because '%s' at draw %u",
@@ -215,7 +214,9 @@ static void
 tu_lrz_init_state(struct tu_cmd_buffer *cmd,
                   const struct tu_render_pass_attachment *att,
                   const struct tu_image_view *view)
+
 {
+   return;
    if (!view->image->lrz_layout.lrz_total_size) {
       assert(!cmd->device->use_lrz || !vk_format_has_depth(att->format));
       return;
@@ -362,7 +363,6 @@ tu_lrz_begin_renderpass(struct tu_cmd_buffer *cmd)
 
    cmd->state.rp.lrz_disable_reason = NULL;
    cmd->state.rp.lrz_disabled_at_draw = 0;
-   cmd->state.rp.lrz_write_disable_reason = NULL;
    cmd->state.rp.lrz_write_disabled_at_draw = 0;
 
    int lrz_img_count = 0;
@@ -883,9 +883,6 @@ tu_disable_lrz(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
    if (!image->lrz_layout.lrz_total_size)
       return;
 
-   trace_start_disable_lrz(&cmd->trace, &cmd->cs, cmd, image->vk.format,
-                           image->vk.extent.width, image->vk.extent.height);
-
    uint64_t lrz_iova = image->iova + image->lrz_layout.lrz_offset;
 
    /* Synchronize writes in BV with subsequent render passes against this
@@ -931,8 +928,6 @@ tu_disable_lrz(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
       tu_cs_emit_qw(cs, TU_ONCHIP_CB_RESLIST_OVERFLOW);
       tu_cs_emit(cs, 0); /* value */
    }
-
-   trace_end_disable_lrz(&cmd->trace, &cmd->cs);
 }
 TU_GENX(tu_disable_lrz);
 
@@ -1322,18 +1317,18 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
     * test will also pass, but if it may be written when the depth or stencil
     * test fails then we need to disable the LRZ test for the draw as well.
     */
-   if (cmd->state.stencil_written_based_on_depth_test) {
-      tu_lrz_disable_write_for_rp(cmd, "stencil write based on depth test");
+ /* if (cmd->state.stencil_written_based_on_depth_test) {
+     // tu_lrz_disable_write_for_rp(cmd, "stencil write based on depth test");
    }
-
+ */
    if (disable_lrz)
       cmd->state.lrz.valid = false;
 
-   if (cmd->state.lrz.disable_write_for_rp)
-      gras_lrz_cntl.lrz_write = false;
+   //if (cmd->state.lrz.disable_write_for_rp)
+     // gras_lrz_cntl.lrz_write = false;
 
-   if (temporary_disable_lrz)
-      gras_lrz_cntl.enable = false;
+  // if (temporary_disable_lrz)
+    //   gras_lrz_cntl.enable = false;
 
    cmd->state.lrz.enabled = cmd->state.lrz.valid && gras_lrz_cntl.enable;
    if (!cmd->state.lrz.enabled)
@@ -1344,7 +1339,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
       cmd->state.lrz.gpu_dir_set = true;
    }
 
-   return gras_lrz_cntl;
+    return gras_lrz_cntl;
 }
 
 template <chip CHIP>
